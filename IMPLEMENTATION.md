@@ -1,6 +1,6 @@
 # Implementation notes
 
-Current version: 1.2.3. The verified 1.0.2 desktop source was migrated from the earlier delivery without editing that product directory. The repository now owns `backend`, `desktop`, `src`, `assets`, `tests`, `scripts` and `docs` at root.
+Current version: 1.2.4. The verified 1.0.2 desktop source was migrated from the earlier delivery without editing that product directory. The repository now owns `backend`, `desktop`, `src`, `assets`, `tests`, `scripts` and `docs` at root.
 
 Encoding commands and validation: `backend/core.cjs`. Process lifecycle, settings, queue, details and media tasks: `backend/service.cjs`. Official release resolution, hash validation, complete archive staging, executable checks and atomic active-version metadata: `backend/tools.cjs`. Standalone 7za bootstraps extraction. Tools are located only from managed installations or an explicit development override.
 

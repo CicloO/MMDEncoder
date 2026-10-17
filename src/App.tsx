@@ -1716,44 +1716,55 @@ export default function App() {
         title="编码引擎"
         description="首次使用从官方来源下载工具到本机；安装后可离线编码，无需管理员权限。"
       >
-        <section aria-label="软件更新" aria-busy={update.checking}>
-          <p>
-            MMD Encoder {__APP_VERSION__} ·{" "}
-            {update.checking
-              ? "正在检查更新…"
-              : update.error
-                ? "检查更新失败：" + update.error
-                : update.newer
-                  ? `发现新版本 ${update.latest}`
-                  : update.current
-                    ? update.latest
-                      ? "已是最新版本"
-                      : "项目尚未发布版本"
-                    : "尚未检查更新"}
-          </p>
-          <div className="modal-actions">
-            <Button disabled={update.checking} onClick={() => checkUpdate()}>
-              <RefreshCw size={15} />
-              检查更新
-            </Button>
-            <Button
-              variant={update.newer ? "primary" : undefined}
-              onClick={() =>
-                action("openReleasePage", {
-                  url: update.newer ? update.url : "",
-                })
-              }
-            >
-              <ExternalLink size={15} />
-              {update.newer ? "打开下载页" : "项目发行页"}
-            </Button>
+        <section
+          className="modal-section"
+          aria-label="软件更新"
+          aria-busy={update.checking}
+        >
+          <h3>软件更新</h3>
+          <div className="status-row">
+            <p>
+              MMD Encoder {__APP_VERSION__} ·{" "}
+              {update.checking
+                ? "正在检查更新…"
+                : update.error
+                  ? "检查更新失败：" + update.error
+                  : update.newer
+                    ? `发现新版本 ${update.latest}`
+                    : update.current
+                      ? update.latest
+                        ? "已是最新版本"
+                        : "项目尚未发布版本"
+                      : "尚未检查更新"}
+            </p>
+            <div className="row-actions">
+              <Button disabled={update.checking} onClick={() => checkUpdate()}>
+                <RefreshCw size={15} />
+                检查更新
+              </Button>
+              <Button
+                variant={update.newer ? "primary" : undefined}
+                onClick={() =>
+                  action("openReleasePage", {
+                    url: update.newer ? update.url : "",
+                  })
+                }
+              >
+                <ExternalLink size={15} />
+                {update.newer ? "打开下载页" : "项目发行页"}
+              </Button>
+            </div>
           </div>
         </section>
         {state.tools && (
-          <section aria-label="工具安装与更新" aria-busy={state.tools.busy}>
-            <p>FFmpeg / ffprobe：Gyan · NVEncC：rigaya / GitHub</p>
-            <p role={state.tools.phase === "error" ? "alert" : "status"}>
-              {state.tools.message}
+          <section
+            className="modal-section"
+            aria-label="工具安装与更新"
+            aria-busy={state.tools.busy}
+          >
+            <h3>编码工具</h3>
+            <p className="hint">
+              FFmpeg / ffprobe：Gyan · NVEncC：rigaya / GitHub
             </p>
             {state.tools.phase === "downloading" && (
               <p>
@@ -1763,64 +1774,84 @@ export default function App() {
                   : " · 总大小待服务器确认"}
               </p>
             )}
-            <p>
-              安装位置：<code>{state.tools.root}</code>
-            </p>
-            <div className="modal-actions">
-              <Button
-                disabled={state.tools.busy || state.running || state.detecting}
-                title="已安装的工具会一起移到新位置；选择已装有本软件工具的文件夹则直接使用"
-                onClick={async () => {
-                  try {
-                    const dir = await call("pickDirectory", {
-                      title: "选择编码工具安装位置",
-                    });
-                    if (dir)
-                      await call(
-                        "setToolsRoot",
-                        { root: dir },
-                        "已更改编码工具安装位置",
-                      );
-                  } catch {}
-                }}
-              >
-                <FolderOpen size={15} />
-                更改位置
-              </Button>
-              <Button
-                disabled={state.tools.busy || state.running || state.detecting}
-                onClick={() =>
-                  action("setToolsRoot", { root: "" }, "已恢复默认安装位置")
-                }
-              >
-                恢复默认位置
-              </Button>
-            </div>
-            <p>
-              {Object.entries(state.tools.installed)
-                .map(
-                  ([id, tool]) =>
-                    `${id} ${tool.version}（${tool.verifiedHash ? "发布 SHA-256 已验证" : "发布方未提供校验值"}）`,
-                )
-                .join(" · ") || "尚未安装编码工具"}
-            </p>
-            <div className="modal-actions">
-              <Button
-                disabled={state.tools.busy || state.running || state.detecting}
-                onClick={() => action("checkTools")}
-              >
-                检查更新
-              </Button>
-              <Button
-                disabled={state.tools.busy || state.running || state.detecting}
-                onClick={() => action("installTools")}
-              >
-                {state.tools.busy
-                  ? "正在处理…"
-                  : state.tools.phase === "error"
-                    ? "重试下载并安装"
-                    : "下载并安装最新工具"}
-              </Button>
+            <Field id="tools-root" label="安装位置">
+              <div className="path-picker">
+                <input
+                  id="tools-root"
+                  value={state.tools.root}
+                  readOnly
+                  title={state.tools.root}
+                />
+                <Button
+                  disabled={
+                    state.tools.busy || state.running || state.detecting
+                  }
+                  title="已安装的工具会一起移到新位置；选择已装有本软件工具的文件夹则直接使用"
+                  onClick={async () => {
+                    try {
+                      const dir = await call("pickDirectory", {
+                        title: "选择编码工具安装位置",
+                      });
+                      if (dir)
+                        await call(
+                          "setToolsRoot",
+                          { root: dir },
+                          "已更改编码工具安装位置",
+                        );
+                    } catch {}
+                  }}
+                >
+                  <FolderOpen size={15} />
+                  更改位置
+                </Button>
+                <Button
+                  disabled={
+                    state.tools.busy || state.running || state.detecting
+                  }
+                  onClick={() =>
+                    action("setToolsRoot", { root: "" }, "已恢复默认安装位置")
+                  }
+                >
+                  恢复默认
+                </Button>
+              </div>
+            </Field>
+            <div className="status-row">
+              <div>
+                <p role={state.tools.phase === "error" ? "alert" : "status"}>
+                  {state.tools.message}
+                </p>
+                <p className="hint">
+                  {Object.entries(state.tools.installed)
+                    .map(
+                      ([id, tool]) =>
+                        `${id} ${tool.version}（${tool.verifiedHash ? "发布 SHA-256 已验证" : "发布方未提供校验值"}）`,
+                    )
+                    .join(" · ") || "尚未安装编码工具"}
+                </p>
+              </div>
+              <div className="row-actions">
+                <Button
+                  disabled={
+                    state.tools.busy || state.running || state.detecting
+                  }
+                  onClick={() => action("checkTools")}
+                >
+                  检查工具更新
+                </Button>
+                <Button
+                  disabled={
+                    state.tools.busy || state.running || state.detecting
+                  }
+                  onClick={() => action("installTools")}
+                >
+                  {state.tools.busy
+                    ? "正在处理…"
+                    : state.tools.phase === "error"
+                      ? "重试下载并安装"
+                      : "下载并安装最新工具"}
+                </Button>
+              </div>
             </div>
             {state.running && <p>编码结束后可更新工具。</p>}
           </section>

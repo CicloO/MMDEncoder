@@ -1,5 +1,8 @@
 # MMD Encoder
 
+> [!NOTE]
+> 这是作者的个人项目，不做宣传，也不承诺维护和支持。如有反馈，请单独告知作者。使用条款以 [MIT 许可证](LICENSE) 为准。
+
 面向 MMD 创作者的 Windows 便携视频压制工具。批量压制渲染视频，支持透明通道、各平台上传预设、NVIDIA 硬件编码与 RTX 视频增强。
 
 项目地址：<https://github.com/CicloO/MMDEncoder>
