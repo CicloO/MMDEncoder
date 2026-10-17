@@ -1,0 +1,25 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["src"],
+  "locale": "zh-CN",
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": [
+    "Table Selection",
+    "Select/Listbox",
+    "Form",
+    "Scrollbar",
+    "Toast",
+    "CRUD"
+  ],
+  "ownership": { "Select/Listbox": "native" },
+  "requiredCommands": ["unit", "e2e", "typecheck"],
+  "commands": {
+    "unit": "node --test tests/*.test.cjs",
+    "e2e": "node tests/desktop.mjs",
+    "typecheck": "node node_modules/typescript/bin/tsc --noEmit"
+  },
+  "evidence": {
+    "crudFullFlow": "tests/desktop.mjs",
+    "failurePaths": "tests/integration.test.cjs"
+  }
+}

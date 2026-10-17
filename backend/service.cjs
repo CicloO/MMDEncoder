@@ -1,0 +1,1447 @@
+"use strict";
+const fs = require("node:fs");
+const path = require("node:path");
+const os = require("node:os");
+const crypto = require("node:crypto");
+const { spawn } = require("node:child_process");
+const core = require("./core.cjs");
+const {
+  signature: enhancementSignature,
+  probe: probeEnhancements,
+} = require("./enhancements.cjs");
+const media = require("./media.cjs");
+const { createTools, DEFAULT_ROOT } = require("./tools.cjs");
+const clone = (x) => JSON.parse(JSON.stringify(x));
+function createService({
+  engineDir,
+  dataDir,
+  onUpdate,
+  toolsRoot = process.env.MMD_TEST_TOOLS_ROOT,
+  toolOptions = {},
+} = {}) {
+  dataDir = dataDir || path.join(os.tmpdir(), "mmd-encoder");
+  const children = new Set();
+  const pendingLogs = new Map();
+  let evidenceTimer = null,
+    hadJobs = false;
+  let active = null,
+    stopped = false,
+    disposed = false,
+    detectPromise = null,
+    locatePromise = null;
+  const state = {
+    jobs: [],
+    settings: { ...core.DEFAULTS },
+    presets: clone(core.BUILTINS),
+    engines: [],
+    detecting: false,
+    located: false,
+    running: false,
+    enhancements: {
+      busy: false,
+      signature: "",
+      verified: false,
+      message: "启用后请先验证本机 RTX 功能",
+    },
+    mediaJobs: [],
+    engineInfo: { ffmpeg: "", ffprobe: "", nvencc: "" },
+    detectionLog: "",
+  };
+  // A tools folder chosen in the app is remembered in data/tools-location.json;
+  // an explicit toolsRoot (environment / tests) always wins.
+  const toolsLocationFile = path.join(dataDir, "tools-location.json");
+  let chosenToolsRoot;
+  try {
+    const saved = JSON.parse(fs.readFileSync(toolsLocationFile, "utf8"));
+    if (typeof saved.root === "string" && path.isAbsolute(saved.root))
+      chosenToolsRoot = saved.root;
+  } catch {}
+  const tools = createTools({
+    ...toolOptions,
+    root: toolsRoot || chosenToolsRoot,
+    onUpdate: (s) => {
+      state.tools = s;
+      emit();
+    },
+  });
+  state.tools = tools.state;
+  function emit() {
+    if (!disposed && !evidenceTimer) {
+      evidenceTimer = setTimeout(flushEvidence, 300);
+      evidenceTimer.unref();
+    }
+    hadJobs ||= state.jobs.length > 0;
+    if (!disposed && typeof onUpdate === "function") onUpdate(clone(state));
+  }
+  // Batch writes rather than synchronously touching disk for every encoder line.
+  // The renderer receives a bounded tail; the on-disk task log retains every line.
+  function flushEvidence() {
+    clearTimeout(evidenceTimer);
+    evidenceTimer = null;
+    try {
+      const logsDir = path.join(dataDir, "logs");
+      fs.mkdirSync(logsDir, { recursive: true });
+      for (const [id, pieces] of pendingLogs) {
+        fs.appendFileSync(path.join(logsDir, id + ".log"), pieces.join(""));
+        pendingLogs.delete(id);
+      }
+      if (state.detectionLog)
+        fs.writeFileSync(
+          path.join(logsDir, "hardware-detection.log"),
+          state.detectionLog,
+        );
+      if (hadJobs) {
+        const target = path.join(dataDir, "queue-checkpoint.json");
+        const tmp = target + "." + crypto.randomUUID() + ".tmp";
+        fs.writeFileSync(
+          tmp,
+          JSON.stringify(
+            {
+              version: 1,
+              updatedAt: new Date().toISOString(),
+              running: state.running,
+              jobs: state.jobs.map(({ log, _retrySettings, ...job }) => ({
+                ...job,
+                logFile: path.join(logsDir, job.id + ".log"),
+              })),
+            },
+            null,
+            2,
+          ),
+        );
+        fs.renameSync(tmp, target);
+      }
+    } catch (e) {
+      state.notice = "日志或队列记录保存失败：" + e.message;
+    }
+  }
+  function persist() {
+    fs.mkdirSync(dataDir, { recursive: true });
+    const target = path.join(dataDir, "settings.json"),
+      tmp = target + "." + crypto.randomUUID() + ".tmp";
+    fs.writeFileSync(
+      tmp,
+      JSON.stringify(
+        {
+          version: 1,
+          settings: state.settings,
+          presets: state.presets.filter((p) => !p.builtin),
+        },
+        null,
+        2,
+      ),
+    );
+    fs.renameSync(tmp, target);
+  }
+  function schema(p, full = false) {
+    if (!p || typeof p !== "object" || Array.isArray(p))
+      throw Error("设置必须是对象");
+    if (full && Object.keys(core.DEFAULTS).some((k) => !(k in p)))
+      throw Error("预设缺少必要字段");
+    for (const [k, v] of Object.entries(p)) {
+      if (
+        !(k in core.DEFAULTS) ||
+        typeof v !== typeof core.DEFAULTS[k] ||
+        (typeof v === "number" && !Number.isFinite(v))
+      )
+        throw Error("无效设置字段：" + k);
+      if (typeof v === "string" && v.length > 4096)
+        throw Error("设置文本过长：" + k);
+    }
+    return p;
+  }
+  function presetValid(p) {
+    if (
+      !p ||
+      typeof p.name !== "string" ||
+      !p.name.trim() ||
+      p.name.length > 80
+    )
+      throw Error("预设名称须为 1–80 字符");
+    p = {
+      ...p,
+      settings: {
+        ...core.DEFAULTS,
+        audioBitrate: 0,
+        resizeMode: "source",
+        width: 1920,
+        height: 1080,
+        keepAspect: true,
+        resizeAxis: "width",
+        ...p.settings,
+        presetName: p.name.trim(),
+      },
+    };
+    schema(p.settings, true);
+    const s = { ...p.settings, outputMode: "encoded", outputDir: "" };
+    const errors = core.validate(s);
+    if (errors.length) throw Error("预设参数无效：" + errors.join("；"));
+    return {
+      id: crypto.randomUUID(),
+      name: p.name.trim(),
+      builtin: false,
+      settings: clone(p.settings),
+    };
+  }
+  try {
+    const saved = JSON.parse(
+      fs.readFileSync(path.join(dataDir, "settings.json"), "utf8"),
+    );
+    if (saved.version !== 1) throw Error("版本不支持");
+    state.settings = { ...core.DEFAULTS, ...schema(saved.settings) };
+    for (const p of saved.presets || []) {
+      const valid = presetValid(p);
+      valid.id = typeof p.id === "string" ? p.id : valid.id;
+      state.presets.push(valid);
+    }
+  } catch (e) {
+    if (e.code !== "ENOENT")
+      state.notice = "已忽略无法读取的配置：" + e.message;
+  }
+  function run(exe, args, { timeout = 0, onData, encoding = false } = {}) {
+    return new Promise((resolve, reject) => {
+      if (disposed) return reject(Error("应用已关闭"));
+      const child = spawn(exe, args, {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        shell: false,
+      });
+      children.add(child);
+      if (encoding) active = child;
+      let stdout = "",
+        stderr = "",
+        timed = false;
+      const timer = timeout
+        ? setTimeout(() => {
+            timed = true;
+            child.kill();
+          }, timeout)
+        : null;
+      const data = (stream, b) => {
+        const s = b.toString();
+        if (stream === "out") stdout = (stdout + s).slice(-1024 * 1024);
+        else stderr = (stderr + s).slice(-1024 * 1024);
+        onData?.(s, stream);
+      };
+      child.stdout.on("data", (b) => data("out", b));
+      child.stderr.on("data", (b) => data("err", b));
+      let settled = false;
+      const done = (err, code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        children.delete(child);
+        if (active === child) active = null;
+        if (err || code !== 0) {
+          const e = Error(
+            timed
+              ? "引擎运行超时"
+              : err
+                ? err.message
+                : stderr.trim().slice(-3000) || "编码器退出：" + code,
+          );
+          e.stdout = stdout;
+          e.stderr = stderr;
+          e.code = code;
+          reject(e);
+        } else resolve({ stdout, stderr });
+      };
+      child.on("error", (e) => done(e));
+      child.on("close", (code) => done(null, code));
+    });
+  }
+  async function locate() {
+    if (locatePromise) return locatePromise;
+    locatePromise = (async () => {
+      for (const [key, name] of [
+        ["ffmpeg", "ffmpeg.exe"],
+        ["ffprobe", "ffprobe.exe"],
+        ["nvencc", "NVEncC.exe"],
+      ]) {
+        state.engineInfo[key] = "";
+        const managed = tools.paths()[key];
+        const dirs = [engineDir, managed && path.dirname(managed)].filter(
+          Boolean,
+        );
+        for (const dir of [...new Set(dirs)]) {
+          const exe =
+            managed && dir === path.dirname(managed)
+              ? managed
+              : path.join(dir, name);
+          if (!fs.existsSync(exe)) continue;
+          try {
+            const r = await run(
+              exe,
+              [key === "nvencc" ? "--version" : "-version"],
+              { timeout: 10000 },
+            );
+            state.engineInfo[key] = exe;
+            state.detectionLog +=
+              (r.stdout || r.stderr).split("\n")[0] + "\n" + exe + "\n";
+            break;
+          } catch (e) {
+            state.detectionLog += exe + ": " + e.message + "\n";
+          }
+        }
+      }
+      state.located = true;
+      emit();
+    })();
+    return locatePromise;
+  }
+  // Media page queue: each file is processed on its own with the options chosen
+  // when the queue starts; the output name is generated per file and never reused.
+  function mediaLocation(o) {
+    return {
+      outputMode: ["source", "encoded", "custom"].includes(o.location)
+        ? o.location
+        : "source",
+      outputDir: o.outputDir || "",
+    };
+  }
+  function requireMediaJob(id) {
+    const job = state.mediaJobs.find((j) => j.id === id);
+    if (!job) throw Error("文件不在列表中");
+    return job;
+  }
+  async function runMediaJob(job, o) {
+    job.status = "running";
+    job.error = undefined;
+    job.output = undefined;
+    job.log = "";
+    job.startedAt = Date.now();
+    emit();
+    let temp;
+    try {
+      if (o.operation === "merge" && !job.audioPath)
+        throw Error("缺少要合并的音频文件");
+      const p = {
+        operation: o.operation,
+        input: job.path,
+        audioInput: job.audioPath,
+        audioFormat: o.audioFormat,
+        shortest: o.shortest !== false,
+      };
+      p.output = media.suggestOutput(p, mediaLocation(o), fs.existsSync);
+      if (!p.output) throw Error("无法生成输出文件名");
+      media.command(p, state.engineInfo, p.output);
+      fs.mkdirSync(path.dirname(p.output), { recursive: true });
+      temp = fs.mkdtempSync(path.join(path.dirname(p.output), ".mmd-media-"));
+      const target = path.join(temp, "output" + path.extname(p.output));
+      const cmd = media.command(p, state.engineInfo, target);
+      job.log = core.commandText([cmd]) + "\n";
+      await run(cmd.exe, cmd.args, {
+        encoding: true,
+        onData: (t) => {
+          job.log = (job.log + t).slice(-200000);
+          emit();
+        },
+      });
+      if (stopped) throw Error("已取消");
+      commit(target, p.output);
+      job.output = p.output;
+      job.status = "done";
+    } catch (e) {
+      job.status = stopped ? "cancelled" : "failed";
+      job.error = e.message;
+      job.log += "\n" + e.message;
+    } finally {
+      if (temp) fs.rmSync(temp, { recursive: true, force: true });
+      job.elapsed = (Date.now() - job.startedAt) / 1000;
+      try {
+        fs.mkdirSync(path.join(dataDir, "logs"), { recursive: true });
+        fs.writeFileSync(
+          path.join(dataDir, "logs", "media-" + job.id + ".log"),
+          job.log,
+        );
+      } catch (e) {
+        job.error =
+          (job.error ? job.error + "；" : "") + "日志保存失败：" + e.message;
+      }
+      emit();
+    }
+  }
+  // Detection runs real trial encodes, so its result is cached in dataDir and
+  // reused until the tools, the display adapters/drivers or the engine list change.
+  const cacheFile = () => path.join(dataDir, "engine-cache.json");
+  async function displayAdapters() {
+    const key =
+      "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}";
+    const lines = [];
+    for (const value of ["DriverDesc", "DriverVersion"]) {
+      const { stdout } = await run("reg", ["query", key, "/s", "/v", value], {
+        timeout: 10000,
+      });
+      lines.push(
+        ...stdout
+          .split(/\r?\n/)
+          .filter((l) => /^\s+Driver(?:Desc|Version)\s/.test(l))
+          .map((l) => l.trim().replace(/\s+/g, " ")),
+      );
+    }
+    return lines.join("|");
+  }
+  async function detectionKey() {
+    let gpu = "";
+    try {
+      gpu = await displayAdapters();
+    } catch (e) {
+      state.detectionLog +=
+        "无法读取显卡信息，本次不使用检测缓存：" + e.message + "\n";
+    }
+    if (!gpu) return "";
+    const files = {};
+    for (const k of ["ffmpeg", "nvencc"]) {
+      const exe = state.engineInfo[k];
+      if (!exe) continue;
+      const st = fs.statSync(exe);
+      files[k] = [exe, st.size, st.mtimeMs];
+    }
+    return crypto
+      .createHash("sha256")
+      .update(
+        JSON.stringify({
+          version: 1,
+          gpu,
+          files,
+          engines: core.ENGINES.map((e) => [e.id, e.depths]),
+        }),
+      )
+      .digest("hex");
+  }
+  function readDetectionCache(key) {
+    try {
+      const c = JSON.parse(fs.readFileSync(cacheFile(), "utf8"));
+      if (c.key !== key || !Array.isArray(c.engines) || !c.engines.length)
+        return null;
+      const ids = new Set(core.ENGINES.map((e) => e.id));
+      return c.engines.every((e) => ids.has(e.id)) ? c : null;
+    } catch {
+      return null;
+    }
+  }
+  function writeDetectionCache(key, log) {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+      const tmp = cacheFile() + "." + crypto.randomUUID() + ".tmp";
+      fs.writeFileSync(
+        tmp,
+        JSON.stringify(
+          {
+            key,
+            detectedAt: new Date().toISOString(),
+            engines: state.engines,
+            log,
+          },
+          null,
+          2,
+        ),
+      );
+      fs.renameSync(tmp, cacheFile());
+    } catch (e) {
+      state.detectionLog += "检测缓存保存失败：" + e.message + "\n";
+    }
+  }
+  async function detect({ force = false } = {}) {
+    if (detectPromise) return detectPromise;
+    state.detecting = true;
+    state.engines = [];
+    emit();
+    detectPromise = (async () => {
+      await locate();
+      if (!state.engineInfo.ffmpeg) {
+        state.notice = "未找到可运行的 FFmpeg，请检查引擎目录";
+        return;
+      }
+      const key = await detectionKey();
+      const cached = !force && key && readDetectionCache(key);
+      if (cached) {
+        state.engines = cached.engines;
+        state.detectionLog +=
+          (cached.log || "") +
+          "\n使用 " +
+          cached.detectedAt +
+          " 的编码器检测结果。工具、显卡或驱动变化后会自动重新检测，也可以手动重新检测。\n";
+        return;
+      }
+      const logStart = state.detectionLog.length;
+      let listing = "";
+      try {
+        listing = (
+          await run(state.engineInfo.ffmpeg, ["-hide_banner", "-encoders"], {
+            timeout: 10000,
+          })
+        ).stdout;
+      } catch (e) {
+        state.notice = e.message;
+        return;
+      }
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-detect-"));
+      try {
+        const fixture = path.join(dir, "probe.mkv");
+        if (state.engineInfo.nvencc)
+          await run(
+            state.engineInfo.ffmpeg,
+            [
+              "-v",
+              "error",
+              "-f",
+              "lavfi",
+              "-i",
+              "color=black:s=640x360:r=30:d=0.2",
+              "-c:v",
+              "ffv1",
+              fixture,
+            ],
+            { timeout: 15000 },
+          );
+        for (const e of core.ENGINES) {
+          if (disposed) break;
+          if (
+            e.backend === "nvencc"
+              ? !state.engineInfo.nvencc
+              : !new RegExp("\\b" + e.id + "\\b").test(listing)
+          )
+            continue;
+          const depths = [];
+          for (const depth of e.depths) {
+            try {
+              if (e.backend === "nvencc") {
+                await run(
+                  state.engineInfo.nvencc,
+                  [
+                    "--avsw",
+                    "-i",
+                    fixture,
+                    "-o",
+                    path.join(dir, e.codec + "-" + depth + ".mkv"),
+                    "--codec",
+                    e.codec,
+                    "--output-depth",
+                    String(depth),
+                    "--output-csp",
+                    "yuv420",
+                    "--cqp",
+                    "24",
+                  ],
+                  { timeout: 20000 },
+                );
+              } else {
+                await run(
+                  state.engineInfo.ffmpeg,
+                  [
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=black:s=640x360:r=30:d=0.2",
+                    "-frames:v",
+                    "3",
+                    "-an",
+                    "-c:v",
+                    e.id,
+                    "-pix_fmt",
+                    e.codec === "prores"
+                      ? "yuv422p10le"
+                      : "yuv420p" + (depth === 10 ? "10le" : ""),
+                    ...(e.id === "libsvtav1" ? ["-preset", "12"] : []),
+                    "-f",
+                    "null",
+                    "-",
+                  ],
+                  { timeout: 20000 },
+                );
+              }
+              depths.push(depth);
+            } catch (err) {
+              state.detectionLog +=
+                e.label +
+                " " +
+                depth +
+                "-bit：" +
+                err.message.slice(-800) +
+                "\n";
+            }
+          }
+          if (depths.length) {
+            let alpha = false;
+            if (e.id === "nvencc:hevc") {
+              try {
+                const source = path.join(dir, "alpha.mkv");
+                await run(
+                  state.engineInfo.ffmpeg,
+                  [
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=red:s=640x360:r=30:d=0.1,format=yuva444p,geq=a=128:lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)'",
+                    "-c:v",
+                    "ffv1",
+                    source,
+                  ],
+                  { timeout: 15000 },
+                );
+                const output = path.join(dir, "alpha-hevc.mov");
+                await run(
+                  state.engineInfo.nvencc,
+                  [
+                    "--avsw",
+                    "-i",
+                    source,
+                    "-o",
+                    output,
+                    "--codec",
+                    "hevc",
+                    "--output-depth",
+                    "8",
+                    "--output-csp",
+                    "yuva420",
+                    "--alpha-channel-mode",
+                    "straight",
+                    "--cqp",
+                    "24",
+                  ],
+                  { timeout: 20000 },
+                );
+                const traced = await run(
+                  state.engineInfo.ffmpeg,
+                  [
+                    "-i",
+                    output,
+                    "-map",
+                    "0:v:0",
+                    "-c",
+                    "copy",
+                    "-bsf:v",
+                    "trace_headers",
+                    "-f",
+                    "null",
+                    "-",
+                  ],
+                  { timeout: 15000 },
+                );
+                alpha =
+                  /Alpha Channel Information/.test(traced.stderr) &&
+                  /alpha_channel_bit_depth_minus8[^\n]*= 0/.test(traced.stderr);
+              } catch (err) {
+                state.detectionLog +=
+                  "HEVC Alpha：" + err.message.slice(-1000) + "\n";
+              }
+            }
+            state.engines.push({ ...e, depths, alpha });
+          }
+          emit();
+        }
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+      if (key && !disposed && state.engines.length)
+        writeDetectionCache(key, state.detectionLog.slice(logStart));
+    })()
+      .catch((e) => {
+        state.notice = "检测未完成：" + e.message;
+      })
+      .finally(() => {
+        state.detecting = false;
+        detectPromise = null;
+        emit();
+      });
+    return detectPromise;
+  }
+  async function add(paths) {
+    if (!Array.isArray(paths) || paths.length > 1000)
+      throw Error("请选择最多 1000 个视频文件");
+    await locate();
+    for (const input of paths) {
+      if (typeof input !== "string" || !path.isAbsolute(input))
+        throw Error("素材必须为绝对路径");
+      const resolved = path.resolve(input);
+      if (
+        state.jobs.some((j) => j.path.toLowerCase() === resolved.toLowerCase())
+      ) {
+        state.notice = "已跳过重复素材：" + path.basename(input);
+        continue;
+      }
+      const job = {
+        id: crypto.randomUUID(),
+        path: resolved,
+        name: path.basename(input),
+        status: "probing",
+        progress: 0,
+      };
+      state.jobs.push(job);
+      emit();
+      try {
+        if (!state.engineInfo.ffprobe)
+          throw Error("未找到 ffprobe，无法读取素材");
+        const stat = fs.statSync(input);
+        if (!stat.isFile()) throw Error("输入不是文件");
+        const r = await run(
+          state.engineInfo.ffprobe,
+          [
+            "-v",
+            "error",
+            "-show_streams",
+            "-show_format",
+            "-of",
+            "json",
+            input,
+          ],
+          { timeout: 30000 },
+        );
+        job.meta = core.metadata(JSON.parse(r.stdout));
+        // Stream rates often both say 30/1 even when individual timestamps vary.
+        // A bounded decode sample establishes positive VFR evidence without
+        // scanning an entire multi-hour source during import.
+        try {
+          const frames = await run(
+            state.engineInfo.ffprobe,
+            [
+              "-v",
+              "error",
+              "-select_streams",
+              "v:0",
+              "-read_intervals",
+              "%+#120",
+              "-show_entries",
+              "frame=best_effort_timestamp_time",
+              "-of",
+              "json",
+              input,
+            ],
+            { timeout: 15000 },
+          );
+          const ts = (JSON.parse(frames.stdout).frames || [])
+            .map((f) => Number(f.best_effort_timestamp_time))
+            .filter(Number.isFinite);
+          const gaps = ts
+            .slice(1)
+            .map((v, i) => v - ts[i])
+            .filter((v) => v > 0)
+            .sort((a, b) => a - b);
+          if (gaps.length > 2) {
+            const median = gaps[Math.floor(gaps.length / 2)];
+            job.meta.vfr ||= gaps.some(
+              (g) => Math.abs(g - median) > Math.max(0.002, median * 0.1),
+            );
+          }
+        } catch (e) {
+          job.log = "帧时间戳抽样未完成：" + e.message;
+        }
+        job.meta.size = stat.size;
+        job.status = "ready";
+      } catch (e) {
+        job.status = "invalid";
+        job.error = "素材探测失败：" + e.message;
+      }
+      emit();
+    }
+    return clone(state);
+  }
+  function requireJob(id) {
+    const j = state.jobs.find((j) => j.id === id);
+    if (!j) throw Error("未找到此任务");
+    return j;
+  }
+  function preview(job, s = state.settings) {
+    const errors = core.validate(s, job.meta);
+    if (
+      (s.vsr || s.vfg) &&
+      (!state.enhancements.verified ||
+        state.enhancements.signature !== enhancementSignature(s))
+    )
+      errors.push("RTX 设置尚未通过本机验证，请在 RTX 增强页验证所选设置");
+    if (!job.meta) errors.push("素材信息尚未读取成功");
+    if (!state.engineInfo.ffmpeg) errors.push("未找到 FFmpeg");
+    if (s.encoder.startsWith("nvencc:") && !state.engineInfo.nvencc)
+      errors.push("未找到 NVEncC");
+    if (!state.detecting && !state.engines.some((e) => e.id === s.encoder))
+      errors.push("编码器当前不可用，请重新检测或选择其他编码器");
+    const available = state.engines.find((e) => e.id === s.encoder);
+    if (available && !available.depths.includes(s.bitDepth))
+      errors.push("此编码器未通过所选位深的实测");
+    if (
+      s.encoder === "nvencc:hevc" &&
+      s.alphaMode === "preserve" &&
+      !available?.alpha
+    )
+      errors.push(
+        "本机 NVEncC HEVC Alpha 试编码未通过；请检查显卡支持和驱动，或选择 ProRes 4444 / VP9",
+      );
+    let paths = { output: "" },
+      commands = [];
+    try {
+      paths = core.outputPaths(
+        job.path,
+        s,
+        state.jobs.indexOf(job) + 1,
+        fs.existsSync,
+      );
+      if (job.meta && errors.length === 0)
+        commands = core.buildCommands(job, s, state.engineInfo, paths);
+    } catch (e) {
+      errors.push(e.message);
+    }
+    const target = (() => {
+      try {
+        return core.parseFps(s.fps)?.value;
+      } catch {
+        return null;
+      }
+    })();
+    const meta = job.meta;
+    const summary = meta
+      ? `${meta.width} × ${meta.height} · ${meta.fpsText || "未知"}${target ? " → " + s.fps : ""} FPS / ${core.ENGINES.find((e) => e.id === s.encoder)?.label || s.encoder} · ${s.bitDepth}-bit · ${s.audio === "none" ? "无音频" : s.audio.toUpperCase()} · ${s.container.toUpperCase()}${target > meta.fps ? "；通过重复帧提高帧率，不生成新的运动细节" : ""}${s.encoder.startsWith("nvencc:") ? "；NVEncC 预处理需要额外临时磁盘空间" : ""}`
+      : "";
+    return {
+      ...paths,
+      dimensions: meta ? core.dimensions(s, meta) : null,
+      summary,
+      command: core.commandText(commands, { prepare: true }),
+      errors: [...new Set(errors)],
+    };
+  }
+  function commit(tmp, dest) {
+    try {
+      fs.linkSync(tmp, dest);
+    } catch (e) {
+      if (!["ENOTSUP", "ENOSYS", "EPERM", "EXDEV", "EINVAL"].includes(e.code))
+        throw e;
+      // Removable exFAT/FAT volumes have no hard links. COPYFILE_EXCL still
+      // refuses existing destinations; Node removes incomplete copies on error.
+      fs.copyFileSync(tmp, dest, fs.constants.COPYFILE_EXCL);
+    }
+    fs.unlinkSync(tmp);
+  }
+  function append(job, text) {
+    job.log = ((job.log || "") + text).slice(-200000);
+    const pieces = pendingLogs.get(job.id) || [];
+    pieces.push(text);
+    pendingLogs.set(job.id, pieces);
+  }
+  async function encode(job) {
+    const s = job.settings;
+    const maskOnly =
+      job.status === "partial" && job.output && fs.existsSync(job.output);
+    job.status = "encoding";
+    job.error = undefined;
+    job.progress = 0;
+    job.startedAt = Date.now();
+    job.stage = maskOnly ? "重试 Alpha 遮罩" : "准备";
+    emit();
+    let tempDir;
+    try {
+      const errors = core.validate(s, job.meta);
+      if (
+        (s.vsr || s.vfg) &&
+        (!state.enhancements.verified ||
+          state.enhancements.signature !== enhancementSignature(s))
+      )
+        errors.push("RTX 设置未通过本机验证");
+      if (errors.length) throw Error(errors.join("；"));
+      const engine = state.engines.find((e) => e.id === s.encoder);
+      if (!engine || !engine.depths.includes(s.bitDepth))
+        throw Error("所选编码器或位深未通过本机试编码，请调整参数");
+      if (
+        s.encoder === "nvencc:hevc" &&
+        s.alphaMode === "preserve" &&
+        !engine.alpha
+      )
+        throw Error("本机未通过 HEVC Alpha 试编码，已停止以避免丢失透明通道");
+      let paths = maskOnly
+        ? { output: job.output, maskOutput: job.maskOutput }
+        : core.outputPaths(
+            job.path,
+            s,
+            state.jobs.indexOf(job) + 1,
+            fs.existsSync,
+          );
+      const dir = path.dirname(paths.output);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.accessSync(dir, fs.constants.W_OK);
+      tempDir = fs.mkdtempSync(path.join(dir, ".mmd-"));
+      const temps = {
+        output: path.join(tempDir, "video." + s.container),
+        maskOutput: s.alphaMask
+          ? path.join(tempDir, "mask." + s.container)
+          : undefined,
+      };
+      let commands = core.buildCommands(job, s, state.engineInfo, temps);
+      if (maskOnly) commands = commands.filter((c) => c.mask);
+      job.output = maskOnly ? job.output : undefined;
+      job.maskOutput = paths.maskOutput;
+      for (let i = 0; i < commands.length; i++) {
+        if (stopped) throw Error("已取消");
+        const c = commands[i];
+        job.stage = c.stage;
+        append(job, "\n" + core.commandText([c]) + "\n");
+        emit();
+        let progressBuffer = "";
+        await run(c.exe, c.args, {
+          encoding: true,
+          onData: (t, stream) => {
+            append(job, t);
+            progressBuffer = (progressBuffer + t).slice(-8192);
+            const matches = [...progressBuffer.matchAll(/out_time_us=(\d+)/g)];
+            if (matches.length && job.meta.duration) {
+              const seconds = Number(matches.at(-1)[1]) / 1000000;
+              job.progress = Math.min(
+                99,
+                Math.max(
+                  job.progress,
+                  (100 * (i + Math.min(1, seconds / job.meta.duration))) /
+                    commands.length,
+                ),
+              );
+            } else if (c.exe === state.engineInfo.nvencc) {
+              const m = t.match(/(\d+(?:\.\d+)?)%/);
+              if (m)
+                job.progress = Math.min(
+                  99,
+                  (100 * (i + Number(m[1]) / 100)) / commands.length,
+                );
+            }
+            job.elapsed = (Date.now() - job.startedAt) / 1000;
+            emit();
+          },
+        });
+        if (c.output === temps.output) {
+          try {
+            commit(temps.output, paths.output);
+          } catch (e) {
+            if (e.code !== "EEXIST") throw e;
+            paths = core.outputPaths(
+              job.path,
+              s,
+              state.jobs.indexOf(job) + 1,
+              fs.existsSync,
+            );
+            commit(temps.output, paths.output);
+            job.maskOutput = paths.maskOutput;
+          }
+          job.output = paths.output;
+        }
+        if (c.mask) {
+          commit(temps.maskOutput, paths.maskOutput);
+          job.maskOutput = paths.maskOutput;
+        }
+      }
+      job.status = "done";
+      job.progress = 100;
+      job.stage = "完成";
+    } catch (e) {
+      append(job, "\n" + e.message + "\n");
+      job.status =
+        job.output && fs.existsSync(job.output)
+          ? "partial"
+          : stopped
+            ? "cancelled"
+            : "failed";
+      job.error = stopped ? "任务已取消" : e.message;
+      job.stage =
+        job.status === "partial" ? "主视频已完成，遮罩未完成" : "已停止";
+    } finally {
+      if (tempDir)
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch (e) {
+          append(job, "临时文件清理失败：" + e.message);
+        }
+      job.elapsed = (Date.now() - job.startedAt) / 1000;
+      emit();
+    }
+  }
+  async function queue(jobs) {
+    if (tools.state.busy || state.enhancements.busy)
+      throw Error("工具管理或 RTX 验证中，请稍后处理队列");
+    if (state.running) throw Error("队列正在运行");
+    // Validate the frozen per-job settings first; a bad alpha source must not
+    // prevent valid items from continuing, or be mislabeled as an engine fault.
+    jobs = jobs.filter((j) => {
+      j.settings = clone(j._retrySettings || state.settings);
+      const errors = core.validate(j.settings, j.meta);
+      if (!errors.length) return true;
+      j.status = "invalid";
+      j.error = errors.join("；");
+      return false;
+    });
+    if (!jobs.length) {
+      state.notice = "没有可编码的待处理任务";
+      emit();
+      return;
+    }
+    state.running = true;
+    stopped = false;
+    emit();
+    (async () => {
+      await detectPromise;
+      for (const job of jobs) {
+        if (stopped) {
+          if (job.status !== "partial") job.status = "cancelled";
+          continue;
+        }
+        await encode(job);
+      }
+    })()
+      .catch((e) => (state.notice = e.message))
+      .finally(() => {
+        state.running = false;
+        flushEvidence();
+        emit();
+      });
+  }
+  async function invoke(action, payload = {}) {
+    switch (action) {
+      case "state":
+        return clone(state);
+      case "details": {
+        if (tools.state.busy) throw Error("工具安装中，请稍后查看详情");
+        const job = requireJob(payload.id);
+        await locate();
+        const result = {};
+        for (const [key, file] of [
+          ["before", job.path],
+          ["after", job.output],
+          ["mask", job.maskOutput],
+        ]) {
+          if (!file || !fs.existsSync(file)) {
+            result[key] = {
+              message: key === "before" ? "源文件不存在" : "尚未生成文件",
+            };
+            continue;
+          }
+          try {
+            const r = await run(
+              state.engineInfo.ffprobe,
+              [
+                "-v",
+                "error",
+                "-show_streams",
+                "-show_format",
+                "-of",
+                "json",
+                file,
+              ],
+              { timeout: 30000 },
+            );
+            result[key] = { path: file, ...JSON.parse(r.stdout) };
+          } catch (e) {
+            result[key] = {
+              path: file,
+              message: "无法读取实际文件：" + e.message,
+            };
+          }
+        }
+        return result;
+      }
+      case "mediaSuggest":
+        return media.suggestOutput(
+          payload || {},
+          mediaLocation(payload || {}),
+          fs.existsSync,
+        );
+      case "mediaAdd": {
+        for (const file of payload?.paths || []) {
+          if (typeof file !== "string" || !path.isAbsolute(file)) continue;
+          let stat;
+          try {
+            stat = fs.statSync(file);
+          } catch {
+            continue;
+          }
+          if (!stat.isFile()) continue;
+          if (
+            state.mediaJobs.some(
+              (j) =>
+                j.status === "ready" &&
+                j.path.toLowerCase() === file.toLowerCase(),
+            )
+          )
+            continue;
+          state.mediaJobs.push({
+            id: crypto.randomUUID(),
+            path: file,
+            name: path.basename(file),
+            size: stat.size,
+            status: "ready",
+          });
+        }
+        break;
+      }
+      case "mediaSetAudio": {
+        const job = requireMediaJob(payload?.id);
+        if (job.status === "running") throw Error("处理中的文件不能更换音频");
+        const file = payload?.path || "";
+        if (file && (!path.isAbsolute(file) || !fs.statSync(file).isFile()))
+          throw Error("请选择有效的音频文件");
+        if (file) job.audioPath = file;
+        else delete job.audioPath;
+        break;
+      }
+      case "mediaRemove": {
+        const job = requireMediaJob(payload?.id);
+        if (job.status === "running") throw Error("处理中的文件不能移除");
+        state.mediaJobs = state.mediaJobs.filter((j) => j !== job);
+        break;
+      }
+      case "mediaClearCompleted":
+        state.mediaJobs = state.mediaJobs.filter(
+          (j) => !["done", "cancelled"].includes(j.status),
+        );
+        break;
+      case "mediaRequeue": {
+        if (state.running) throw Error("请等待当前处理结束后再重新导出");
+        const job = requireMediaJob(payload?.id);
+        if (!["done", "cancelled", "failed"].includes(job.status))
+          throw Error("只有已完成、已取消或失败的文件可以重新导出");
+        for (const key of ["output", "error", "log", "elapsed", "startedAt"])
+          delete job[key];
+        job.status = "ready";
+        break;
+      }
+      case "mediaStart": {
+        if (
+          state.running ||
+          state.detecting ||
+          tools.state.busy ||
+          state.enhancements.busy ||
+          children.size
+        )
+          throw Error("请等待当前任务结束");
+        const options = payload || {};
+        if (!["audio", "video", "merge"].includes(options.operation))
+          throw Error("请选择提取音频、提取视频或音视频合并");
+        if (
+          options.location === "custom" &&
+          !(
+            typeof options.outputDir === "string" &&
+            path.isAbsolute(options.outputDir)
+          )
+        )
+          throw Error("请选择有效的自定义输出目录");
+        await locate();
+        if (!state.engineInfo.ffmpeg || !state.engineInfo.ffprobe)
+          throw Error("请先安装 FFmpeg / ffprobe");
+        const jobs = state.mediaJobs.filter((j) => j.status === "ready");
+        if (!jobs.length) throw Error("没有待处理的文件");
+        state.running = true;
+        stopped = false;
+        emit();
+        (async () => {
+          for (const job of jobs) {
+            if (stopped) {
+              job.status = "cancelled";
+              continue;
+            }
+            await runMediaJob(job, options);
+          }
+        })()
+          .catch((e) => (state.notice = e.message))
+          .finally(() => {
+            state.running = false;
+            emit();
+          });
+        break;
+      }
+      case "testEnhancements": {
+        if (
+          state.running ||
+          state.detecting ||
+          tools.state.busy ||
+          state.enhancements.busy ||
+          children.size
+        )
+          throw Error("请等待当前任务结束");
+        const s = { ...state.settings, ...schema(payload.settings || {}) };
+        await locate();
+        state.enhancements = {
+          busy: true,
+          signature: enhancementSignature(s),
+          verified: false,
+          message: "正在用所选设置执行 RTX 试编码…",
+        };
+        emit();
+        try {
+          state.detectionLog +=
+            "\n" + (await probeEnhancements(s, state.engineInfo, run));
+          state.enhancements.verified = true;
+          state.enhancements.message = "所选 RTX 设置已通过本机试编码";
+        } catch (e) {
+          state.enhancements.message =
+            "RTX 验证失败：" +
+            e.message +
+            "。请检查驱动、NVIDIA VFX SDK 运行库与模型";
+          state.detectionLog += "\n" + state.enhancements.message;
+          throw e;
+        } finally {
+          state.enhancements.busy = false;
+          emit();
+        }
+        break;
+      }
+      case "compatibility":
+        return core.compatibility(
+          { ...state.settings, ...schema(payload.settings || {}) },
+          state.engines,
+        );
+      case "checkTools":
+      case "installTools":
+        if (
+          state.running ||
+          state.detecting ||
+          state.enhancements.busy ||
+          children.size
+        )
+          throw Error("请等待编码、探测和硬件检测结束后管理工具");
+        try {
+          await tools.run(action === "installTools");
+        } finally {
+          if (action === "installTools") {
+            state.enhancements.verified = false;
+            state.enhancements.signature = "";
+            state.enhancements.message = "工具已重新检查，请重新验证 RTX 设置";
+            locatePromise = null;
+            await detect({ force: true });
+          }
+        }
+        break;
+      case "setToolsRoot": {
+        if (toolsRoot) throw Error("安装位置由环境变量指定，不能在软件中更改");
+        if (
+          state.running ||
+          state.detecting ||
+          state.enhancements.busy ||
+          children.size
+        )
+          throw Error("请等待编码、探测和硬件检测结束后更改安装位置");
+        const target = payload?.root || DEFAULT_ROOT;
+        tools.relocate(target);
+        if (path.resolve(target) === path.resolve(DEFAULT_ROOT))
+          fs.rmSync(toolsLocationFile, { force: true });
+        else {
+          fs.mkdirSync(dataDir, { recursive: true });
+          fs.writeFileSync(
+            toolsLocationFile,
+            JSON.stringify({ root: path.resolve(target) }, null, 2),
+          );
+        }
+        state.tools = tools.state;
+        locatePromise = null;
+        await detect({ force: true });
+        break;
+      }
+      case "detect":
+        if (tools.state.busy) throw Error("工具安装中，请稍后重新检测");
+        await detect({ force: true });
+        break;
+      case "add":
+        if (state.enhancements.busy) throw Error("RTX 验证中，请稍后添加素材");
+        if (tools.state.busy) throw Error("工具安装中，请稍后添加素材");
+        return add(payload.paths);
+      case "remove": {
+        const job = requireJob(payload.id);
+        if (job.status === "encoding" || (state.running && job.settings))
+          throw Error("已提交任务不能在运行中移除");
+        state.jobs = state.jobs.filter((j) => j.id !== job.id);
+        break;
+      }
+      case "requeue": {
+        // Put a finished or cancelled item back in the queue; the next start
+        // freezes the current settings, and existing outputs get a numbered name.
+        if (state.running) throw Error("请等待当前队列结束后再重新导出");
+        const job = requireJob(payload.id);
+        if (!["done", "cancelled"].includes(job.status))
+          throw Error("只有已完成或已取消的任务可以重新导出");
+        if (!job.meta) throw Error("素材探测失败，请重新添加");
+        for (const key of [
+          "settings",
+          "output",
+          "maskOutput",
+          "error",
+          "stage",
+          "elapsed",
+          "startedAt",
+        ])
+          delete job[key];
+        job.status = "ready";
+        job.progress = 0;
+        break;
+      }
+      case "clearCompleted":
+        state.jobs = state.jobs.filter(
+          (j) => !["done", "cancelled"].includes(j.status),
+        );
+        break;
+      case "settings":
+        schema(payload.patch);
+        state.settings = { ...state.settings, ...payload.patch };
+        if (
+          state.enhancements.signature !== enhancementSignature(state.settings)
+        ) {
+          state.enhancements.verified = false;
+          if (state.settings.vsr || state.settings.vfg)
+            state.enhancements.message = "RTX 设置已更改，请重新验证本机设置";
+        }
+        persist();
+        break;
+      case "preview":
+        return preview(requireJob(payload.id));
+      case "logs":
+        return payload.id
+          ? requireJob(payload.id).log || "暂无日志"
+          : state.detectionLog;
+      case "start":
+        if (state.enhancements.busy) throw Error("RTX 验证中，请稍后开始编码");
+        if (tools.state.busy) throw Error("工具安装中，请稍后开始编码");
+        await locate();
+        if (state.detecting) await detectPromise;
+        await queue(
+          state.jobs.filter(
+            (j) => j.status === "ready" || (j.status === "invalid" && j.meta),
+          ),
+        );
+        break;
+      case "cancel":
+        stopped = true;
+        active?.kill();
+        break;
+      case "retry": {
+        if (state.running) throw Error("请等待当前队列停止");
+        const j = requireJob(payload.id);
+        if (!["failed", "partial", "cancelled", "invalid"].includes(j.status))
+          throw Error("此任务不需要重试");
+        if (!j.meta) throw Error("素材探测失败，请重新添加");
+        let s = clone(j.settings || state.settings);
+        if (payload.software) {
+          if (s.vsr || s.vfg)
+            throw Error(
+              "RTX 增强不能软件回退；请修复本机 RTX 功能，或明确关闭增强后重试",
+            );
+          if (s.alphaMode === "preserve" && s.encoder === "nvencc:hevc")
+            throw Error(
+              "HEVC Alpha 无软件回退；请修复 NVEncC，或明确改选 ProRes 4444 / VP9 后重试",
+            );
+          const e = core.ENGINES.find((e) => e.id === s.encoder);
+          s.encoder =
+            {
+              h264: "libx264",
+              hevc: "libx265",
+              av1: "libsvtav1",
+              vp9: "libvpx-vp9",
+              prores: "prores_ks",
+            }[e?.codec] || "libx264";
+          s.quality = 18;
+          s.preset = s.encoder === "libsvtav1" ? "6" : "medium";
+          s.rateControl = "quality";
+          s.lookahead = 0;
+          s.lookaheadLevel = 0;
+          state.notice = "软件重试使用 CRF 18；CQ 与 CRF 数值不等效";
+        } else if (j.status !== "partial") s = clone(state.settings);
+        const errors = core.validate(s, j.meta);
+        if (errors.length) throw Error(errors.join("；"));
+        j._retrySettings = s;
+        await queue([j]);
+        delete j._retrySettings;
+        break;
+      }
+      case "savePreset": {
+        const valid = presetValid({
+          name: payload.name,
+          settings: state.settings,
+        });
+        if (
+          state.presets.some(
+            (p) =>
+              p.id !== payload.id &&
+              p.name.toLocaleLowerCase() === valid.name.toLocaleLowerCase(),
+          )
+        )
+          throw Error("已存在同名预设，请使用其他名称");
+        if (payload.id) {
+          const p = state.presets.find((x) => x.id === payload.id);
+          if (!p || p.builtin) throw Error("内置预设只读，请另存为");
+          valid.id = p.id;
+          state.presets = state.presets.map((x) => (x.id === p.id ? valid : x));
+        } else state.presets.push(valid);
+        state.settings.presetName = valid.name;
+        persist();
+        break;
+      }
+      case "renamePreset": {
+        const p = state.presets.find((p) => p.id === payload.id);
+        if (!p || p.builtin) throw Error("内置预设不能重命名");
+        const renamed = presetValid({
+          name: payload.name,
+          settings: p.settings,
+        });
+        if (
+          state.presets.some(
+            (x) =>
+              x.id !== p.id &&
+              x.name.toLocaleLowerCase() === renamed.name.toLocaleLowerCase(),
+          )
+        )
+          throw Error("已存在同名预设，请使用其他名称");
+        p.name = renamed.name;
+        p.settings.presetName = renamed.name;
+        persist();
+        break;
+      }
+      case "applyPreset": {
+        const p = state.presets.find((x) => x.id === payload.id);
+        if (!p) throw Error("未找到预设");
+        const output = {
+          outputMode: state.settings.outputMode,
+          outputDir: state.settings.outputDir,
+        };
+        state.settings = { ...clone(p.settings), ...output };
+        persist();
+        break;
+      }
+      case "deletePreset": {
+        const p = state.presets.find((x) => x.id === payload.id);
+        if (!p || p.builtin) throw Error("内置预设不能删除");
+        state.presets = state.presets.filter((x) => x.id !== p.id);
+        persist();
+        break;
+      }
+      case "importPresets": {
+        if (!Array.isArray(payload.presets) || payload.presets.length > 200)
+          throw Error("预设文件格式无效或超过 200 项");
+        const incoming = payload.presets.map(presetValid);
+        const names = new Set(
+          state.presets.map((p) => p.name.toLocaleLowerCase()),
+        );
+        for (const p of incoming) {
+          const key = p.name.toLocaleLowerCase();
+          if (names.has(key)) throw Error("已存在同名预设：" + p.name);
+          names.add(key);
+        }
+        state.presets.push(...incoming);
+        persist();
+        break;
+      }
+      default:
+        throw Error("不支持的操作：" + action);
+    }
+    emit();
+    return clone(state);
+  }
+  setImmediate(() => {
+    if (!disposed) detect();
+  });
+  return {
+    invoke,
+    getState: () => clone(state),
+    dispose() {
+      flushEvidence();
+      disposed = true;
+      stopped = true;
+      for (const child of children) child.kill();
+    },
+  };
+}
+module.exports = { createService };

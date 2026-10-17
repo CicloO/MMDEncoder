@@ -1,0 +1,13 @@
+node_modules/
+.pnpm-store/
+.cache/
+dist/
+release/
+verification/
+data/
+work/
+*.log
+*.tmp
+premium-audit.json
+*.zip
+*.zip.sha256

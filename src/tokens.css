@@ -1,0 +1,37 @@
+/* Generated from DESIGN.md. */
+:root {
+  --color-background: #171b22;
+  --color-surface: #202630;
+  --color-raised: #29313e;
+  --color-border: #3d4858;
+  --color-text: #eef2f8;
+  --color-muted: #a9b7c9;
+  --color-primary: #84b4ff;
+  --color-onPrimary: #14243c;
+  --color-success: #89d6b0;
+  --color-warning: #f1c888;
+  --color-danger: #ffa7ac;
+  --color-scrollbar: #63738a;
+  --font-body: Segoe UI, Microsoft YaHei UI, sans-serif;
+  --font-display: Bahnschrift, Microsoft YaHei UI, sans-serif;
+  --font-mono: Cascadia Code, Consolas, monospace;
+  --radius-control: 8px;
+  --radius-panel: 12px;
+  --space-small: 8px;
+  --space-medium: 16px;
+  --space-large: 24px;
+}
+:root[data-theme="light"] {
+  --color-background: #f3f5f8;
+  --color-surface: #ffffff;
+  --color-raised: #e8edf4;
+  --color-border: #bcc7d6;
+  --color-text: #1c293c;
+  --color-muted: #526279;
+  --color-primary: #205caa;
+  --color-onPrimary: #ffffff;
+  --color-success: #246745;
+  --color-warning: #805400;
+  --color-danger: #b12f43;
+  --color-scrollbar: #74859b;
+}
