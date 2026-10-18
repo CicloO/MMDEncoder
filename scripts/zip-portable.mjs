@@ -20,6 +20,20 @@ if (fs.existsSync(archive)) {
   fs.rmSync(archive);
   fs.rmSync(archive + ".sha256", { force: true });
 }
+// Never zip a stale or half-built folder (e.g. after a failed package step).
+const built = (() => {
+  try {
+    return JSON.parse(
+      fs.readFileSync(path.join(folder, "resources", "app", "package.json")),
+    ).version;
+  } catch {
+    return "";
+  }
+})();
+if (built !== version || !fs.existsSync(path.join(folder, "MMDEncoder.exe")))
+  throw Error(
+    `发行目录不是刚打好的 ${version}（目录内为 ${built || "未知"}），请先运行打包`,
+  );
 // The user's data folder and an update in progress stay out of the ZIP.
 const LOCAL = ["data", ".update"];
 const names = [];
@@ -62,7 +76,9 @@ const listed = execFileSync(
   { encoding: "utf8", windowsHide: true },
 );
 const local = new RegExp(
-  "^Path = [^\\\\/]+[\\\\/](?:" + LOCAL.map((n) => n.replace(".", "\\.")).join("|") + ")(?:[\\\\/]|$)",
+  "^Path = [^\\\\/]+[\\\\/](?:" +
+    LOCAL.map((n) => n.replace(".", "\\.")).join("|") +
+    ")(?:[\\\\/]|$)",
   "m",
 );
 if (local.test(listed)) {

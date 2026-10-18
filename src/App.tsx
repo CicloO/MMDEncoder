@@ -217,7 +217,7 @@ export default function App() {
   useEffect(() => {
     if (!window.encoder) {
       setError(
-        "请通过 MMD Encoder.exe 启动桌面应用，以访问本地视频和编码引擎。",
+        "请通过 MMDEncoder.exe 启动桌面应用，以访问本地视频和编码引擎。",
       );
       return;
     }
@@ -545,7 +545,7 @@ export default function App() {
         <div className="brand-icon">
           <Layers />
         </div>
-        <h1>MMD Encoder</h1>
+        <h1>MMDEncoder</h1>
         {error ? (
           <p role="alert">{error}</p>
         ) : (
@@ -595,7 +595,7 @@ export default function App() {
           </span>
           <div>
             <h1>
-              MMD <span>Encoder</span>
+              MMD<span>Encoder</span>
             </h1>
             <p>让每一帧，恰到好处。</p>
           </div>
@@ -1907,7 +1907,7 @@ export default function App() {
           <h3>软件更新</h3>
           <div className="status-row">
             <p>
-              MMD Encoder {__APP_VERSION__} ·{" "}
+              MMDEncoder {__APP_VERSION__} ·{" "}
               {update.checking
                 ? "正在检查更新…"
                 : update.error
@@ -2267,7 +2267,7 @@ export default function App() {
         error={error}
         open={modal === "close"}
         onClose={() => setModal("")}
-        title="退出 MMD Encoder"
+        title="退出 MMDEncoder"
         description="队列仍在运行。退出将取消未完成任务，保留原视频和已完成输出。"
       >
         <div className="modal-actions">

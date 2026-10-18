@@ -1,4 +1,4 @@
-# MMD Encoder
+# MMDEncoder
 
 > [!NOTE]
 > 这是作者的个人项目，不做宣传，也不承诺维护和支持。如有反馈，请单独告知作者。使用条款以 [MIT 许可证](LICENSE) 为准。
@@ -27,7 +27,7 @@
 ## 安装与使用
 
 1. 从 [Releases](https://github.com/CicloO/MMDEncoder/releases) 下载 `MMDEncoder-<版本>-win-x64.zip`，解压到任意目录。
-2. 运行 `MMD Encoder.exe`。
+2. 运行 `MMDEncoder.exe`。
 3. 第一次使用时，在“编码引擎”中点击“下载并安装最新工具”。
 4. 添加视频，选择预设，检查预计结果后开始压制。
 

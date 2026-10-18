@@ -22,7 +22,7 @@ const base = app.isPackaged
 const engineDir = process.env.MMD_ENCODER_ENGINES;
 const dataDir = process.env.MMD_ENCODER_DATA || path.join(base, "data");
 app.setPath("userData", path.join(dataDir, "electron"));
-app.setName("MMD Encoder");
+app.setName("MMDEncoder");
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -41,7 +41,7 @@ else {
         height: 900,
         minWidth: 650,
         minHeight: 600,
-        title: "MMD Encoder",
+        title: "MMDEncoder",
         icon: path.join(__dirname, "../assets/icon.ico"),
         backgroundColor: "#f3f5f8",
         show: !process.env.MMD_ENCODER_TEST,

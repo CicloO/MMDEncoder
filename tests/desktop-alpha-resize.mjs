@@ -14,7 +14,7 @@ const input = JSON.parse(
 const app = await electron.launch({
   executablePath:
     process.env.MMD_PACKAGE_EXE ||
-    path.resolve(root, "release/MMDEncoder/MMD Encoder.exe"),
+    path.resolve(root, "release/MMDEncoder/MMDEncoder.exe"),
   env: {
     ...process.env,
     MMD_ENCODER_DATA: data,

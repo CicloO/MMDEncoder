@@ -8,15 +8,16 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFile, spawn } = require("node:child_process");
 
-const EXE = "MMD Encoder.exe";
+const EXE = "MMDEncoder.exe";
 const HELPER = path.join("resources", "app", "backend", "install-update.cjs");
 // Files and folders in the program directory the swap leaves alone.
 const KEEP = ["data", ".update"];
 
 // True when this looks like an extracted portable build we may rewrite.
+// (Builds before the rename shipped "MMD Encoder.exe".)
 function isPortableDir(dir) {
   return (
-    fs.existsSync(path.join(dir, EXE)) &&
+    [EXE, "MMD Encoder.exe"].some((n) => fs.existsSync(path.join(dir, n))) &&
     fs.existsSync(path.join(dir, "resources", "app", "package.json"))
   );
 }
@@ -109,7 +110,7 @@ function createUpdater({
       fs.rmSync(zip, { force: true });
       const newDir = path.join(unpacked, "MMDEncoder");
       if (!isPortableDir(newDir))
-        throw Error("压缩包内容不是 MMD Encoder 便携版");
+        throw Error("压缩包内容不是 MMDEncoder 便携版");
       if (!fs.existsSync(path.join(newDir, HELPER)))
         throw Error("新版本不支持自动更新，请打开下载页手动更新");
       const pkg = JSON.parse(

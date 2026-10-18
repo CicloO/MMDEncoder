@@ -15,19 +15,25 @@ const version = JSON.parse(
 // folder there is moved aside during the build and put back afterwards.
 const keep = path.join(path.dirname(dest), ".data-keep");
 let keptData = false;
+// Builds before the rename shipped "MMD Encoder.exe"; both names count as ours.
+const EXE_NAMES = ["MMDEncoder.exe", "MMD Encoder.exe"];
 async function replacePrevious() {
-  const running = execFileSync(
-    "tasklist",
-    ["/FI", "IMAGENAME eq MMD Encoder.exe", "/NH"],
-    { encoding: "utf8", windowsHide: true },
-  );
-  if (running.includes("MMD Encoder.exe"))
-    throw new Error("MMD Encoder 正在运行，请先关闭再打包");
-  try {
-    await fs.access(path.join(dest, "MMD Encoder.exe"));
-  } catch {
-    throw new Error("发行目录不是 MMD Encoder 便携版，请手动处理：" + dest);
+  for (const name of EXE_NAMES) {
+    const running = execFileSync(
+      "tasklist",
+      ["/FI", `IMAGENAME eq ${name}`, "/NH"],
+      { encoding: "utf8", windowsHide: true },
+    );
+    if (running.includes(name))
+      throw new Error("MMDEncoder 正在运行，请先关闭再打包");
   }
+  const entries = await fs.readdir(dest);
+  // An empty folder (or one holding only data) is fine; anything else must be our build.
+  if (
+    entries.some((n) => n !== "data" && n !== ".update") &&
+    !entries.some((n) => EXE_NAMES.includes(n))
+  )
+    throw new Error("发行目录不是 MMDEncoder 便携版，请手动处理：" + dest);
   try {
     await fs.access(keep);
     throw new Error("上次打包保留的数据还在，请先处理：" + keep);
@@ -40,7 +46,14 @@ async function replacePrevious() {
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
-  await fs.rm(dest, { recursive: true, force: true });
+  // Empty the folder instead of removing it: an Explorer window showing it keeps
+  // the folder itself locked, but not its contents.
+  for (const name of await fs.readdir(dest))
+    await fs.rm(path.join(dest, name), {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+    });
 }
 try {
   await fs.access(dest);
@@ -60,7 +73,7 @@ await fs.cp(electronDir, dest, {
 });
 await fs.rename(
   path.join(dest, "electron.exe"),
-  path.join(dest, "MMD Encoder.exe"),
+  path.join(dest, "MMDEncoder.exe"),
 );
 const appDir = path.join(dest, "resources", "app");
 for (const [from, to] of [
@@ -104,4 +117,4 @@ if (keptData) {
   await fs.rename(keep, path.join(dest, "data"));
   console.log("User data kept:", path.join(dest, "data"));
 }
-console.log("Portable app:", path.join(dest, "MMD Encoder.exe"));
+console.log("Portable app:", path.join(dest, "MMDEncoder.exe"));

@@ -45,7 +45,7 @@ async function launch() {
   const app = await electron.launch({
     executablePath:
       process.env.MMD_PACKAGE_EXE ||
-      path.resolve(root, "release/MMDEncoder/MMD Encoder.exe"),
+      path.resolve(root, "release/MMDEncoder/MMDEncoder.exe"),
     env,
     timeout: 60000,
   });

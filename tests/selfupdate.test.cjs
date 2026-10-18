@@ -11,7 +11,7 @@ const extractor = path.resolve(__dirname, "../assets/7za.exe");
 
 function portable(dir, version, extra = {}) {
   fs.mkdirSync(path.join(dir, "resources", "app"), { recursive: true });
-  fs.writeFileSync(path.join(dir, "MMD Encoder.exe"), "exe " + version);
+  fs.writeFileSync(path.join(dir, "MMDEncoder.exe"), "exe " + version);
   fs.writeFileSync(
     path.join(dir, "resources", "app", "package.json"),
     JSON.stringify({ version }),
@@ -119,7 +119,7 @@ test(
       await updater.download(info);
       assert.equal(updater.state.phase, "ready");
       assert.equal(
-        fs.readFileSync(path.join(appDir, "MMD Encoder.exe"), "utf8"),
+        fs.readFileSync(path.join(appDir, "MMDEncoder.exe"), "utf8"),
         "exe 1.0.0",
         "nothing changes before install",
       );
@@ -142,7 +142,7 @@ test(
       }
       assert.match(fs.readFileSync(log, "utf8"), /更新完成/);
       assert.equal(
-        fs.readFileSync(path.join(appDir, "MMD Encoder.exe"), "utf8"),
+        fs.readFileSync(path.join(appDir, "MMDEncoder.exe"), "utf8"),
         "exe 1.0.1",
       );
       assert.equal(

@@ -51,7 +51,7 @@ components:
     height: "38px"
 ---
 
-# MMD Encoder
+# MMDEncoder
 
 ## Overview
 

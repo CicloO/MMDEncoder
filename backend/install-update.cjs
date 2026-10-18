@@ -1,5 +1,5 @@
 "use strict";
-// Update helper, run by the NEW version's "MMD Encoder.exe" in Node mode
+// Update helper, run by the NEW version's "MMDEncoder.exe" in Node mode
 // (ELECTRON_RUN_AS_NODE) from <app>\.update\new. It waits for the old app to
 // exit, moves the old program files to <app>\.update\old, copies the new ones in
 // (copy, because this helper runs from them), keeps the data folder, and puts
@@ -11,7 +11,11 @@ const { spawn } = require("node:child_process");
 
 const job = JSON.parse(process.env.MMD_UPDATE_JOB || "{}");
 const { appDir, newDir, backup, pid, log, keep = [], relaunch = true } = job;
-const exe = path.join(appDir || "", "MMD Encoder.exe");
+// Relaunch whichever name the new version ships (it was "MMD Encoder.exe" before).
+const exeOf = () =>
+  ["MMDEncoder.exe", "MMD Encoder.exe"]
+    .map((n) => path.join(appDir || "", n))
+    .find((p) => fs.existsSync(p)) || path.join(appDir || "", "MMDEncoder.exe");
 
 function write(message) {
   try {
@@ -46,6 +50,7 @@ async function retry(action, what) {
 function start() {
   if (!relaunch) return;
   try {
+    const exe = exeOf();
     spawn(exe, [], { cwd: appDir, detached: true, stdio: "ignore" }).unref();
   } catch (e) {
     write("无法自动重新打开软件：" + e.message);
