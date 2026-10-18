@@ -10,8 +10,11 @@ const path = require("node:path");
 const fs = require("node:fs/promises");
 const { createService } = require("../backend/service.cjs");
 const { checkForUpdate, RELEASES_URL } = require("../backend/update.cjs");
+const { createUpdater } = require("../backend/selfupdate.cjs");
 let win,
   service,
+  updater,
+  updateInfo = null,
   quitting = false;
 const base = app.isPackaged
   ? path.dirname(app.getPath("exe"))
@@ -56,6 +59,13 @@ else {
       win.webContents.session.setPermissionRequestHandler(
         (_wc, _permission, callback) => callback(false),
       );
+      updater = createUpdater({
+        appDir: base,
+        version: app.getVersion(),
+        extractor: path.join(__dirname, "../assets/7za.exe"),
+        logDir: path.join(dataDir, "logs"),
+      });
+      if (app.isPackaged) updater.cleanup();
       service = createService({
         engineDir,
         dataDir,
@@ -223,8 +233,30 @@ else {
         }
         if (action === "engineFolder") return engineDir;
         if (action === "appVersion") return app.getVersion();
-        if (action === "checkAppUpdate")
-          return checkForUpdate(app.getVersion());
+        if (action === "checkAppUpdate") {
+          updateInfo = await checkForUpdate(app.getVersion());
+          const blocked = updater.supported();
+          return {
+            ...updateInfo,
+            canInstall: !!updateInfo.assets && !blocked,
+            installBlocked: blocked,
+          };
+        }
+        if (action === "appUpdateStatus") return { ...updater.state };
+        if (action === "downloadAppUpdate") {
+          await updater.download(updateInfo);
+          return { ...updater.state };
+        }
+        if (action === "installAppUpdate") {
+          const s = service.getState();
+          if (s.running || s.detecting || s.tools?.busy)
+            throw new Error("请等待当前压制、检测或工具安装结束后再更新");
+          updater.install();
+          quitting = true;
+          service.dispose();
+          app.quit();
+          return null;
+        }
         if (action === "openReleasePage") {
           const url = String(payload?.url || RELEASES_URL);
           if (url !== RELEASES_URL && !url.startsWith(RELEASES_URL + "/"))
@@ -258,6 +290,11 @@ else {
           "mediaRemove",
           "mediaClearCompleted",
           "mediaRequeue",
+          "hidePreset",
+          "reorderPresets",
+          "restoreBuiltinPresets",
+          "reorderJobs",
+          "mediaReorder",
           "setToolsRoot",
           "details",
           "detect",

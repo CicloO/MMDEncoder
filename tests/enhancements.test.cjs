@@ -82,34 +82,80 @@ test("RTX validation, exact NVIDIA modes, source scaling and frame multiplier", 
     !cmds[0].args.some((a) => typeof a === "string" && a.includes("w=1280")),
   );
 });
-test("platform presets pair hardware and software variants and retain personal preset schema", () => {
-  assert.equal(c.BUILTINS.length, 9);
+test("recommended presets pair hardware and software variants and scale by the long edge", () => {
+  assert.deepEqual(
+    c.BUILTINS.map((p) => p.name),
+    [
+      "默认 4K · 硬件",
+      "默认 4K · 软件",
+      "默认 1080p · 硬件",
+      "默认 1080p · 软件",
+      "保留 Alpha · ProRes 4444",
+      "分离 Alpha · H.264 MP4",
+    ],
+  );
   for (const p of c.BUILTINS) {
     assert.deepEqual(c.validate(p.settings), []);
     assert.equal(p.settings.fps, "source");
     assert.equal(p.settings.presetName, p.name);
-    if (p.id.endsWith("-sw")) {
-      assert.match(p.name, / · 软件$/);
-      assert.equal(p.settings.encoder, "libx264");
-      assert.equal(p.settings.preset, "medium");
-      const hw = c.BUILTINS.find((h) => h.id === p.id.slice(0, -3));
-      assert.equal(hw.name, p.name.replace("软件", "硬件"));
-      for (const k of ["width", "height", "resizeAxis", "audioBitrate"])
-        assert.equal(p.settings[k], hw.settings[k]);
-    } else {
-      assert.equal(p.settings.encoder, "h264_nvenc");
-      assert.equal(p.settings.preset, p.id === "builtin-x" ? "p7" : "p4");
-      assert.equal(p.settings.lookahead, 32);
-      assert.equal(p.settings.lookaheadLevel, 0);
-    }
+    assert.equal(p.builtin, true);
   }
   const byId = Object.fromEntries(c.BUILTINS.map((p) => [p.id, p.settings]));
-  assert.equal(byId["builtin-x"].bitrate, 20000);
-  assert.equal(byId["builtin-x"].rateControl, "bitrate");
-  assert.equal(byId["builtin-youtube"].quality, 27);
-  assert.equal(byId["builtin-youtube-sw"].quality, 19);
-  assert.equal(byId["builtin-bilibili4k-sw"].quality, 21);
-  assert.equal(byId["builtin-youtube"].audioBitrate, 384);
-  assert.equal(byId["builtin-tiktok"].resizeAxis, "height");
-  assert.equal(byId["builtin-tiktok"].height, 3840);
+  for (const id of ["4k", "1080"]) {
+    const hw = byId["builtin-" + id],
+      sw = byId["builtin-" + id + "-sw"];
+    assert.equal(hw.encoder, "h264_nvenc");
+    assert.equal(hw.preset, "p4");
+    assert.equal(hw.quality, 29);
+    assert.equal(hw.lookahead, 32);
+    assert.equal(sw.encoder, "libx264");
+    assert.equal(sw.preset, "medium");
+    assert.equal(sw.quality, 21);
+    for (const s of [hw, sw]) {
+      assert.equal(s.resizeMode, "long");
+      assert.equal(s.audioBitrate, 320);
+    }
+  }
+  // Long edge: landscape gets the width, portrait the height.
+  const k4 = byId["builtin-4k"];
+  assert.deepEqual(c.dimensions(k4, { width: 1920, height: 1080 }), {
+    width: 3840,
+    height: 2160,
+  });
+  assert.deepEqual(c.dimensions(k4, { width: 1080, height: 1920 }), {
+    width: 2160,
+    height: 3840,
+  });
+  assert.deepEqual(c.dimensions(k4, { width: 2560, height: 1080 }), {
+    width: 3840,
+    height: 1620,
+  });
+  assert.deepEqual(
+    c.dimensions(byId["builtin-1080"], { width: 1080, height: 1920 }),
+    { width: 1080, height: 1920 },
+  );
+  const alpha = byId["builtin-alpha"];
+  assert.equal(alpha.encoder, "prores_ks");
+  assert.equal(alpha.container, "mov");
+  assert.equal(alpha.quality, 8);
+  assert.equal(c.PRORES_QUALITY, 8);
+  const mask = byId["builtin-alpha-mask"];
+  assert.equal(mask.resizeMode, "source");
+  // Split uses the recommended hardware parameters.
+  for (const k of ["encoder", "quality", "preset", "lookahead", "audioBitrate"])
+    assert.equal(mask[k], byId["builtin-4k"][k]);
+  assert.equal(mask.container, "mp4");
+  assert.equal(mask.alphaMode, "discard");
+  assert.equal(mask.alphaMask, true);
+  // ProRes: quantizer 1–64 reaches FFmpeg, 0 keeps the encoder default.
+  const prores = { ...alpha, quality: 8 };
+  assert.deepEqual(c.validate(prores), []);
+  assert.ok(
+    c
+      .validate({ ...alpha, quality: 65 })
+      .some((e) => e.includes("ProRes 量化")),
+  );
+  assert.equal(alpha.alphaMode, "preserve");
+  assert.equal(alpha.resizeMode, "source");
+  assert.equal(c.ENGINES.find((e) => e.id === "libx264").label, "H.264 · CPU");
 });

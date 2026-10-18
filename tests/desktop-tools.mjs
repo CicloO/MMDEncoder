@@ -86,13 +86,12 @@ try {
   await page.selectOption("#encoder", "libx264");
   await page.getByRole("button", { name: "透明通道", exact: true }).click();
   await page.selectOption("#alphaMode", "preserve");
-  const preferred = await page.evaluate(async () => {
-    const s = await window.encoder.invoke("state");
-    return s.engines.some((e) => e.id === "nvencc:hevc" && e.alpha);
-  });
-  const label = preferred
-    ? "切换至 8-bit NVEncC HEVC Alpha"
-    : "切换至 ProRes 4444 Alpha";
+  // HEVC alpha is never offered as a fix; ProRes 4444 is.
+  const preferred = false;
+  await expect(
+    page.getByRole("button", { name: "切换至 8-bit NVEncC HEVC Alpha" }),
+  ).toHaveCount(0);
+  const label = "切换至 ProRes 4444 Alpha";
   await page.getByRole("button", { name: label, exact: true }).first().click();
   await expect
     .poll(() =>

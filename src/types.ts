@@ -53,6 +53,8 @@ export type Meta = {
     sampleRate: number;
     channels: number;
     channelLayout: string;
+    profile?: string;
+    bitRate?: number;
   };
 };
 export type Job = {
@@ -70,7 +72,18 @@ export type Job = {
   maskOutput?: string;
   settings?: Settings;
 };
+// Video metadata, or an audio-only summary for audio files on the media page.
+export type MediaMeta = Partial<Meta> & {
+  codec: string;
+  duration: number;
+  size: number;
+  audio?: Meta["audio"];
+  audioOnly?: boolean;
+  bitRate?: number;
+};
 export type MediaJob = {
+  meta?: MediaMeta;
+  metaError?: string;
   id: string;
   path: string;
   name: string;
@@ -86,6 +99,9 @@ export type Preset = {
   id: string;
   name: string;
   builtin: boolean;
+  // undefined = automatic (software built-ins hide while NVENC is available)
+  hidden?: boolean;
+  edited?: boolean;
   settings: Settings;
 };
 export type Engine = {

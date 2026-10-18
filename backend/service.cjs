@@ -115,6 +115,25 @@ function createService({
       state.notice = "日志或队列记录保存失败：" + e.message;
     }
   }
+  const deletedBuiltins = new Set();
+  // Saved entries this version cannot read; written back unchanged so a later
+  // version (or a fix) can still use them.
+  const unreadable = { presets: [], builtins: {} };
+  // Identifies the shipped definition of a built-in preset, so an edit made to
+  // one version of it is dropped once an update ships a different definition.
+  function builtinFingerprint(p) {
+    const shipped = core.BUILTINS.find((b) => b.id === p.id);
+    return shipped
+      ? crypto
+          .createHash("sha256")
+          .update(JSON.stringify([shipped.name, shipped.settings]))
+          .digest("hex")
+          .slice(0, 16)
+      : "";
+  }
+  function sameName(a, b) {
+    return a.toLocaleLowerCase() === b.toLocaleLowerCase();
+  }
   function persist() {
     fs.mkdirSync(dataDir, { recursive: true });
     const target = path.join(dataDir, "settings.json"),
@@ -125,7 +144,44 @@ function createService({
         {
           version: 1,
           settings: state.settings,
-          presets: state.presets.filter((p) => !p.builtin),
+          presets: state.presets
+            .filter((p) => !p.builtin)
+            .map(({ id, name, settings, hidden }) => ({
+              id,
+              name,
+              settings,
+              ...(typeof hidden === "boolean" ? { hidden } : {}),
+            }))
+            .concat(unreadable.presets),
+          // Built-in presets are rebuilt from code; only the user's changes are saved.
+          builtins: Object.assign(
+            {},
+            unreadable.builtins,
+            Object.fromEntries(
+              state.presets
+                .filter(
+                  (p) =>
+                    p.builtin && (p.edited || typeof p.hidden === "boolean"),
+                )
+                .map((p) => [
+                  p.id,
+                  {
+                    ...(p.edited
+                      ? {
+                          name: p.name,
+                          settings: p.settings,
+                          base: builtinFingerprint(p),
+                        }
+                      : {}),
+                    ...(typeof p.hidden === "boolean"
+                      ? { hidden: p.hidden }
+                      : {}),
+                  },
+                ]),
+            ),
+          ),
+          deletedBuiltins: [...deletedBuiltins],
+          presetOrder: state.presets.map((p) => p.id),
         },
         null,
         2,
@@ -189,14 +245,85 @@ function createService({
     );
     if (saved.version !== 1) throw Error("版本不支持");
     state.settings = { ...core.DEFAULTS, ...schema(saved.settings) };
+    for (const id of saved.deletedBuiltins || [])
+      if (typeof id === "string") deletedBuiltins.add(id);
+    // Personal presets always survive an update. A built-in the new version
+    // changed replaces the user's edit of it (its fingerprint no longer
+    // matches); a built-in it dropped simply disappears.
+    const overrides =
+      saved.builtins && typeof saved.builtins === "object"
+        ? saved.builtins
+        : {};
+    state.presets = state.presets
+      .filter((p) => !deletedBuiltins.has(p.id))
+      .map((p) => {
+        const o = overrides[p.id];
+        if (!o || typeof o !== "object") return p;
+        const r = { ...p };
+        if (o.settings && o.base === builtinFingerprint(p))
+          try {
+            const v = presetValid({
+              name: o.name || p.name,
+              settings: o.settings,
+            });
+            Object.assign(r, {
+              name: v.name,
+              settings: v.settings,
+              edited: true,
+            });
+          } catch {
+            unreadable.builtins[p.id] = o;
+          }
+        if (typeof o.hidden === "boolean") r.hidden = o.hidden;
+        return r;
+      });
     for (const p of saved.presets || []) {
-      const valid = presetValid(p);
-      valid.id = typeof p.id === "string" ? p.id : valid.id;
+      let valid;
+      try {
+        valid = presetValid(p);
+      } catch (e) {
+        unreadable.presets.push(p);
+        state.notice = `个人预设“${p?.name || "未命名"}”暂时无法读取，已原样保留：${e.message}`;
+        continue;
+      }
+      valid.id =
+        typeof p.id === "string" && !p.id.startsWith("builtin-")
+          ? p.id
+          : valid.id;
+      if (typeof p.hidden === "boolean") valid.hidden = p.hidden;
       state.presets.push(valid);
     }
+    // A built-in that now shares a personal preset's name is the one renamed.
+    for (const b of state.presets.filter((p) => p.builtin && !p.edited))
+      if (
+        state.presets.some(
+          (p) => !p.builtin && p.id !== b.id && sameName(p.name, b.name),
+        )
+      ) {
+        b.name += "（内置）";
+        b.settings = { ...b.settings, presetName: b.name };
+      }
+    if (Array.isArray(saved.presetOrder)) {
+      const rank = new Map(saved.presetOrder.map((id, i) => [id, i]));
+      state.presets = state.presets
+        .map((p, i) => [rank.get(p.id) ?? saved.presetOrder.length + i, p])
+        .sort((a, b) => a[0] - b[0])
+        .map(([, p]) => p);
+    }
   } catch (e) {
-    if (e.code !== "ENOENT")
-      state.notice = "已忽略无法读取的配置：" + e.message;
+    if (e.code !== "ENOENT") {
+      // Keep the unreadable file before the next save replaces it.
+      const file = path.join(dataDir, "settings.json");
+      const backup = file + ".unreadable-" + Date.now();
+      try {
+        fs.copyFileSync(file, backup);
+      } catch {}
+      state.notice =
+        "已忽略无法读取的配置：" +
+        e.message +
+        "；原文件已备份为 " +
+        path.basename(backup);
+    }
   }
   function run(exe, args, { timeout = 0, onData, encoding = false } = {}) {
     return new Promise((resolve, reject) => {
@@ -304,6 +431,73 @@ function createService({
     if (!job) throw Error("文件不在列表中");
     return job;
   }
+  // First video / audio stream codecs and the audio bitrate, for the "follow
+  // source" bitrate and the MP4 / MKV choice. Unreadable files give {}.
+  async function probeMedia(file) {
+    try {
+      const r = await run(
+        state.engineInfo.ffprobe,
+        ["-v", "error", "-show_streams", "-show_format", "-of", "json", file],
+        { timeout: 30000 },
+      );
+      const data = JSON.parse(r.stdout);
+      const v = data.streams?.find((s) => s.codec_type === "video");
+      const a = data.streams?.find((s) => s.codec_type === "audio");
+      return {
+        videoCodec: v?.codec_name,
+        audioCodec: a?.codec_name,
+        // Some containers only report the overall rate; use it for audio-only files.
+        audioBitRate:
+          a?.bit_rate || (!v && a ? data.format?.bit_rate : undefined),
+      };
+    } catch {
+      return {};
+    }
+  }
+  // File parameters for the media queue, read like the video queue's. Audio-only
+  // files get an audio summary; a failed read leaves the file usable.
+  const mediaProbes = new Set();
+  async function probeMediaJob(job) {
+    try {
+      await locate();
+      if (!state.engineInfo.ffprobe) return;
+      const r = await run(
+        state.engineInfo.ffprobe,
+        [
+          "-v",
+          "error",
+          "-show_streams",
+          "-show_format",
+          "-of",
+          "json",
+          job.path,
+        ],
+        { timeout: 30000 },
+      );
+      const data = JSON.parse(r.stdout);
+      try {
+        job.meta = core.metadata(data);
+      } catch {
+        const a = data.streams?.find((s) => s.codec_type === "audio");
+        if (!a) throw Error("未找到音视频轨");
+        job.meta = {
+          audioOnly: true,
+          codec: a.codec_name || "未知",
+          duration: Number(data.format?.duration || a.duration) || 0,
+          size: Number(data.format?.size) || job.size,
+          audio: {
+            ...core.audioInfo(a),
+            // An audio-only file's overall rate is the audio rate.
+            bitRate:
+              core.audioInfo(a).bitRate || Number(data.format?.bit_rate) || 0,
+          },
+        };
+      }
+    } catch (e) {
+      job.metaError = "无法读取文件信息：" + e.message;
+    }
+    emit();
+  }
   async function runMediaJob(job, o) {
     job.status = "running";
     job.error = undefined;
@@ -320,8 +514,35 @@ function createService({
         input: job.path,
         audioInput: job.audioPath,
         audioFormat: o.audioFormat,
+        audioBitrate: Number(o.audioBitrate) || 0,
         shortest: o.shortest !== false,
+        container: o.container === "mkv" ? "mkv" : "mp4",
       };
+      const source = await probeMedia(job.path);
+      const audioSource =
+        o.operation === "merge" ? await probeMedia(job.audioPath) : source;
+      p.sourceAudio = {
+        codec: audioSource.audioCodec,
+        bitRate: audioSource.audioBitRate,
+      };
+      let note = "";
+      if (o.operation !== "audio") {
+        const container = media.mergeContainer(p, {
+          videoCodec: source.videoCodec,
+          audioCodec: audioSource.audioCodec,
+        });
+        if (container !== p.container) {
+          const audio =
+            o.operation !== "merge"
+              ? ""
+              : " / " +
+                (p.audioFormat === "copy"
+                  ? audioSource.audioCodec || "未知"
+                  : p.audioFormat);
+          note = `# MP4 放不下此编码（${source.videoCodec || "未知"}${audio}），已改用 MKV\n`;
+        }
+        p.container = container;
+      }
       p.output = media.suggestOutput(p, mediaLocation(o), fs.existsSync);
       if (!p.output) throw Error("无法生成输出文件名");
       media.command(p, state.engineInfo, p.output);
@@ -329,7 +550,7 @@ function createService({
       temp = fs.mkdtempSync(path.join(path.dirname(p.output), ".mmd-media-"));
       const target = path.join(temp, "output" + path.extname(p.output));
       const cmd = media.command(p, state.engineInfo, target);
-      job.log = core.commandText([cmd]) + "\n";
+      job.log = note + core.commandText([cmd]) + "\n";
       await run(cmd.exe, cmd.args, {
         encoding: true,
         onData: (t) => {
@@ -741,6 +962,18 @@ function createService({
     }
     return clone(state);
   }
+  // Apply a drag-sort result: ids must be exactly the current list's ids.
+  function reorder(list, ids) {
+    if (
+      !Array.isArray(ids) ||
+      ids.length !== list.length ||
+      new Set(ids).size !== ids.length
+    )
+      throw Error("排序数据无效，请重试");
+    const byId = new Map(list.map((x) => [x.id, x]));
+    if (ids.some((id) => !byId.has(id))) throw Error("排序数据无效，请重试");
+    return ids.map((id) => byId.get(id));
+  }
   function requireJob(id) {
     const j = state.jobs.find((j) => j.id === id);
     if (!j) throw Error("未找到此任务");
@@ -978,7 +1211,13 @@ function createService({
     emit();
     (async () => {
       await detectPromise;
-      for (const job of jobs) {
+      // Take jobs in the queue's current order so drag-sorting during a run applies.
+      const pending = new Set(jobs);
+      while (pending.size) {
+        const job =
+          state.jobs.find((j) => pending.has(j)) ||
+          pending.values().next().value;
+        pending.delete(job);
         if (stopped) {
           if (job.status !== "partial") job.status = "cancelled";
           continue;
@@ -999,14 +1238,23 @@ function createService({
         return clone(state);
       case "details": {
         if (tools.state.busy) throw Error("工具安装中，请稍后查看详情");
-        const job = requireJob(payload.id);
+        // payload.media: a job from the audio / video tools queue
+        const job = payload.media
+          ? requireMediaJob(payload.id)
+          : requireJob(payload.id);
         await locate();
         const result = {};
-        for (const [key, file] of [
-          ["before", job.path],
-          ["after", job.output],
-          ["mask", job.maskOutput],
-        ]) {
+        for (const [key, file] of payload.media
+          ? [
+              ["before", job.path],
+              ...(job.audioPath ? [["audio", job.audioPath]] : []),
+              ["after", job.output],
+            ]
+          : [
+              ["before", job.path],
+              ["after", job.output],
+              ["mask", job.maskOutput],
+            ]) {
           if (!file || !fs.existsSync(file)) {
             result[key] = {
               message: key === "before" ? "源文件不存在" : "尚未生成文件",
@@ -1044,8 +1292,9 @@ function createService({
           fs.existsSync,
         );
       case "mediaAdd": {
-        for (const file of payload?.paths || []) {
-          if (typeof file !== "string" || !path.isAbsolute(file)) continue;
+        for (const raw of payload?.paths || []) {
+          if (typeof raw !== "string" || !path.isAbsolute(raw)) continue;
+          const file = path.resolve(raw); // same separators as the video queue
           let stat;
           try {
             stat = fs.statSync(file);
@@ -1068,6 +1317,9 @@ function createService({
             size: stat.size,
             status: "ready",
           });
+          const probe = probeMediaJob(state.mediaJobs.at(-1));
+          mediaProbes.add(probe);
+          void probe.finally(() => mediaProbes.delete(probe));
         }
         break;
       }
@@ -1103,6 +1355,9 @@ function createService({
         break;
       }
       case "mediaStart": {
+        // File-info reads started by mediaAdd are short; let them finish
+        // instead of reporting them as a busy task.
+        await Promise.all([...mediaProbes]);
         if (
           state.running ||
           state.detecting ||
@@ -1131,7 +1386,12 @@ function createService({
         stopped = false;
         emit();
         (async () => {
-          for (const job of jobs) {
+          const pending = new Set(jobs);
+          while (pending.size) {
+            const job =
+              state.mediaJobs.find((j) => pending.has(j)) ||
+              pending.values().next().value;
+            pending.delete(job);
             if (stopped) {
               job.status = "cancelled";
               continue;
@@ -1362,8 +1622,13 @@ function createService({
           throw Error("已存在同名预设，请使用其他名称");
         if (payload.id) {
           const p = state.presets.find((x) => x.id === payload.id);
-          if (!p || p.builtin) throw Error("内置预设只读，请另存为");
-          valid.id = p.id;
+          if (!p) throw Error("未找到预设");
+          Object.assign(valid, {
+            id: p.id,
+            builtin: p.builtin,
+            ...(p.builtin ? { edited: true } : {}),
+            ...(typeof p.hidden === "boolean" ? { hidden: p.hidden } : {}),
+          });
           state.presets = state.presets.map((x) => (x.id === p.id ? valid : x));
         } else state.presets.push(valid);
         state.settings.presetName = valid.name;
@@ -1372,7 +1637,7 @@ function createService({
       }
       case "renamePreset": {
         const p = state.presets.find((p) => p.id === payload.id);
-        if (!p || p.builtin) throw Error("内置预设不能重命名");
+        if (!p) throw Error("未找到预设");
         const renamed = presetValid({
           name: payload.name,
           settings: p.settings,
@@ -1387,6 +1652,7 @@ function createService({
           throw Error("已存在同名预设，请使用其他名称");
         p.name = renamed.name;
         p.settings.presetName = renamed.name;
+        if (p.builtin) p.edited = true;
         persist();
         break;
       }
@@ -1403,11 +1669,49 @@ function createService({
       }
       case "deletePreset": {
         const p = state.presets.find((x) => x.id === payload.id);
-        if (!p || p.builtin) throw Error("内置预设不能删除");
+        if (!p) throw Error("未找到预设");
+        if (p.builtin) deletedBuiltins.add(p.id);
         state.presets = state.presets.filter((x) => x.id !== p.id);
         persist();
         break;
       }
+      case "hidePreset": {
+        const p = state.presets.find((x) => x.id === payload.id);
+        if (!p) throw Error("未找到预设");
+        if (typeof payload.hidden !== "boolean") throw Error("参数无效");
+        p.hidden = payload.hidden;
+        persist();
+        break;
+      }
+      case "reorderPresets":
+        state.presets = reorder(state.presets, payload.ids);
+        persist();
+        break;
+      case "restoreBuiltinPresets": {
+        // Bring back deleted built-ins and undo edits / hide choices on them.
+        const defaults = clone(core.BUILTINS);
+        for (const p of defaults)
+          if (
+            !state.presets.some((x) => x.id === p.id) &&
+            state.presets.some((x) => sameName(x.name, p.name))
+          )
+            throw Error("已有同名个人预设：" + p.name + "，请先改名");
+        deletedBuiltins.clear();
+        const byId = new Map(defaults.map((p) => [p.id, p]));
+        state.presets = state.presets.map((p) =>
+          p.builtin ? byId.get(p.id) || p : p,
+        );
+        for (const p of defaults)
+          if (!state.presets.some((x) => x.id === p.id)) state.presets.push(p);
+        persist();
+        break;
+      }
+      case "reorderJobs":
+        state.jobs = reorder(state.jobs, payload.ids);
+        break;
+      case "mediaReorder":
+        state.mediaJobs = reorder(state.mediaJobs, payload.ids);
+        break;
       case "importPresets": {
         if (!Array.isArray(payload.presets) || payload.presets.length > 200)
           throw Error("预设文件格式无效或超过 200 项");

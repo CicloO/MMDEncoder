@@ -1,5 +1,11 @@
 import { formatSize } from "./presentation";
-export function MediaDetails({ details }: { details: any }) {
+export function MediaDetails({
+  details,
+  media = false,
+}: {
+  details: any;
+  media?: boolean;
+}) {
   const section = ([key, label]: string[]) => {
     const data = details?.[key];
     return (
@@ -86,11 +92,14 @@ export function MediaDetails({ details }: { details: any }) {
           ["after", "转换后"],
         ].map(section)}
       </div>
-      {section(["mask", "独立 Alpha 遮罩"])}
-      <p className="hint">
-        HEVC 辅助 Alpha 层不一定由 ffprobe 像素格式显示；本机能力检测另验证
-        Alpha 码流信息。
-      </p>
+      {details?.audio && section(["audio", "替换用的音频"])}
+      {!media && section(["mask", "独立 Alpha 遮罩"])}
+      {!media && (
+        <p className="hint">
+          HEVC 辅助 Alpha 层不一定由 ffprobe 像素格式显示；本机能力检测另验证
+          Alpha 码流信息。
+        </p>
+      )}
     </div>
   );
 }

@@ -27,11 +27,23 @@ import {
   Terminal,
   Folder,
   Save,
+  FilePlus2,
   ExternalLink,
+  Eye,
+  EyeOff,
+  GripVertical,
 } from "lucide-react";
-import { Button, Field, Select, Modal } from "./components";
+import {
+  Button,
+  Field,
+  Select,
+  Modal,
+  useDragSort,
+  PAGE_SIZE,
+} from "./components";
 import { MediaTools } from "./MediaTools";
 import { MediaDetails } from "./MediaDetails";
+import { FileMeta, metaSummary } from "./FileMeta";
 import { RtxSettings } from "./RtxSettings";
 import {
   formatFPS,
@@ -121,14 +133,50 @@ export default function App() {
     newer?: boolean;
     url?: string;
     error?: string;
+    canInstall?: boolean;
+    installBlocked?: string;
   }>({ checking: false });
+  // In-place update progress, mirrored from the main process.
+  const [appUpdate, setAppUpdate] = useState({
+    phase: "idle",
+    received: 0,
+    total: 0,
+    error: "",
+  });
+  async function downloadUpdate() {
+    setAppUpdate((s) => ({ ...s, phase: "downloading", error: "" }));
+    const timer = setInterval(() => {
+      window.encoder
+        .invoke("appUpdateStatus")
+        .then(setAppUpdate)
+        .catch(() => {});
+    }, 400);
+    try {
+      await window.encoder.invoke("downloadAppUpdate");
+    } catch {
+      /* The status below carries the error. */
+    } finally {
+      clearInterval(timer);
+      setAppUpdate(await window.encoder.invoke("appUpdateStatus"));
+    }
+  }
+  async function installUpdate() {
+    setBusy(true);
+    try {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      if (draftRef.current) await persist(draftRef.current);
+      await window.encoder.invoke("installAppUpdate");
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  }
   async function checkUpdate(quiet = false) {
     setUpdate((u) => ({ ...u, checking: true, error: "" }));
     try {
       const r = await window.encoder.invoke("checkAppUpdate");
       setUpdate({ checking: false, ...r });
-      if (r.newer)
-        notify(`发现新版本 ${r.latest}，可在“设置与引擎”中打开下载页`);
+      if (r.newer) notify(`发现新版本 ${r.latest}，可在“设置与引擎”中更新`);
     } catch (e) {
       const message = (e as Error).message.replace(
         /^Error invoking remote method '[^']+': (?:Error: )?/,
@@ -212,7 +260,24 @@ export default function App() {
             : s?.encoder.endsWith("_amf")
               ? "amf"
               : "cpu"),
-    pageCount = Math.max(1, Math.ceil(jobs.length / 20));
+    pageCount = Math.max(1, Math.ceil(jobs.length / PAGE_SIZE));
+  const sortJob = useDragSort(
+    jobs.map((j) => j.id),
+    (ids) => void call("reorderJobs", { ids }).catch(() => {}),
+  );
+  const presets = state?.presets || [];
+  const sortPreset = useDragSort(
+    presets.map((p) => p.id),
+    (ids) => void call("reorderPresets", { ids }).catch(() => {}),
+    true,
+    { handle: true },
+  );
+  // Software built-ins stay hidden while H.264 NVENC is available, unless the
+  // user chose otherwise with the hide / show button.
+  const hardwareH264 =
+    !!state?.detecting || !!state?.engines.some((e) => e.id === "h264_nvenc");
+  const presetHidden = (p: Preset) =>
+    p.hidden ?? (p.builtin && p.id.endsWith("-sw") && hardwareH264);
   useEffect(() => {
     if (page >= pageCount) setPage(pageCount - 1);
   }, [page, pageCount]);
@@ -301,7 +366,13 @@ export default function App() {
     }, 400);
     autoSaveTimer.current = timer;
     return () => clearTimeout(timer);
-  }, [draft, job?.id, JSON.stringify(job?.meta)]);
+  }, [
+    draft,
+    job?.id,
+    JSON.stringify(job?.meta),
+    state?.enhancements.verified,
+    state?.enhancements.signature,
+  ]);
   const modified = !!(
     s &&
     activePreset &&
@@ -374,6 +445,24 @@ export default function App() {
       setBusy(false);
     }
   }
+  // Overwrite the selected preset with the current settings, keeping its name.
+  async function overwritePreset() {
+    if (!s || !activePreset) return;
+    setBusy(true);
+    try {
+      await persist(s);
+      const r: State = await call("savePreset", {
+        id: activePreset.id,
+        name: activePreset.name,
+      });
+      changed(r.settings);
+      setPresetId(activePreset.id);
+      notify(`已保存到“${activePreset.name}”`);
+    } catch {
+    } finally {
+      setBusy(false);
+    }
+  }
   async function renamePreset() {
     if (!renameTarget || !presetName.trim()) return;
     setBusy(true);
@@ -410,6 +499,10 @@ export default function App() {
       if (path) set("outputDir", path);
     } catch {}
   }
+  // 前向分析只对 NVENC / NVEncC 生效；级别只有 HEVC / AV1 支持
+  const lookaheadSupported = /_nvenc$|^nvencc:/.test(s?.encoder || "");
+  const lookaheadLevelSupported =
+    lookaheadSupported && !/^h264_nvenc$|^nvencc:h264$/.test(s?.encoder || "");
   function fieldNumber(
     key: keyof Settings,
     label: string,
@@ -431,7 +524,9 @@ export default function App() {
           max={max}
           value={Number.isFinite(value) ? String(value) : ""}
           disabled={
-            s?.encoder === "prores_ks" && ["quality", "bitrate"].includes(key)
+            (s?.encoder === "prores_ks" && key === "bitrate") ||
+            (key === "lookahead" && !lookaheadSupported) ||
+            (key === "lookaheadLevel" && !lookaheadLevelSupported)
           }
           aria-invalid={!!fieldError}
           aria-describedby={
@@ -466,33 +561,7 @@ export default function App() {
     doneCount = jobs.filter((j) => j.status === "done").length;
   const renderMeta = () =>
     job?.meta ? (
-      <>
-        <div className="source-key">
-          <span>
-            {job.meta.width} <small>×</small> {job.meta.height}
-          </span>
-          <span>
-            {formatFPS(job.meta.fpsText || job.meta.fps)}{" "}
-            <small>FPS{job.meta.vfr ? " · 可变" : ""}</small>
-          </span>
-        </div>
-        <div className="metadata">
-          <span>{job.meta.codec.toUpperCase()}</span>
-          <span>{job.meta.pixFmt}</span>
-          <span>{job.meta.bitDepth || "未知"}-bit</span>
-          <span>{formatDuration(job.meta.duration)}</span>
-          <span>{formatSize(job.meta.size)}</span>
-          <span>{job.meta.hasAlpha ? "含 Alpha" : "无 Alpha"}</span>
-        </div>
-        <div className="audio-meta">
-          音频{" "}
-          <span>
-            {job.meta.audio
-              ? `${job.meta.audio.sampleRate / 1000} kHz / ${job.meta.audio.channels === 2 ? "立体声" : job.meta.audio.channelLayout || `${job.meta.audio.channels} 声道`}`
-              : "无音轨"}
-          </span>
-        </div>
-      </>
+      <FileMeta meta={job.meta} />
     ) : (
       <p className="muted">
         {job?.status === "probing"
@@ -583,9 +652,17 @@ export default function App() {
         </Button>
       </nav>
       {workspace === "media" && (
-        <MediaTools state={state} call={call} dropped={mediaDrop} />
+        <div className="page">
+          <MediaTools
+            state={state}
+            call={call}
+            dropped={mediaDrop}
+            // A drop is consumed once; the page remounts on every tab switch.
+            onDropHandled={() => setMediaDrop(undefined)}
+          />
+        </div>
       )}
-      <div hidden={workspace !== "encode"}>
+      <div className="page" hidden={workspace !== "encode"}>
         <main className="workspace">
           <section className="queue-column" aria-label="视频队列">
             <div className="section-heading">
@@ -639,90 +716,98 @@ export default function App() {
                 </div>
               ) : (
                 <ol className="job-list">
-                  {jobs.slice(page * 20, page * 20 + 20).map((j, i) => (
-                    <li
-                      key={j.id}
-                      className={`job-row ${j.id === job?.id ? "selected" : ""}`}
-                    >
-                      <button
-                        className="job-select"
-                        onClick={() => setSelected(j.id)}
-                        aria-pressed={j.id === job?.id}
+                  {jobs
+                    .slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
+                    .map((j, i) => (
+                      <li
+                        key={j.id}
+                        className={`job-row ${j.id === job?.id ? "selected" : ""}`}
+                        {...sortJob(j.id)}
                       >
-                        <span
-                          className={`file-tile ${j.status === "done" ? "complete" : ""}`}
+                        <button
+                          className="job-select"
+                          onClick={() => setSelected(j.id)}
+                          aria-pressed={j.id === job?.id}
                         >
-                          {j.status === "done" ? (
-                            <Check size={22} />
-                          ) : (
-                            <FileVideo size={23} />
-                          )}
-                          <small>
-                            {j.name.split(".").pop()?.slice(0, 5).toUpperCase()}
-                          </small>
-                        </span>
-                        <span className="job-copy">
-                          <strong title={j.name}>{j.name}</strong>
-                          <span className="job-sub">
-                            {j.meta
-                              ? `${j.meta.width}×${j.meta.height} · ${formatFPS(j.meta.fpsText || j.meta.fps)} FPS · ${formatSize(j.meta.size)}`
-                              : "正在读取素材信息"}
-                          </span>
-                          <span className={`job-status ${j.status}`}>
-                            {j.status === "encoding" && (
-                              <LoaderCircle size={12} className="spin" />
+                          <span
+                            className={`file-tile ${j.status === "done" ? "complete" : ""}`}
+                          >
+                            {j.status === "done" ? (
+                              <Check size={22} />
+                            ) : (
+                              <FileVideo size={23} />
                             )}
-                            {statusLabels[j.status] || j.status}
-                            {j.status === "encoding"
-                              ? ` · ${Math.round(j.progress)}% · ${j.stage || "编码"} · ${formatDuration(j.elapsed || 0)}`
-                              : ""}
+                            <small>
+                              {j.name
+                                .split(".")
+                                .pop()
+                                ?.slice(0, 5)
+                                .toUpperCase()}
+                            </small>
                           </span>
-                        </span>
-                      </button>
-                      {["done", "cancelled"].includes(j.status) && (
+                          <span className="job-copy">
+                            <strong title={j.name}>{j.name}</strong>
+                            <span className="job-sub">
+                              {j.meta
+                                ? metaSummary(j.meta)
+                                : "正在读取素材信息"}
+                            </span>
+                            <span className={`job-status ${j.status}`}>
+                              {j.status === "encoding" && (
+                                <LoaderCircle size={12} className="spin" />
+                              )}
+                              {statusLabels[j.status] || j.status}
+                              {j.status === "encoding"
+                                ? ` · ${Math.round(j.progress)}% · ${j.stage || "编码"} · ${formatDuration(j.elapsed || 0)}`
+                                : ""}
+                            </span>
+                          </span>
+                        </button>
+                        {["done", "cancelled"].includes(j.status) && (
+                          <Button
+                            variant="ghost icon"
+                            aria-label={`重新导出 ${j.name}`}
+                            title="重新导出：放回队列，按当前设置压制，已有文件不覆盖"
+                            disabled={state.running}
+                            onClick={() =>
+                              action(
+                                "requeue",
+                                { id: j.id },
+                                "已放回队列，开始压制时使用当前设置",
+                              )
+                            }
+                          >
+                            <RefreshCw size={16} />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost icon"
-                          aria-label={`重新导出 ${j.name}`}
-                          title="重新导出：放回队列，按当前设置压制，已有文件不覆盖"
-                          disabled={state.running}
-                          onClick={() =>
-                            action(
-                              "requeue",
-                              { id: j.id },
-                              "已放回队列，开始压制时使用当前设置",
-                            )
-                          }
+                          aria-label={`移除 ${j.name}`}
+                          title="从队列移除"
+                          disabled={j.status === "encoding" || state.running}
+                          onClick={() => action("remove", { id: j.id })}
                         >
-                          <RefreshCw size={16} />
+                          <X size={16} />
                         </Button>
-                      )}
-                      <Button
-                        variant="ghost icon"
-                        aria-label={`移除 ${j.name}`}
-                        title="从队列移除"
-                        disabled={j.status === "encoding" || state.running}
-                        onClick={() => action("remove", { id: j.id })}
-                      >
-                        <X size={16} />
-                      </Button>
-                      <span className="row-index">
-                        {String(page * 20 + i + 1).padStart(2, "0")}
-                      </span>
-                      {j.status === "encoding" && (
-                        <progress
-                          max={100}
-                          value={j.progress}
-                          aria-label={`${j.name} 压制进度`}
-                        />
-                      )}
-                    </li>
-                  ))}
+                        <span className="row-index">
+                          {String(page * PAGE_SIZE + i + 1).padStart(2, "0")}
+                        </span>
+                        {j.status === "encoding" && (
+                          <progress
+                            max={100}
+                            value={j.progress}
+                            aria-label={`${j.name} 压制进度`}
+                          />
+                        )}
+                      </li>
+                    ))}
                 </ol>
               )}
               {jobs.length > 0 && (
                 <div className="queue-pagination">
                   <span>
-                    {page * 20 + 1}–{Math.min((page + 1) * 20, jobs.length)} /{" "}
+                    {page * PAGE_SIZE + 1}–
+                    {Math.min((page + 1) * PAGE_SIZE, jobs.length)} /{" "}
                     {jobs.length} 个视频
                   </span>
                   <div>
@@ -860,10 +945,12 @@ export default function App() {
                   value={presetId}
                   options={[
                     { value: "", label: "自定义设置" },
-                    ...state.presets.map((p) => ({
-                      value: p.id,
-                      label: p.name,
-                    })),
+                    ...presets
+                      .filter((p) => !presetHidden(p) || p.id === presetId)
+                      .map((p) => ({
+                        value: p.id,
+                        label: p.name,
+                      })),
                   ]}
                   onChange={(id) => {
                     const p = state.presets.find((p) => p.id === id);
@@ -874,6 +961,18 @@ export default function App() {
                   }}
                 />
                 <Button
+                  title={
+                    activePreset
+                      ? `保存（覆盖“${activePreset.name}”）`
+                      : "保存（先选择一个预设）"
+                  }
+                  aria-label="保存到当前预设"
+                  disabled={busy || !activePreset || !modified}
+                  onClick={() => void overwritePreset()}
+                >
+                  <Save size={17} />
+                </Button>
+                <Button
                   title="另存为预设"
                   aria-label="另存为预设"
                   onClick={() => {
@@ -882,7 +981,7 @@ export default function App() {
                     setModal("save");
                   }}
                 >
-                  <Save size={17} />
+                  <FilePlus2 size={17} />
                 </Button>
               </div>
               <div className="setting-tabs" role="group" aria-label="设置分类">
@@ -955,6 +1054,10 @@ export default function App() {
                         changed({
                           ...s,
                           encoder: v,
+                          // ProRes takes a quantizer, not a CRF; start at 8.
+                          ...(v === "prores_ks" && s.encoder !== "prores_ks"
+                            ? { quality: 8, rateControl: "quality" }
+                            : {}),
                           preset:
                             en?.backend === "cpu"
                               ? v === "libsvtav1"
@@ -996,16 +1099,20 @@ export default function App() {
                         ? fieldNumber("bitrate", "码率 · kbps", 100, 1000000)
                         : fieldNumber(
                             "quality",
-                            `画质 · ${s.rateControl === "qp" ? "QP" : backend === "cpu" ? "CRF" : "CQ"}`,
+                            s.encoder === "prores_ks"
+                              ? "画质 · 量化"
+                              : `画质 · ${s.rateControl === "qp" ? "QP" : backend === "cpu" ? "CRF" : "CQ"}`,
                             0,
-                            ["h264", "hevc"].includes(engine?.codec || "")
-                              ? 51
-                              : 63,
+                            s.encoder === "prores_ks"
+                              ? 64
+                              : ["h264", "hevc"].includes(engine?.codec || "")
+                                ? 51
+                                : 63,
                           )}
                     </div>
                     <p className="hint quality-hint">
                       {s.encoder === "prores_ks"
-                        ? "ProRes 使用 10-bit；4:2:2 对应 HQ，4:4:4 对应 4444 配置。"
+                        ? "ProRes 量化 1–64：数值越小质量越高、文件越大；0 为编码器默认（约为量化 8 的 4 倍大小）。4:2:2 对应 HQ，4:4:4 对应 4444。"
                         : s.rateControl === "bitrate"
                           ? "目标平均码率（kbps）：数值越大通常质量越高、文件越大；单遍 VBR 实际码率会波动，不保证文件大小。"
                           : s.rateControl === "qp"
@@ -1064,10 +1171,22 @@ export default function App() {
                       value={s.resizeMode || "source"}
                       options={[
                         { value: "source", label: "保持源分辨率" },
+                        {
+                          value: "long",
+                          label: "按长边缩放 · 自动识别横竖屏",
+                        },
                         { value: "custom", label: "自定义分辨率" },
                       ]}
                       onChange={(v) => set("resizeMode", v)}
                     />
+                    {s.resizeMode === "long" &&
+                      fieldNumber(
+                        "width",
+                        "长边 · px",
+                        2,
+                        16384,
+                        "横屏视频用作宽度，竖屏视频用作高度，另一边按原比例计算。",
+                      )}
                     {s.resizeMode === "custom" && (
                       <>
                         <div className="form-row">
@@ -1273,42 +1392,64 @@ export default function App() {
                     <h3 className="panel-subtitle">彩色视频与透明遮罩</h3>
                     <Select
                       id="alphaMode"
-                      label="彩色视频的透明区域"
-                      value={s.alphaMode}
+                      label="透明通道处理"
+                      // "split" = colour video without alpha + separate mask
+                      // (stored as alphaMode discard + alphaMask, any format).
+                      value={
+                        s.alphaMask && s.alphaMode === "discard"
+                          ? "split"
+                          : s.alphaMode
+                      }
                       options={[
-                        { value: "discard", label: "直接移除 Alpha" },
+                        { value: "discard", label: "移除 Alpha" },
                         { value: "preserve", label: "保留 Alpha" },
-                        { value: "black", label: "合成到黑色背景" },
-                        { value: "white", label: "合成到白色背景" },
+                        {
+                          value: "split",
+                          label: "分离 Alpha · 彩色视频 + 黑白遮罩",
+                        },
+                        { value: "green", label: "合成到绿幕（#00FF00）" },
+                        // Older presets may still use black / white.
+                        ...(s.alphaMode === "black"
+                          ? [{ value: "black", label: "合成到黑色背景" }]
+                          : s.alphaMode === "white"
+                            ? [{ value: "white", label: "合成到白色背景" }]
+                            : []),
                       ]}
-                      onChange={(v) => set("alphaMode", v)}
+                      onChange={(v) =>
+                        changed({
+                          ...s,
+                          alphaMode: v === "split" ? "discard" : v,
+                          alphaMask: v === "split",
+                          // ProRes alpha starts at quantizer 8 (~1/4 of the default size).
+                          ...(v === "preserve" &&
+                          s.alphaMode !== "preserve" &&
+                          s.encoder === "prores_ks"
+                            ? { quality: 8 }
+                            : {}),
+                        })
+                      }
                     />
-                    <label className="check-card">
-                      <input
-                        type="checkbox"
-                        checked={s.alphaMask}
-                        onChange={(e) => set("alphaMask", e.target.checked)}
-                      />
-                      <span>
-                        <strong>额外导出 Alpha 黑白遮罩</strong>
-                        <small>与主视频保持相同尺寸、帧率和时间轴</small>
-                      </span>
-                    </label>
-                    <div className="alpha-diagram">
-                      <div className="alpha-swatch color">
-                        {s.alphaMode === "preserve" ? "RGBA" : "RGB"}
-                      </div>
-                      <Plus size={16} />
-                      <div className="alpha-swatch mask">A</div>
-                    </div>
-                    <p className="hint">
-                      白色表示不透明，黑色表示透明，灰色保留半透明信息。遮罩文件使用
-                      _alpha 后缀。
-                    </p>
+                    {s.alphaMask && (
+                      <>
+                        <div className="alpha-diagram">
+                          <div className="alpha-swatch color">
+                            {s.alphaMode === "preserve" ? "RGBA" : "RGB"}
+                          </div>
+                          <Plus size={16} />
+                          <div className="alpha-swatch mask">A</div>
+                        </div>
+                        <p className="hint">
+                          {s.alphaMode === "discard"
+                            ? "彩色视频不含 Alpha，可用任意编码器和封装；另外导出同尺寸、同帧率的黑白遮罩（_alpha 后缀，无损）。"
+                            : "这个旧预设除了上面的处理，还会额外导出黑白遮罩（_alpha 后缀）。"}
+                          白色表示不透明，黑色表示透明，灰色保留半透明信息。
+                        </p>
+                      </>
+                    )}
                     {s.alphaMask && job?.meta && !job.meta.hasAlpha && (
                       <p className="inline-error">
                         当前素材没有可读取的 Alpha
-                        通道。请关闭额外遮罩或选择包含透明通道的视频。
+                        通道，不能分离遮罩。请选择其他处理方式或包含透明通道的视频。
                       </p>
                     )}
                   </>
@@ -1425,8 +1566,22 @@ export default function App() {
                       {fieldNumber("bframes", "B 帧", -1, 16, "-1 为自动")}
                     </div>
                     <div className="form-row">
-                      {fieldNumber("lookahead", "前向分析帧数", 0, 32)}
-                      {fieldNumber("lookaheadLevel", "前向分析级别", 0, 3)}
+                      {fieldNumber(
+                        "lookahead",
+                        "前向分析帧数",
+                        0,
+                        32,
+                        lookaheadSupported ? undefined : "仅 NVIDIA 硬件编码",
+                      )}
+                      {fieldNumber(
+                        "lookaheadLevel",
+                        "前向分析级别",
+                        0,
+                        3,
+                        lookaheadLevelSupported
+                          ? undefined
+                          : "仅 NVIDIA HEVC / AV1",
+                      )}
                     </div>
                     <details className="command-details">
                       <summary>查看完整命令</summary>
@@ -1456,7 +1611,7 @@ export default function App() {
             <span className="eyebrow">预计结果</span>
             <strong>
               {job?.meta
-                ? `${job.meta.width}×${job.meta.height}${(s.resizeMode === "custom" || s.vsr) && preview?.dimensions ? ` → ${preview.dimensions.width}×${preview.dimensions.height}` : ""} · ${formatFPS(job.meta.fpsText || job.meta.fps)}${s.vfg ? ` → ${formatFPS(Number(job.meta.fps) * s.vfgMultiplier)}（VFG ${s.vfgMultiplier}×）` : s.fps === "source" ? "" : ` → ${formatFPS(s.fps)}`} FPS`
+                ? `${job.meta.width}×${job.meta.height}${(s.resizeMode !== "source" || s.vsr) && preview?.dimensions ? ` → ${preview.dimensions.width}×${preview.dimensions.height}` : ""} · ${formatFPS(job.meta.fpsText || job.meta.fps)}${s.vfg ? ` → ${formatFPS(Number(job.meta.fps) * s.vfgMultiplier)}（VFG ${s.vfgMultiplier}×）` : s.fps === "source" ? "" : ` → ${formatFPS(s.fps)}`} FPS`
                 : "保持源分辨率与帧率"}{" "}
               <ArrowRight size={15} />
               <span>
@@ -1627,17 +1782,29 @@ export default function App() {
         open={modal === "presets"}
         onClose={() => setModal("")}
         title="预设管理"
-        description="内置预设可以调用和另存为；个人预设可以删除、导入或导出。"
+        description="拖动排序；隐藏的预设不出现在预设下拉框里。内置预设也可以改名、更新或删除，随时可以恢复。导入导出只包含个人预设。"
       >
         <div className="preset-list">
-          {state.presets.map((p) => (
-            <div key={p.id} className="preset-item">
+          {presets.map((p) => (
+            <div
+              key={p.id}
+              className={`preset-item ${presetHidden(p) ? "is-hidden" : ""}`}
+              {...sortPreset(p.id)}
+            >
+              <span {...sortPreset.handle(p.id)}>
+                <GripVertical size={16} aria-hidden />
+              </span>
               <Bookmark size={20} />
               <div>
                 <strong>{p.name}</strong>
                 <small>
-                  {p.builtin ? "内置" : "个人"} ·{" "}
+                  {p.builtin ? (p.edited ? "内置 · 已修改" : "内置") : "个人"} ·{" "}
                   {p.settings.container.toUpperCase()} · {p.settings.encoder}
+                  {presetHidden(p)
+                    ? p.hidden !== undefined
+                      ? " · 已隐藏"
+                      : " · 已自动隐藏（本机支持硬件编码）"
+                    : ""}
                 </small>
               </div>
               <Button
@@ -1649,26 +1816,35 @@ export default function App() {
               >
                 调用
               </Button>
-              {!p.builtin && (
-                <Button
-                  onClick={() => {
-                    setRenameTarget(p);
-                    setPresetName(p.name);
-                    setError("");
-                  }}
-                >
-                  编辑名称
-                </Button>
-              )}
-              {!p.builtin && (
-                <Button
-                  variant="ghost"
-                  aria-label={`删除预设 ${p.name}`}
-                  onClick={() => setPendingDelete(p)}
-                >
-                  <Trash2 size={16} />
-                </Button>
-              )}
+              <Button
+                onClick={() => {
+                  setRenameTarget(p);
+                  setPresetName(p.name);
+                  setError("");
+                }}
+              >
+                编辑名称
+              </Button>
+              <Button
+                variant="ghost"
+                title={presetHidden(p) ? "显示" : "隐藏"}
+                aria-label={`${presetHidden(p) ? "显示" : "隐藏"}预设 ${p.name}`}
+                onClick={() =>
+                  void call("hidePreset", {
+                    id: p.id,
+                    hidden: !presetHidden(p),
+                  }).catch(() => {})
+                }
+              >
+                {presetHidden(p) ? <EyeOff size={16} /> : <Eye size={16} />}
+              </Button>
+              <Button
+                variant="ghost"
+                aria-label={`删除预设 ${p.name}`}
+                onClick={() => setPendingDelete(p)}
+              >
+                <Trash2 size={16} />
+              </Button>
             </div>
           ))}
         </div>
@@ -1685,7 +1861,14 @@ export default function App() {
           >
             导出预设
           </Button>
-          {activePreset && !activePreset.builtin && (
+          <Button
+            onClick={() =>
+              action("restoreBuiltinPresets", undefined, "内置预设已恢复")
+            }
+          >
+            恢复内置预设
+          </Button>
+          {activePreset && (
             <Button
               onClick={() => {
                 setSaveId(activePreset.id);
@@ -1738,12 +1921,43 @@ export default function App() {
                       : "尚未检查更新"}
             </p>
             <div className="row-actions">
-              <Button disabled={update.checking} onClick={() => checkUpdate()}>
+              <Button
+                disabled={update.checking || appUpdate.phase === "downloading"}
+                onClick={() => checkUpdate()}
+              >
                 <RefreshCw size={15} />
                 检查更新
               </Button>
+              {update.newer && update.canInstall && (
+                <Button
+                  variant="primary"
+                  disabled={
+                    busy ||
+                    state.running ||
+                    ["downloading", "extracting", "installing"].includes(
+                      appUpdate.phase,
+                    )
+                  }
+                  onClick={() =>
+                    appUpdate.phase === "ready"
+                      ? void installUpdate()
+                      : void downloadUpdate()
+                  }
+                >
+                  <ArrowDownToLine size={15} />
+                  {appUpdate.phase === "ready"
+                    ? "重启并完成更新"
+                    : appUpdate.phase === "downloading"
+                      ? "正在下载…"
+                      : appUpdate.phase === "extracting"
+                        ? "正在解压…"
+                        : "下载并更新"}
+                </Button>
+              )}
               <Button
-                variant={update.newer ? "primary" : undefined}
+                variant={
+                  update.newer && !update.canInstall ? "primary" : undefined
+                }
                 onClick={() =>
                   action("openReleasePage", {
                     url: update.newer ? update.url : "",
@@ -1755,6 +1969,23 @@ export default function App() {
               </Button>
             </div>
           </div>
+          {update.newer && (
+            <p
+              className={appUpdate.error ? "inline-error" : "hint"}
+              role={appUpdate.error ? "alert" : undefined}
+            >
+              {appUpdate.error
+                ? "更新失败：" + appUpdate.error
+                : appUpdate.phase === "downloading"
+                  ? `已下载 ${formatSize(appUpdate.received)}${appUpdate.total ? " / " + formatSize(appUpdate.total) : ""}`
+                  : appUpdate.phase === "ready"
+                    ? "新版本已下载并通过校验。点“重启并完成更新”后软件会关闭，替换程序文件后自动重新打开；设置、预设和日志（data 文件夹）保留不动。"
+                    : update.canInstall
+                      ? "下载后先校验 SHA-256，再替换程序文件；data 文件夹保留不动，替换失败会自动还原旧版本。"
+                      : update.installBlocked ||
+                        "这个版本没有可自动安装的压缩包，请打开下载页手动更新。"}
+            </p>
+          )}
         </section>
         {state.tools && (
           <section
@@ -1941,7 +2172,11 @@ export default function App() {
         open={!!pendingDelete}
         onClose={() => setPendingDelete(null)}
         title="删除个人预设"
-        description={`删除“${pendingDelete?.name || ""}”后无法恢复。不会影响视频文件。`}
+        description={
+          pendingDelete?.builtin
+            ? `删除内置预设“${pendingDelete.name}”后，可在预设管理中点“恢复内置预设”找回。`
+            : `删除“${pendingDelete?.name || ""}”后无法恢复。不会影响视频文件。`
+        }
       >
         <div className="modal-actions">
           <Button autoFocus onClick={() => setPendingDelete(null)}>

@@ -1,4 +1,35 @@
 const path = require("node:path");
+// Audio codecs that store every sample exactly; "follow source" bitrate uses 320k for these.
+const LOSSLESS = /^(pcm_|flac$|alac$|wavpack$|ape$|tta$|truehd$|mlp$)/;
+const BITRATE_LIMITS = { aac: 512, libopus: 512, libmp3lame: 320 };
+// Codecs MP4 can hold; anything else falls back to MKV so the copy never fails.
+const MP4_VIDEO = ["h264", "hevc", "av1", "vp9", "mpeg4"];
+const MP4_AUDIO = ["aac", "mp3", "opus", "flac", "alac", "ac3", "eac3"];
+// Resolve "follow source" (0) to a concrete kbps for a lossy target codec.
+function audioBitrate(requested, encoder, source = {}) {
+  const max = BITRATE_LIMITS[encoder] || 320;
+  let kbps = Number(requested) || 0;
+  if (!kbps)
+    kbps = LOSSLESS.test(source.codec || "")
+      ? 320
+      : Math.round(Number(source.bitRate) / 1000) || 320;
+  return Math.min(max, Math.max(32, kbps));
+}
+// Pick MP4 only when the copied video and the output audio both fit in it.
+function mergeContainer(p, source = {}) {
+  if (p.container !== "mp4") return "mkv";
+  if (source.videoCodec && !MP4_VIDEO.includes(source.videoCodec)) return "mkv";
+  if (p.operation === "merge") {
+    if (p.audioFormat === "wav") return "mkv";
+    if (
+      p.audioFormat === "copy" &&
+      source.audioCodec &&
+      !MP4_AUDIO.includes(source.audioCodec)
+    )
+      return "mkv";
+  }
+  return "mp4";
+}
 function command(p, tools, output) {
   if (!["audio", "video", "merge"].includes(p.operation))
     throw Error("请选择提取音频、提取视频或音视频合并");
@@ -24,14 +55,18 @@ function command(p, tools, output) {
     flac: ["flac", "flac"],
     aac: ["aac", "m4a"],
     opus: ["libopus", "opus"],
+    mp3: ["libmp3lame", "mp3"],
     copy: ["copy", "mka"],
   }[p.audioFormat || "wav"];
   if (!audio) throw Error("音频格式无效");
   const ext = path.extname(p.output).toLowerCase();
   if (p.operation === "audio" && ext !== "." + audio[1])
     throw Error("所选音频格式需要 ." + audio[1] + " 输出文件");
-  if (["merge", "video"].includes(p.operation) && ext !== ".mkv")
-    throw Error("无损视频提取 / 合并使用 .mkv 输出，兼容更多源编码");
+  if (
+    ["merge", "video"].includes(p.operation) &&
+    ![".mkv", ".mp4"].includes(ext)
+  )
+    throw Error("视频提取 / 合并使用 .mp4 或 .mkv 输出");
   const args = ["-hide_banner", "-nostdin", "-n", "-i", p.input];
   if (p.operation === "merge") args.push("-i", p.audioInput);
   if (p.operation === "audio")
@@ -47,12 +82,15 @@ function command(p, tools, output) {
         : ["-an"]),
     );
   if (
-    audio[0] !== "copy" &&
-    ["aac", "libopus"].includes(audio[0]) &&
+    ["aac", "libopus", "libmp3lame"].includes(audio[0]) &&
     p.operation !== "video"
   )
-    args.push("-b:a", String(p.audioBitrate || 192) + "k");
+    args.push(
+      "-b:a",
+      audioBitrate(p.audioBitrate, audio[0], p.sourceAudio) + "k",
+    );
   if (p.operation === "merge" && p.shortest !== false) args.push("-shortest");
+  if (ext === ".mp4") args.push("-movflags", "+faststart");
   args.push("-progress", "pipe:1", output);
   return { exe: tools.ffmpeg, args };
 }
@@ -61,6 +99,7 @@ const EXTENSIONS = {
   flac: "flac",
   aac: "m4a",
   opus: "opus",
+  mp3: "mp3",
   copy: "mka",
 };
 // Default output beside the source, following the video page's output location
@@ -68,7 +107,11 @@ const EXTENSIONS = {
 function suggestOutput(p, settings, exists) {
   if (typeof p.input !== "string" || !path.isAbsolute(p.input)) return "";
   const ext =
-    p.operation === "audio" ? EXTENSIONS[p.audioFormat] || "wav" : "mkv";
+    p.operation === "audio"
+      ? EXTENSIONS[p.audioFormat] || "wav"
+      : p.container === "mp4"
+        ? "mp4"
+        : "mkv";
   const suffix = { audio: "", video: "_无音频", merge: "_合并" }[p.operation];
   if (suffix === undefined) return "";
   let dir = path.dirname(p.input);
@@ -89,4 +132,10 @@ function suggestOutput(p, settings, exists) {
   }
   throw Error("无法分配不重名的输出文件");
 }
-module.exports = { command, suggestOutput, EXTENSIONS };
+module.exports = {
+  command,
+  suggestOutput,
+  audioBitrate,
+  mergeContainer,
+  EXTENSIONS,
+};

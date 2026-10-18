@@ -91,7 +91,7 @@ try {
     [regular, alpha],
   );
   await page.getByRole("button", { name: "透明通道", exact: true }).click();
-  await page.getByLabel("额外导出 Alpha 黑白遮罩").check();
+  await page.selectOption("#alphaMode", "split");
   await page.getByRole("button", { name: "输出", exact: true }).click();
   await page.selectOption("#outputMode", "custom");
   const outputDir = path.join(dir, "统一输出");

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
 const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, "..");
 const dest = process.env.MMD_PACKAGE_DEST
@@ -9,39 +10,43 @@ const dest = process.env.MMD_PACKAGE_DEST
 const version = JSON.parse(
   await fs.readFile(path.join(root, "package.json"), "utf8"),
 ).version;
-// The latest build always lives in release/MMDEncoder; an older build found there is
-// kept beside it as release/MMDEncoder-<its version>.
-async function archivePrevious() {
-  let previous;
+// The latest build always lives in release/MMDEncoder and replaces the previous
+// one (old versions are kept only as ZIPs in release/archives). The user's data
+// folder there is moved aside during the build and put back afterwards.
+const keep = path.join(path.dirname(dest), ".data-keep");
+let keptData = false;
+async function replacePrevious() {
+  const running = execFileSync(
+    "tasklist",
+    ["/FI", "IMAGENAME eq MMD Encoder.exe", "/NH"],
+    { encoding: "utf8", windowsHide: true },
+  );
+  if (running.includes("MMD Encoder.exe"))
+    throw new Error("MMD Encoder 正在运行，请先关闭再打包");
   try {
-    previous = JSON.parse(
-      await fs.readFile(
-        path.join(dest, "resources", "app", "package.json"),
-        "utf8",
-      ),
-    ).version;
+    await fs.access(path.join(dest, "MMD Encoder.exe"));
   } catch {
-    throw new Error("无法识别发行目录中的版本，请手动处理：" + dest);
+    throw new Error("发行目录不是 MMD Encoder 便携版，请手动处理：" + dest);
   }
-  if (previous === version)
-    throw new Error(
-      `发行目录已是 ${version}，请先提升 package.json 版本号再打包`,
-    );
-  const archived = path.join(path.dirname(dest), "MMDEncoder-" + previous);
   try {
-    await fs.access(archived);
-    throw new Error("旧版本目录已存在：" + archived);
+    await fs.access(keep);
+    throw new Error("上次打包保留的数据还在，请先处理：" + keep);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
-  await fs.rename(dest, archived);
-  console.log("Previous build kept at:", archived);
+  try {
+    await fs.rename(path.join(dest, "data"), keep);
+    keptData = true;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  await fs.rm(dest, { recursive: true, force: true });
 }
 try {
   await fs.access(dest);
   if (process.env.MMD_PACKAGE_DEST)
     throw new Error("发行目录已存在，请选择新的空路径");
-  await archivePrevious();
+  await replacePrevious();
 } catch (error) {
   if (error.code !== "ENOENT") throw error;
 }
@@ -84,4 +89,19 @@ await fs.writeFile(
     main: "desktop/main.cjs",
   }),
 );
+// Electron's release files carry the ZIP epoch (1980-01-01) as their date;
+// stamp every packaged file with the build time instead.
+const builtAt = new Date();
+async function touch(dir) {
+  for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) await touch(file);
+    await fs.utimes(file, builtAt, builtAt);
+  }
+}
+await touch(dest);
+if (keptData) {
+  await fs.rename(keep, path.join(dest, "data"));
+  console.log("User data kept:", path.join(dest, "data"));
+}
 console.log("Portable app:", path.join(dest, "MMD Encoder.exe"));

@@ -60,7 +60,7 @@ test(
       assert.equal(svc.getState().jobs.length, 1);
       assert.equal(svc.getState().jobs[0].meta.hasAlpha, true);
       await svc.invoke("settings", {
-        patch: { fps: "30", alphaMask: true, alphaMode: "white" },
+        patch: { fps: "30", alphaMask: true, alphaMode: "green" },
       });
       const pre = await svc.invoke("preview", {
         id: svc.getState().jobs[0].id,
@@ -130,7 +130,7 @@ test(
       svc.dispose();
       svc = createService({ engineDir, dataDir: path.join(dir, "data") });
       assert.equal(svc.getState().settings.outputMode, "custom");
-      await svc.invoke("applyPreset", { id: "builtin-youtube" });
+      await svc.invoke("applyPreset", { id: "builtin-4k" });
       assert.equal(svc.getState().settings.outputDir, dir);
       assert.equal(svc.getState().settings.outputMode, "custom");
     } finally {
@@ -522,7 +522,7 @@ test("preset rename changes only preset, duplicate names reject atomically", asy
       /同名/,
     );
     await assert.rejects(
-      () => svc.invoke("renamePreset", { id, name: "YouTube 4K · 硬件" }),
+      () => svc.invoke("renamePreset", { id, name: "默认 4K · 硬件" }),
       /同名/,
     );
     const count = svc.getState().presets.length;
@@ -534,6 +534,117 @@ test("preset rename changes only preset, duplicate names reject atomically", asy
       /同名/,
     );
     assert.equal(svc.getState().presets.length, count);
+  } finally {
+    svc.dispose();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+test("built-in presets can be edited, hidden, deleted, reordered and restored across restarts", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-presets-"));
+  let svc = createService({ engineDir, dataDir: dir });
+  const ids = () => svc.getState().presets.map((p) => p.id);
+  const find = (id) => svc.getState().presets.find((p) => p.id === id);
+  try {
+    // Recommended presets first, then Alpha; software variants have no explicit hidden flag.
+    assert.deepEqual(ids(), [
+      "builtin-4k",
+      "builtin-4k-sw",
+      "builtin-1080",
+      "builtin-1080-sw",
+      "builtin-alpha",
+      "builtin-alpha-mask",
+    ]);
+    assert.equal(find("builtin-4k-sw").hidden, undefined);
+    await svc.invoke("renamePreset", { id: "builtin-4k", name: "油管" });
+    await svc.invoke("applyPreset", { id: "builtin-1080" });
+    await svc.invoke("settings", { patch: { quality: 31 } });
+    await svc.invoke("savePreset", {
+      id: "builtin-1080",
+      name: "默认 1080p · 硬件",
+    });
+    await svc.invoke("hidePreset", { id: "builtin-alpha", hidden: true });
+    await svc.invoke("hidePreset", { id: "builtin-1080-sw", hidden: false });
+    await svc.invoke("deletePreset", { id: "builtin-4k-sw" });
+    await svc.invoke("savePreset", { name: "个人" });
+    const order = [ids().at(-1), ...ids().slice(0, -1)];
+    await svc.invoke("reorderPresets", { ids: order });
+    await assert.rejects(
+      svc.invoke("reorderPresets", { ids: order.slice(1) }),
+      /排序/,
+    );
+    svc.dispose();
+
+    svc = createService({ engineDir, dataDir: dir });
+    assert.deepEqual(ids(), order);
+    assert.equal(find("builtin-4k").name, "油管");
+    assert.equal(find("builtin-4k").settings.presetName, "油管");
+    assert.equal(find("builtin-4k").builtin, true);
+    assert.equal(find("builtin-1080").settings.quality, 31);
+    assert.equal(find("builtin-1080").edited, true);
+    assert.equal(find("builtin-alpha").hidden, true);
+    assert.equal(find("builtin-1080-sw").hidden, false);
+    assert.equal(find("builtin-4k-sw"), undefined);
+    const saved = JSON.parse(
+      fs.readFileSync(path.join(dir, "settings.json"), "utf8"),
+    );
+    assert.ok(saved.presets.every((p) => !p.id.startsWith("builtin-")));
+
+    await svc.invoke("restoreBuiltinPresets");
+    assert.equal(find("builtin-4k").name, "默认 4K · 硬件");
+    assert.equal(find("builtin-1080").settings.quality, 29);
+    assert.equal(find("builtin-alpha").hidden, undefined);
+    assert.ok(find("builtin-4k-sw"));
+    assert.equal(ids()[0], order[0], "personal preset keeps its place");
+  } finally {
+    svc.dispose();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+test("an update overwrites changed built-ins but keeps every personal preset", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-presets-"));
+  const file = path.join(dir, "settings.json");
+  let svc = createService({ engineDir, dataDir: dir });
+  const find = (id) => svc.getState().presets.find((p) => p.id === id);
+  try {
+    await svc.invoke("renamePreset", { id: "builtin-4k", name: "油管" });
+    await svc.invoke("renamePreset", { id: "builtin-alpha", name: "推特" });
+    await svc.invoke("savePreset", { name: "我的 MMD" });
+    svc.dispose();
+    // Simulate a new version: 默认 4K's shipped definition changed, a built-in
+    // was dropped, one now shares a personal name, and a personal preset is
+    // unreadable under the new rules.
+    const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+    saved.builtins["builtin-4k"].base = "older-definition";
+    saved.builtins["builtin-gone"] = {
+      name: "旧内置",
+      settings: saved.presets[0].settings,
+      base: "x",
+    };
+    saved.presets.push(
+      { ...saved.presets[0], id: "p2", name: "默认 1080p · 硬件" },
+      { id: "p3", name: "坏预设", settings: { encoder: 5 } },
+    );
+    fs.writeFileSync(file, JSON.stringify(saved));
+
+    svc = createService({ engineDir, dataDir: dir });
+    const names = svc.getState().presets.map((p) => p.name);
+    assert.equal(find("builtin-4k").name, "默认 4K · 硬件");
+    assert.equal(find("builtin-4k").edited, undefined);
+    assert.equal(
+      find("builtin-alpha").name,
+      "推特",
+      "unchanged built-in keeps edit",
+    );
+    assert.ok(!names.includes("旧内置"), "dropped built-in is not kept");
+    assert.ok(names.includes("我的 MMD"));
+    assert.equal(find("p2").name, "默认 1080p · 硬件");
+    assert.equal(find("builtin-1080").name, "默认 1080p · 硬件（内置）");
+    assert.match(svc.getState().notice, /坏预设/);
+    await svc.invoke("hidePreset", { id: "p2", hidden: true });
+    const after = JSON.parse(fs.readFileSync(file, "utf8"));
+    assert.ok(after.presets.some((p) => p.name === "坏预设"));
+    assert.equal(after.builtins["builtin-4k"], undefined);
+    assert.equal(after.builtins["builtin-gone"], undefined);
   } finally {
     svc.dispose();
     fs.rmSync(dir, { recursive: true, force: true });

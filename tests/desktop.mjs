@@ -136,8 +136,7 @@ try {
   await expect(
     page.getByRole("alert").getByText("保留 Alpha 请选择", { exact: false }),
   ).toBeVisible();
-  await page.selectOption("#alphaMode", "discard");
-  await page.getByLabel("额外导出 Alpha 黑白遮罩").check();
+  await page.selectOption("#alphaMode", "split");
   await page.getByRole("button", { name: "输出", exact: true }).click();
   await page.selectOption("#outputMode", "source");
   await page.selectOption("#outputMode", "encoded");

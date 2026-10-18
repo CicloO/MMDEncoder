@@ -15,9 +15,19 @@ import {
   SlidersHorizontal,
   Square,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
-import { Button, Field, Select } from "./components";
-import { formatSize } from "./presentation";
+import {
+  Button,
+  Field,
+  Select,
+  Modal,
+  useDragSort,
+  PAGE_SIZE,
+} from "./components";
+import { MediaDetails } from "./MediaDetails";
+import { FileMeta, metaSummary } from "./FileMeta";
 import type { MediaJob, State } from "./types";
 
 const AUDIO_EXT = /\.(wav|flac|mp3|aac|m4a|opus|ogg|mka)$/i;
@@ -29,9 +39,18 @@ const OPERATIONS: Record<string, string> = {
 const FORMATS: Record<string, string> = {
   wav: "WAV · PCM 16-bit 无损",
   flac: "FLAC · 无损",
-  aac: "AAC · 192 kbps",
-  opus: "Opus · 192 kbps",
+  aac: "AAC",
+  mp3: "MP3",
+  opus: "Opus",
   copy: "直接复制原音频 · 不重新编码",
+};
+const LOSSY = ["aac", "mp3", "opus"];
+// 0 follows the source audio bitrate (lossless sources use 320 kbps).
+const BITRATES = [0, 96, 128, 160, 192, 256, 320, 384, 512];
+const MAX_BITRATE: Record<string, number> = { aac: 512, mp3: 320, opus: 512 };
+const CONTAINERS: Record<string, string> = {
+  mp4: "MP4",
+  mkv: "MKV",
 };
 const LOCATIONS: Record<string, string> = {
   source: "与源文件同目录",
@@ -49,6 +68,8 @@ const OPTIONS_KEY = "mmd-media-options";
 type Options = {
   operation: string;
   audioFormat: string;
+  audioBitrate: number;
+  container: string;
   shortest: boolean;
   location: string;
   outputDir: string;
@@ -56,6 +77,8 @@ type Options = {
 const DEFAULT_OPTIONS: Options = {
   operation: "audio",
   audioFormat: "wav",
+  audioBitrate: 0,
+  container: "mp4",
   shortest: true,
   location: "source",
   outputDir: "",
@@ -76,16 +99,31 @@ export function MediaTools({
   state,
   call,
   dropped,
+  onDropHandled,
 }: {
   state: State;
   call: (action: string, payload?: unknown) => Promise<any>;
   dropped?: { paths: string[]; seq: number };
+  onDropHandled?: () => void;
 }) {
   const [o, setOptions] = useState<Options>(loadOptions),
     [selectedId, setSelectedId] = useState(""),
     [preview, setPreview] = useState(""),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [details, setDetails] = useState<any>(null),
+    [detailsOpen, setDetailsOpen] = useState(false),
+    [detailsError, setDetailsError] = useState("");
   const jobs = state.mediaJobs;
+  // Same paging as the video queue.
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(jobs.length / PAGE_SIZE));
+  useEffect(() => {
+    if (page >= pageCount) setPage(pageCount - 1);
+  }, [page, pageCount]);
+  const sortJob = useDragSort(
+    jobs.map((j) => j.id),
+    (ids) => void call("mediaReorder", { ids }).catch(() => {}),
+  );
   const selected = jobs.find((j) => j.id === selectedId) || jobs[0];
   const locked =
     state.running ||
@@ -95,6 +133,8 @@ export function MediaTools({
   const readyJobs = jobs.filter((j) => j.status === "ready");
   const doneCount = jobs.filter((j) => j.status === "done").length;
   const clearable = jobs.some((j) => ["done", "cancelled"].includes(j.status));
+  // A remembered bitrate above the chosen format's limit (e.g. 512k → MP3) is capped.
+  const bitrate = Math.min(o.audioBitrate, MAX_BITRATE[o.audioFormat] || 512);
   const missingAudio =
     o.operation === "merge" && readyJobs.some((j) => !j.audioPath);
 
@@ -143,7 +183,9 @@ export function MediaTools({
     }
   }
   useEffect(() => {
-    if (dropped?.paths.length && !locked) void accept(dropped.paths);
+    if (!dropped?.paths.length) return;
+    onDropHandled?.();
+    if (!locked) void accept(dropped.paths);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dropped?.seq]);
 
@@ -158,6 +200,7 @@ export function MediaTools({
       input: previewJob.path,
       audioInput: previewJob.audioPath,
       audioFormat: o.audioFormat,
+      container: o.container,
       location: o.location,
       outputDir: o.outputDir,
     })
@@ -173,6 +216,7 @@ export function MediaTools({
     previewJob?.status,
     o.operation,
     o.audioFormat,
+    o.container,
     o.location,
     o.outputDir,
   ]);
@@ -200,6 +244,7 @@ export function MediaTools({
     <li
       key={j.id}
       className={`job-row ${j.id === selected?.id ? "selected" : ""}`}
+      {...sortJob(j.id)}
     >
       <button
         className="job-select"
@@ -219,7 +264,7 @@ export function MediaTools({
         <span className="job-copy">
           <strong title={j.path}>{j.name}</strong>
           <span className="job-sub">
-            {formatSize(j.size)}
+            {j.meta ? metaSummary(j.meta) : j.metaError || "正在读取文件信息"}
             {o.operation === "merge" &&
               (j.audioPath
                 ? ` · 音频：${baseName(j.audioPath)}`
@@ -318,7 +363,36 @@ export function MediaTools({
                 <small>MP4 · MKV · MOV · WAV · FLAC · MP3 等常见格式</small>
               </div>
             ) : (
-              <ol className="job-list">{jobs.map(row)}</ol>
+              <ol className="job-list">
+                {jobs
+                  .slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
+                  .map(row)}
+              </ol>
+            )}
+            {jobs.length > 0 && (
+              <div className="queue-pagination">
+                <span>
+                  {page * PAGE_SIZE + 1}–
+                  {Math.min((page + 1) * PAGE_SIZE, jobs.length)} /{" "}
+                  {jobs.length} 个文件
+                </span>
+                <div>
+                  <Button
+                    aria-label="上一页"
+                    disabled={page === 0}
+                    onClick={() => setPage(page - 1)}
+                  >
+                    <ChevronLeft size={16} />
+                  </Button>
+                  <Button
+                    aria-label="下一页"
+                    disabled={page + 1 >= pageCount}
+                    onClick={() => setPage(page + 1)}
+                  >
+                    <ChevronRight size={16} />
+                  </Button>
+                </div>
+              </div>
             )}
           </div>
           {selected && (
@@ -336,12 +410,36 @@ export function MediaTools({
                 </Button>
               </div>
               <h3 title={selected.path}>{selected.name}</h3>
-              <div role="status">
-                <p>{STATUS[selected.status] || selected.status}</p>
-              </div>
+              <Button
+                disabled={!!state.tools?.busy}
+                onClick={async () => {
+                  setDetails(null);
+                  setDetailsError("");
+                  setDetailsOpen(true);
+                  try {
+                    setDetails(
+                      await call("details", { id: selected.id, media: true }),
+                    );
+                  } catch (e) {
+                    setDetailsError((e as Error).message);
+                  }
+                }}
+              >
+                文件详情 · 转换前 / 后
+              </Button>
+              {selected.meta ? (
+                <FileMeta meta={selected.meta} />
+              ) : (
+                <p className="muted">
+                  {selected.metaError || "正在读取文件信息…"}
+                </p>
+              )}
+              <p className="path-text" title={selected.path}>
+                {selected.path}
+              </p>
               {selected.output && (
                 <p className="path-text" title={selected.output}>
-                  {selected.output}
+                  → {selected.output}
                 </p>
               )}
               {selected.error && (
@@ -398,6 +496,34 @@ export function MediaTools({
                   onChange={(v) => set("audioFormat", v)}
                 />
               )}
+              {o.operation !== "video" && LOSSY.includes(o.audioFormat) && (
+                <Select
+                  id="media-bitrate"
+                  label="音频码率"
+                  value={String(bitrate)}
+                  disabled={locked}
+                  options={BITRATES.filter(
+                    (b) => b <= MAX_BITRATE[o.audioFormat],
+                  ).map((b) => ({
+                    value: String(b),
+                    label: b ? `${b} kbps` : "跟随源文件（无损源用 320 kbps）",
+                  }))}
+                  onChange={(v) => set("audioBitrate", Number(v))}
+                />
+              )}
+              {o.operation !== "audio" && (
+                <Select
+                  id="media-container"
+                  label="输出格式"
+                  value={o.container}
+                  disabled={locked}
+                  options={Object.entries(CONTAINERS).map(([value, label]) => ({
+                    value,
+                    label,
+                  }))}
+                  onChange={(v) => set("container", v)}
+                />
+              )}
               {o.operation === "merge" && (
                 <label className="checkbox-row">
                   <input
@@ -439,7 +565,7 @@ export function MediaTools({
               <p className="hint">
                 {o.operation === "audio"
                   ? "只输出第一条音频流。"
-                  : "第一条视频流直接复制、不重新压制，使用 MKV。"}
+                  : `第一条视频流直接复制、不重新压制。${o.container === "mp4" ? "MP4 放不下的编码（如 MMD 直接输出的 AVI 原始视频、WAV 音频）会自动改用 MKV。" : ""}`}
                 文件名自动生成，已有文件不覆盖、自动编号；源文件保持不变。
               </p>
               {error && (
@@ -464,13 +590,26 @@ export function MediaTools({
                 ? "没有待处理文件"
                 : "添加文件"}{" "}
             <ArrowRight size={15} />
-            <span>
-              {OPERATIONS[o.operation]}
-              {o.operation !== "video"
-                ? ` · ${FORMATS[o.audioFormat]}`
-                : " · MKV"}
-            </span>
+            <span>{OPERATIONS[o.operation]}</span>
           </strong>
+          <span className="output-facts">
+            {o.operation !== "video" ? (
+              <>
+                音频 → {FORMATS[o.audioFormat]}
+                {LOSSY.includes(o.audioFormat) &&
+                  ` · ${bitrate ? bitrate + " kbps" : "跟随源码率"}`}
+              </>
+            ) : (
+              "音频 → 移除"
+            )}
+            {o.operation !== "audio" && (
+              <>
+                <i />
+                视频 → 直接复制 · {o.container.toUpperCase()}
+              </>
+            )}
+            <i /> 位置 → {LOCATIONS[o.location]}
+          </span>
           <span className="output-path" title={preview}>
             {missingAudio
               ? "合并前请为每个视频选择替换音频"
@@ -496,6 +635,8 @@ export function MediaTools({
                 run("mediaStart", {
                   operation: o.operation,
                   audioFormat: o.audioFormat,
+                  audioBitrate: bitrate,
+                  container: o.container,
                   shortest: o.shortest,
                   location: o.location,
                   outputDir: o.outputDir,
@@ -508,6 +649,16 @@ export function MediaTools({
           )}
         </div>
       </footer>
+      <Modal
+        open={detailsOpen}
+        onClose={() => setDetailsOpen(false)}
+        title="文件详情"
+        description="直接读取源文件与实际生成文件的 ffprobe 参数。"
+        error={detailsError}
+        wide
+      >
+        <MediaDetails details={details} media />
+      </Modal>
     </>
   );
 }

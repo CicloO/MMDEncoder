@@ -38,16 +38,19 @@ const DEFAULTS = {
   vfgMode: "medium",
   vfgModelDir: "",
 };
+// ProRes quantizer used when switching to ProRes: measured on MMD footage at
+// about 1/4 of the default size with SSIM 0.998 against the source.
+const PRORES_QUALITY = 8;
 const ENGINES = [
-  ["libx264", "H.264 · 软件", "cpu", "h264", [8, 10]],
-  ["libx265", "HEVC · 软件", "cpu", "hevc", [8, 10]],
-  ["libsvtav1", "AV1 · 软件", "cpu", "av1", [8, 10]],
-  ["libvpx-vp9", "VP9 · 软件", "cpu", "vp9", [8, 10]],
-  ["prores_ks", "ProRes · 软件", "cpu", "prores", [10]],
+  ["libx264", "H.264 · CPU", "cpu", "h264", [8, 10]],
+  ["libx265", "HEVC · CPU", "cpu", "hevc", [8, 10]],
+  ["libsvtav1", "AV1 · CPU", "cpu", "av1", [8, 10]],
+  ["libvpx-vp9", "VP9 · CPU", "cpu", "vp9", [8, 10]],
+  ["prores_ks", "ProRes · CPU", "cpu", "prores", [10]],
   ...["nvenc", "qsv", "amf"].flatMap((b) =>
     ["h264", "hevc", ...(b === "nvenc" ? ["av1"] : [])].map((c) => [
       c + "_" + b,
-      c.toUpperCase() + " · " + b.toUpperCase(),
+      (c === "h264" ? "H.264" : c.toUpperCase()) + " · " + b.toUpperCase(),
       b,
       c,
       c === "h264" ? [8] : [8, 10],
@@ -55,7 +58,7 @@ const ENGINES = [
   ),
   ...["h264", "hevc", "av1"].map((c) => [
     "nvencc:" + c,
-    c.toUpperCase() + " · NVEncC",
+    (c === "h264" ? "H.264" : c.toUpperCase()) + " · NVEncC",
     "nvencc",
     c,
     c === "h264" ? [8] : [8, 10],
@@ -92,57 +95,97 @@ const BUILTINS = [
     },
   },
 ];
-// Platform presets: a hardware (NVENC CQ) and a software (x264 CRF) variant at a
-// similar bitrate. X stays hardware-only with a bitrate cap for its 512 MB limit.
-const PLATFORMS = [
-  // id, name, width, height, audio kbps, NVENC CQ, x264 CRF
-  ["youtube", "YouTube 4K", 3840, 2160, 384, 27, 19],
-  ["bilibili4k", "B站 4K", 3840, 2160, 320, 29, 21],
-  ["bilibili1080", "B站 1080P60", 1920, 1080, 320, 29, 21],
-  ["tiktok", "抖音 / TikTok 4K", 2160, 3840, 320, 29, 21],
-  ["x", "X 1080p", 1920, 1080, 256, 25, 0],
+// Recommended upload presets: a hardware (NVENC CQ) and a software (x264 CRF)
+// variant at a similar bitrate (CQ 29 ≈ CRF 21, measured). Scaling uses the long
+// edge, so landscape and portrait sources both come out at 3840 / 1920.
+const RECOMMENDED = [
+  // id, name, long edge
+  ["4k", "默认 4K", 3840],
+  ["1080", "默认 1080p", 1920],
 ];
 BUILTINS.splice(
   0,
   BUILTINS.length,
-  ...PLATFORMS.flatMap(([id, label, width, height, audioBitrate, cq, crf]) => {
+  ...RECOMMENDED.flatMap(([id, label, edge]) => {
     const base = {
       ...DEFAULTS,
-      resizeMode: "custom",
-      // Vertical preset scales by its long edge (height) so tall sources stay within 3840.
-      resizeAxis: id === "tiktok" ? "height" : "width",
-      width,
-      height,
+      resizeMode: "long",
+      width: edge,
+      height: Math.round((edge * 9) / 16),
       keepAspect: true,
-      audioBitrate,
+      audioBitrate: 320,
     };
-    const hardware = {
-      id: "builtin-" + id,
-      name: crf ? label + " · 硬件" : label,
-      settings: {
-        ...base,
-        encoder: "h264_nvenc",
-        quality: cq,
-        // CQ presets: p4 measured as good as p7 at ~2.4× the 4K speed. X is
-        // bitrate-capped, where a slower preset still buys quality, so it keeps p7.
-        preset: id === "x" ? "p7" : "p4",
-        lookahead: 32,
-        lookaheadLevel: 0,
-        ...(id === "x" ? { rateControl: "bitrate", bitrate: 20000 } : {}),
+    return [
+      {
+        id: "builtin-" + id,
+        name: label + " · 硬件",
+        // p4 measured as good as p7 at ~2.4× the 4K speed.
+        settings: {
+          ...base,
+          encoder: "h264_nvenc",
+          quality: 29,
+          preset: "p4",
+          lookahead: 32,
+          lookaheadLevel: 0,
+        },
       },
-    };
-    const software = crf && {
-      id: "builtin-" + id + "-sw",
-      name: label + " · 软件",
-      settings: { ...base, encoder: "libx264", quality: crf, preset: "medium" },
-    };
-    return [hardware, software].filter(Boolean).map((p) => ({
-      ...p,
-      builtin: true,
-      settings: { ...p.settings, presetName: p.name },
-    }));
+      {
+        id: "builtin-" + id + "-sw",
+        name: label + " · 软件",
+        settings: {
+          ...base,
+          encoder: "libx264",
+          quality: 21,
+          preset: "medium",
+        },
+      },
+    ];
   }),
+  // Transparent output at the source size for editing (After Effects etc.).
+  // ProRes 4444 in MOV: HEVC alpha lives in an auxiliary layer that only Apple's
+  // decoder reads, so AE on Windows imports it without transparency.
+  {
+    id: "builtin-alpha",
+    name: "保留 Alpha · ProRes 4444",
+    settings: {
+      ...DEFAULTS,
+      encoder: "prores_ks",
+      alphaMode: "preserve",
+      bitDepth: 10,
+      chroma: "444",
+      container: "mov",
+      audio: "pcm_s16le",
+      preset: "medium",
+      rateControl: "quality",
+      quality: PRORES_QUALITY,
+      lookahead: 0,
+      lookaheadLevel: 0,
+    },
+  },
+  // Split: the recommended hardware parameters at the source size, plus a
+  // separate lossless grayscale mask (smaller than lossy masks, measured);
+  // editors use it as a luma matte.
+  {
+    id: "builtin-alpha-mask",
+    name: "分离 Alpha · H.264 MP4",
+    settings: {
+      ...DEFAULTS,
+      encoder: "h264_nvenc",
+      container: "mp4",
+      quality: 29,
+      preset: "p4",
+      lookahead: 32,
+      lookaheadLevel: 0,
+      audioBitrate: 320,
+      alphaMode: "discard",
+      alphaMask: true,
+    },
+  },
 );
+for (const p of BUILTINS) {
+  p.builtin = true;
+  p.settings = { ...p.settings, presetName: p.name };
+}
 function parseFps(value) {
   if (value === "source") return null;
   const s = String(value).trim();
@@ -178,8 +221,6 @@ function validate(s, meta) {
     if (!ok) e.push(msg);
   };
   const eng = ENGINES.find((x) => x.id === s.encoder);
-  if (["h264_nvenc", "nvencc:h264"].includes(s.encoder))
-    check(s.lookaheadLevel === 0, "H.264 NVENC 的前向分析级别须为 0");
   if (s.vsr || s.vfg) {
     check(eng?.backend === "nvencc", "RTX 增强需要 NVEncC 编码器");
     check(
@@ -241,8 +282,9 @@ function validate(s, meta) {
     chroma: ["420", "422", "444"],
     rateControl: ["quality", "qp", "bitrate"],
     audio: ["aac", "flac", "pcm_s16le", "libopus", "none"],
-    alphaMode: ["discard", "black", "white", "preserve"],
-    resizeMode: ["source", "custom"],
+    // black / white are kept so presets saved before 1.3.0 still load.
+    alphaMode: ["discard", "green", "black", "white", "preserve"],
+    resizeMode: ["source", "custom", "long"],
     resizeAxis: ["width", "height"],
     outputMode: ["source", "encoded", "custom"],
     colorSpace: ["bt709", "bt601", "bt2020"],
@@ -268,7 +310,7 @@ function validate(s, meta) {
     e.push(x.message);
   }
   for (const [k, min, max] of [
-    ["quality", 0, 63],
+    ["quality", 0, s.encoder === "prores_ks" ? 64 : 63],
     ["bitrate", 0, 1000000],
     ["gop", -1, 10000],
     ["bframes", -1, 16],
@@ -320,6 +362,11 @@ function validate(s, meta) {
     check(speedValid, "此编码器的速度预设无效，请重新选择");
     if (["h264", "hevc"].includes(eng.codec))
       check(s.quality <= 51, "H.264 / HEVC 质量值范围为 0–51");
+    if (eng.codec === "prores")
+      check(
+        Number.isInteger(s.quality) && s.quality >= 0 && s.quality <= 64,
+        "ProRes 量化须为 0–64 的整数（0 为编码器默认）",
+      );
     if (["libsvtav1", "libvpx-vp9", "prores_ks"].includes(s.encoder))
       check(
         s.rateControl !== "qp",
@@ -354,6 +401,11 @@ function validate(s, meta) {
     if (eng.codec === "h264" && eng.backend === "nvenc")
       check(s.chroma !== "422", "H.264 NVENC 不支持此 4:2:2 配置");
   }
+  if (s.resizeMode === "long")
+    check(
+      Number.isInteger(s.width) && s.width >= 2 && s.width <= 16384,
+      "长边须为 2–16384 的整数",
+    );
   if (s.resizeMode === "custom") {
     check(typeof s.keepAspect === "boolean", "保持宽高比开关无效");
     for (const key of ["width", "height"])
@@ -376,7 +428,7 @@ function validate(s, meta) {
           ["mp4", "mov", "mkv"].includes(s.container) &&
           s.bitDepth === 8 &&
           s.chroma === "420"),
-      "保留 Alpha 请选择 ProRes 4444（MOV/MKV、10-bit、4:4:4）、VP9（WebM/MKV、8-bit、4:2:0）或 NVEncC HEVC（MP4/MOV/MKV、8-bit、4:2:0）",
+      "保留 Alpha 请选择 ProRes 4444（MOV/MKV、10-bit、4:4:4）、VP9（WebM/MKV、8-bit、4:2:0）或 NVEncC HEVC（MP4/MOV/MKV、8-bit、4:2:0），也可以改为“分离 Alpha”保持当前格式",
     );
   }
   if (meta) {
@@ -390,7 +442,7 @@ function validate(s, meta) {
     if (s.alphaMode === "preserve")
       check(meta.hasAlpha, "源视频没有可读 Alpha，不能保留透明通道");
     const size = dimensions(s, meta);
-    if (s.resizeMode === "custom")
+    if (s.resizeMode !== "source")
       check(
         size.width >= 2 &&
           size.height >= 2 &&
@@ -471,6 +523,18 @@ function commandText(commands, { prepare = false } = {}) {
       lines.push(`Remove-Item -LiteralPath ${quote(c.temporary)}`);
   return lines.join("\r\n");
 }
+// Audio stream summary. MKV often has no stream bit_rate; mkvmerge writes a
+// BPS tag instead. Lossless / PCM streams may report none at all (0).
+function audioInfo(a) {
+  return {
+    codec: a.codec_name,
+    profile: a.profile && a.profile !== "unknown" ? a.profile : undefined,
+    sampleRate: Number(a.sample_rate),
+    channels: a.channels,
+    channelLayout: a.channel_layout,
+    bitRate: Number(a.bit_rate || a.tags?.BPS || a.tags?.["BPS-eng"]) || 0,
+  };
+}
 function metadata(data) {
   const v = data.streams?.find(
     (s) => s.codec_type === "video" && s.disposition?.attached_pic !== 1,
@@ -515,14 +579,7 @@ function metadata(data) {
     ),
     colorRange: v.color_range,
     colorSpace: v.color_space,
-    audio: a
-      ? {
-          codec: a.codec_name,
-          sampleRate: Number(a.sample_rate),
-          channels: a.channels,
-          channelLayout: a.channel_layout,
-        }
-      : undefined,
+    audio: a ? audioInfo(a) : undefined,
   };
 }
 function dimensions(s, meta) {
@@ -531,6 +588,13 @@ function dimensions(s, meta) {
       width: Math.max(2, Math.round((meta.width * s.vsrScale) / 2) * 2),
       height: Math.max(2, Math.round((meta.height * s.vsrScale) / 2) * 2),
     };
+  if (s.resizeMode === "long" && meta.width && meta.height) {
+    // Long edge: landscape sources get this width, portrait ones this height.
+    const even = (v) => Math.max(2, Math.round(v / 2) * 2);
+    return meta.width >= meta.height
+      ? { width: s.width, height: even((s.width * meta.height) / meta.width) }
+      : { width: even((s.width * meta.width) / meta.height), height: s.width };
+  }
   if (s.resizeMode !== "custom")
     return { width: meta.width, height: meta.height };
   let width = s.width,
@@ -560,9 +624,12 @@ function pix(s) {
 function videoOptions(s) {
   const e = ENGINES.find((x) => x.id === s.encoder);
   const a = ["-c:v", s.encoder, "-pix_fmt", pix(s)];
-  if (e.codec === "prores")
+  if (e.codec === "prores") {
     a.push("-profile:v", s.chroma === "444" ? "4" : "3");
-  else if (e.backend === "nvenc") {
+    // Quantizer 1–64 (smaller = better); 0 leaves the encoder's default rate,
+    // about 4× the size of quantizer 8 for MMD footage at similar quality.
+    if (s.quality > 0) a.push("-qscale:v", String(s.quality));
+  } else if (e.backend === "nvenc") {
     a.push("-preset", s.preset.toLowerCase());
     if (s.rateControl === "quality")
       a.push("-rc", "vbr", "-cq", String(s.quality), "-b:v", "0");
@@ -570,7 +637,9 @@ function videoOptions(s) {
       a.push("-rc", "constqp", "-qp", String(s.quality));
     else a.push("-rc", "vbr", "-b:v", s.bitrate + "k");
     a.push("-rc-lookahead", String(s.lookahead));
-    if (s.lookaheadLevel) a.push("-lookahead_level", String(s.lookaheadLevel));
+    // H.264 NVENC 不支持前向分析级别（只有 HEVC / AV1 支持），界面上也已禁用
+    if (s.lookaheadLevel && e.codec !== "h264")
+      a.push("-lookahead_level", String(s.lookaheadLevel));
   } else if (e.backend === "qsv") {
     a.push(
       "-preset",
@@ -639,28 +708,35 @@ function videoOptions(s) {
   if (s.bframes >= 0) a.push("-bf", String(s.bframes));
   return a;
 }
+// Background colours for compositing alpha away; green is the chroma-key green screen.
+const BACKGROUNDS = {
+  green: [0, 255, 0],
+  black: [0, 0, 0],
+  white: [255, 255, 255],
+};
 function filter(s, meta, mask) {
   const f = [];
   if (mask) f.push("alphaextract");
-  else if (meta.hasAlpha && ["black", "white"].includes(s.alphaMode)) {
-    const bg = s.alphaMode === "white" ? 255 : 0;
+  else if (meta.hasAlpha && BACKGROUNDS[s.alphaMode]) {
+    const [r, g, b] = BACKGROUNDS[s.alphaMode];
+    const mix = (c, bg) => `${c}(X,Y)*alpha(X,Y)/255+${bg}*(1-alpha(X,Y)/255)`;
     f.push(
       "format=rgba",
-      `geq=r='r(X,Y)*alpha(X,Y)/255+${bg}*(1-alpha(X,Y)/255)':g='g(X,Y)*alpha(X,Y)/255+${bg}*(1-alpha(X,Y)/255)':b='b(X,Y)*alpha(X,Y)/255+${bg}*(1-alpha(X,Y)/255)'`,
+      `geq=r='${mix("r", r)}':g='${mix("g", g)}':b='${mix("b", b)}'`,
     );
   }
   const fps = parseFps(s.fps);
   if (fps) f.push("fps=" + fps.text);
   const size = dimensions(s, meta);
   const resize =
-    s.resizeMode === "custom"
+    s.resizeMode !== "source"
       ? `w=${size.width}:h=${size.height}:flags=lanczos:`
       : "";
   f.push(
     `scale=${resize}in_range=${mask ? "pc" : meta.colorRange === "pc" ? "pc" : meta.colorRange === "tv" ? "tv" : "auto"}:out_range=${s.colorRange}:out_color_matrix=${s.colorSpace}`,
     `format=${pix(s)}`,
   );
-  if (s.resizeMode === "custom") f.push("setsar=1");
+  if (s.resizeMode !== "source") f.push("setsar=1");
   return f.join(",");
 }
 function buildCommands(job, s, engines, paths) {
@@ -783,13 +859,11 @@ function buildCommands(job, s, engines, paths) {
                 : []),
             ]),
       );
-      if (s.lookahead)
-        a.push(
-          "--lookahead",
-          String(s.lookahead),
-          "--lookahead-level",
-          String(s.lookaheadLevel),
-        );
+      if (s.lookahead) {
+        a.push("--lookahead", String(s.lookahead));
+        if (s.encoder !== "nvencc:h264")
+          a.push("--lookahead-level", String(s.lookaheadLevel));
+      }
       if (s.gop >= 0) a.push("--gop-len", String(s.gop));
       if (s.bframes >= 0) a.push("--bframes", String(s.bframes));
       result.push({
@@ -907,25 +981,9 @@ function compatibility(s, engines = ENGINES) {
       });
   }
   if (s.alphaMode === "preserve" && errors.length) {
+    // No NVEncC HEVC Alpha fix: Windows editors (After Effects, Premiere)
+    // cannot read HEVC alpha, so it is only offered by choosing it manually.
     for (const [id, label, patch] of [
-      [
-        "nvencc:hevc",
-        "切换至 8-bit NVEncC HEVC Alpha",
-        {
-          encoder: "nvencc:hevc",
-          bitDepth: 8,
-          chroma: "420",
-          container: ["mp4", "mov", "mkv"].includes(s.container)
-            ? s.container
-            : "mkv",
-          audio: ["mp4", "mov"].includes(s.container) ? "aac" : s.audio,
-          preset: "p4",
-          rateControl: "quality",
-          quality: Math.min(s.quality, 51),
-          lookahead: 0,
-          lookaheadLevel: 0,
-        },
-      ],
       [
         "prores_ks",
         "切换至 ProRes 4444 Alpha",
@@ -937,6 +995,7 @@ function compatibility(s, engines = ENGINES) {
           audio: s.audio === "none" ? "none" : "pcm_s16le",
           preset: "medium",
           rateControl: "quality",
+          quality: PRORES_QUALITY,
           lookahead: 0,
           lookaheadLevel: 0,
         },
@@ -963,6 +1022,12 @@ function compatibility(s, engines = ENGINES) {
       if (engine && (id !== "nvencc:hevc" || engine.alpha))
         add(id, label, patch);
     }
+    // Split alpha keeps the chosen encoder and container: the colour video
+    // drops alpha and a separate mask carries it, so any format works.
+    add("split-alpha", "改为分离 Alpha（保持当前格式）", {
+      alphaMode: "discard",
+      alphaMask: true,
+    });
   } else if (errors.length && current) {
     const patch = {};
     if (errors.some((e) => e.includes("速度预设")))
@@ -973,8 +1038,6 @@ function compatibility(s, engines = ENGINES) {
           : s.encoder === "libsvtav1"
             ? "6"
             : "medium";
-    if (["h264_nvenc", "nvencc:h264"].includes(s.encoder) && s.lookaheadLevel)
-      patch.lookaheadLevel = 0;
     if (!current.depths.includes(s.bitDepth))
       patch.bitDepth = current.depths[0];
     if (current.codec === "prores")
@@ -1017,6 +1080,8 @@ function compatibility(s, engines = ENGINES) {
   return { errors, suggestions };
 }
 module.exports = {
+  PRORES_QUALITY,
+  audioInfo,
   compatibility,
   DEFAULTS,
   dimensions,

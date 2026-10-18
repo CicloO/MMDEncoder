@@ -9,12 +9,23 @@ const root = path.resolve(import.meta.dirname, ".."),
 const version = JSON.parse(
   fs.readFileSync(path.join(root, "package.json")),
 ).version;
-const archive = path.join(root, "release", `MMDEncoder-${version}-win-x64.zip`);
-if (fs.existsSync(archive))
-  throw Error("发行 ZIP 已存在，请先选择新版本或保留旧文件后再构建");
+// All release ZIPs live together in release/archives. Rebuilding a version that
+// already has a ZIP needs --replace, so a published ZIP is never overwritten by accident.
+const archives = path.join(root, "release", "archives");
+fs.mkdirSync(archives, { recursive: true });
+const archive = path.join(archives, `MMDEncoder-${version}-win-x64.zip`);
+if (fs.existsSync(archive)) {
+  if (!process.argv.includes("--replace"))
+    throw Error("发行 ZIP 已存在；确认要替换同版本的压缩包时加 --replace");
+  fs.rmSync(archive);
+  fs.rmSync(archive + ".sha256", { force: true });
+}
+// The user's data folder and an update in progress stay out of the ZIP.
+const LOCAL = ["data", ".update"];
 const names = [];
 function scan(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (dir === folder && LOCAL.includes(e.name)) continue;
     const file = path.join(dir, e.name);
     if (e.isDirectory()) scan(file);
     else names.push(file);
@@ -31,13 +42,33 @@ if (
   throw Error("发行目录包含本机数据或开发依赖");
 execFileSync(
   path.join(root, "assets/7za.exe"),
-  ["a", "-tzip", "-mx=1", archive, path.basename(folder) + path.sep],
+  [
+    "a",
+    "-tzip",
+    "-mx=1",
+    archive,
+    path.basename(folder) + path.sep,
+    ...LOCAL.map((n) => "-x!" + path.join(path.basename(folder), n)),
+  ],
   { cwd: path.dirname(folder), stdio: "inherit", windowsHide: true },
 );
 execFileSync(path.join(root, "assets/7za.exe"), ["t", archive], {
   stdio: "inherit",
   windowsHide: true,
 });
+const listed = execFileSync(
+  path.join(root, "assets/7za.exe"),
+  ["l", "-slt", archive],
+  { encoding: "utf8", windowsHide: true },
+);
+const local = new RegExp(
+  "^Path = [^\\\\/]+[\\\\/](?:" + LOCAL.map((n) => n.replace(".", "\\.")).join("|") + ")(?:[\\\\/]|$)",
+  "m",
+);
+if (local.test(listed)) {
+  fs.rmSync(archive);
+  throw Error("压缩包意外包含本机 data 或 .update，已删除");
+}
 const hash = crypto.createHash("sha256");
 for await (const chunk of fs.createReadStream(archive)) hash.update(chunk);
 const sha256 = hash.digest("hex");

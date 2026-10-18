@@ -2,7 +2,7 @@ const test = require("node:test"),
   assert = require("node:assert/strict");
 const c = require("../backend/core.cjs");
 const engines = c.ENGINES.map((e) => ({ ...e, alpha: e.id === "nvencc:hevc" }));
-test("Alpha repairs prefer verified HEVC hardware and preserve unrelated settings", () => {
+test("Alpha repairs offer ProRes first, never HEVC alpha, and preserve unrelated settings", () => {
   const original = {
     ...c.DEFAULTS,
     alphaMode: "preserve",
@@ -17,8 +17,12 @@ test("Alpha repairs prefer verified HEVC hardware and preserve unrelated setting
   };
   const result = c.compatibility(original, engines);
   assert.ok(result.errors.length);
-  assert.equal(result.suggestions[0].id, "nvencc:hevc");
-  for (const suggestion of result.suggestions) {
+  assert.equal(result.suggestions[0].id, "prores_ks");
+  assert.ok(!result.suggestions.some((s) => s.id === "nvencc:hevc"));
+  // Split alpha changes the alpha mode by design; the format fixes keep it.
+  for (const suggestion of result.suggestions.filter(
+    (x) => x.id !== "split-alpha",
+  )) {
     const fixed = { ...original, ...suggestion.patch };
     assert.deepEqual(c.validate(fixed), []);
     for (const field of [
@@ -55,4 +59,24 @@ test("format depth chroma and audio repair yields a compatible atomic patch", ()
       [],
     );
   }
+});
+
+test("preserve alpha in an unsupported format offers split alpha keeping the format", () => {
+  const engines = c.ENGINES.map((e) => ({ ...e, alpha: true }));
+  const s = {
+    ...c.DEFAULTS,
+    encoder: "h264_nvenc",
+    preset: "p4",
+    container: "mp4",
+    alphaMode: "preserve",
+  };
+  const split = c
+    .compatibility(s, engines)
+    .suggestions.find((x) => x.id === "split-alpha");
+  assert.deepEqual(split.patch, { alphaMode: "discard", alphaMask: true });
+  assert.deepEqual(c.validate({ ...s, ...split.patch }), []);
+  const prores = c
+    .compatibility(s, engines)
+    .suggestions.find((x) => x.id === "prores_ks");
+  assert.equal(prores.patch.quality, 8);
 });

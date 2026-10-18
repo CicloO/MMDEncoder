@@ -578,13 +578,10 @@ svg {
   color: var(--color-muted);
   font: 11px/1.8 var(--font-mono);
 }
-.audio-meta {
-  font-size: 11px;
-  color: var(--color-muted);
-  margin-top: 10px;
+.metadata.audio-row {
+  margin-top: 6px;
 }
-.audio-meta span {
-  margin-left: 14px;
+.metadata-label {
   color: var(--color-text);
 }
 .path-text {
@@ -1213,4 +1210,53 @@ html[data-theme="light"] {
   .header-actions .theme-toggle:first-child {
     display: inline-flex;
   }
+}
+/* Drag-to-reorder */
+[draggable="true"] {
+  cursor: grab;
+}
+[data-dragging] {
+  opacity: 0.45;
+}
+[data-drop-target] {
+  box-shadow: inset 0 2px 0 var(--color-primary);
+}
+.preset-item .drag-handle {
+  color: var(--color-muted);
+  flex: none;
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  padding: 0 6px;
+  margin-left: -6px;
+  cursor: grab;
+  touch-action: none;
+}
+/* Preset rows drag only from the grip, so the row itself keeps a normal cursor. */
+.preset-item[draggable="true"] {
+  cursor: default;
+}
+.preset-item.is-hidden strong,
+.preset-item.is-hidden > svg {
+  opacity: 0.5;
+}
+/* Pages fill the window so the bottom output strip sits at the window edge
+   even when the queue is short. */
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.page {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.page[hidden] {
+  display: none;
+}
+.page > .workspace {
+  flex: 1 0 auto;
+  width: 100%;
+  margin: 0 auto;
 }

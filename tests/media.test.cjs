@@ -40,13 +40,65 @@ test("media tool validation rejects overwrite and mismatched containers", () => 
           operation: "merge",
           input,
           audioInput: input,
-          output: path.join(root, "x.mp4"),
+          output: path.join(root, "x.avi"),
         },
         {},
         "temp",
       ),
-    /mkv/,
+    /\.mp4 或 \.mkv/,
   );
+});
+test("media audio bitrate follows the source and MP4 falls back to MKV", () => {
+  const { audioBitrate, mergeContainer } = require("../backend/media.cjs");
+  // Follow source: lossy keeps its rate, lossless and unknown use 320k.
+  assert.equal(
+    audioBitrate(0, "aac", { codec: "aac", bitRate: "256000" }),
+    256,
+  );
+  assert.equal(
+    audioBitrate(0, "aac", { codec: "pcm_s16le", bitRate: "1536000" }),
+    320,
+  );
+  assert.equal(audioBitrate(0, "libopus", { codec: "flac" }), 320);
+  assert.equal(audioBitrate(0, "aac", {}), 320);
+  // MP3 is capped at 320k; an explicit choice wins over the source.
+  assert.equal(
+    audioBitrate(0, "libmp3lame", { codec: "aac", bitRate: "448000" }),
+    320,
+  );
+  assert.equal(audioBitrate(512, "libmp3lame"), 320);
+  assert.equal(audioBitrate(128, "aac", { codec: "flac" }), 128);
+  const merge = { operation: "merge", container: "mp4", audioFormat: "aac" };
+  assert.equal(mergeContainer(merge, { videoCodec: "h264" }), "mp4");
+  assert.equal(mergeContainer(merge, { videoCodec: "rawvideo" }), "mkv");
+  assert.equal(
+    mergeContainer({ ...merge, audioFormat: "wav" }, { videoCodec: "h264" }),
+    "mkv",
+  );
+  assert.equal(
+    mergeContainer(
+      { ...merge, audioFormat: "copy" },
+      { videoCodec: "h264", audioCodec: "pcm_s16le" },
+    ),
+    "mkv",
+  );
+  assert.equal(
+    mergeContainer({ ...merge, container: "mkv" }, { videoCodec: "h264" }),
+    "mkv",
+  );
+  const root = path.resolve(os.tmpdir());
+  const mp3 = command(
+    {
+      operation: "audio",
+      input: path.join(root, "a.mkv"),
+      output: path.join(root, "a.mp3"),
+      audioFormat: "mp3",
+      sourceAudio: { codec: "aac", bitRate: "192000" },
+    },
+    {},
+    "temp",
+  );
+  assert.ok(mp3.args.join(" ").includes("-c:a libmp3lame -b:a 192k"));
 });
 async function wait(fn) {
   for (let i = 0; i < 1200; i++) {
@@ -129,6 +181,9 @@ test(
         assert.equal(j.output, f.replace(/.mkv$/, ".wav"));
         assert.equal(probe(j.output).streams[0].codec_name, "pcm_s16le");
       }
+      // Added files are probed like the video queue (audio files get a summary).
+      assert.equal(byPath(input).meta.width, 640);
+      assert.equal(byPath(input).meta.audio.codec, "flac");
       // Re-export keeps the first output and numbers the new one.
       await service.invoke("mediaRequeue", { id: byPath(input).id });
       assert.equal(byPath(input).status, "ready");
@@ -146,7 +201,8 @@ test(
       await service.invoke("mediaAdd", { paths: [input] });
       await runQueue({ operation: "video", location: "encoded" });
       const video = byPath(input).output;
-      assert.equal(video, path.join(root, "Encoded", "source_无音频.mkv"));
+      // MP4 is the default container for copied H.264 video.
+      assert.equal(video, path.join(root, "Encoded", "source_无音频.mp4"));
       assert.equal(probe(video).streams.length, 1);
 
       // Merge needs a paired audio; a missing pair fails only that file.
@@ -156,9 +212,22 @@ test(
         path: voice,
       });
       const custom = path.join(root, "out");
+      // Drag-sort: the second file now runs first.
+      const first = (f) => [
+        byPath(f).id,
+        ...jobs()
+          .filter((j) => j.path !== f)
+          .map((j) => j.id),
+      ];
+      await service.invoke("mediaReorder", { ids: first(second) });
+      assert.equal(jobs()[0].path, second);
+      await assert.rejects(
+        service.invoke("mediaReorder", { ids: [byPath(second).id] }),
+        /排序/,
+      );
       await runQueue({
         operation: "merge",
-        audioFormat: "flac",
+        audioFormat: "aac",
         shortest: true,
         location: "custom",
         outputDir: custom,
@@ -166,12 +235,35 @@ test(
       assert.equal(byPath(video).status, "done", byPath(video).error);
       assert.equal(
         byPath(video).output,
-        path.join(custom, "source_无音频_合并.mkv"),
+        path.join(custom, "source_无音频_合并.mp4"),
       );
+      // Lossless WAV source: "follow source" bitrate becomes 320k.
+      assert.ok(byPath(video).log.includes("'-b:a' '320k'"));
       assert.deepEqual(
         probe(byPath(video).output).streams.map((s) => s.codec_type),
         ["video", "audio"],
       );
+      const mediaDetails = await service.invoke("details", {
+        id: byPath(video).id,
+        media: true,
+      });
+      assert.equal(mediaDetails.audio.streams[0].codec_name, "pcm_s16le");
+      assert.equal(mediaDetails.after.streams[1].codec_name, "aac");
+      assert.equal(mediaDetails.mask, undefined);
+      // WAV cannot go into MP4: the merge falls back to MKV and says so.
+      await service.invoke("mediaRequeue", { id: byPath(video).id });
+      await service.invoke("mediaReorder", { ids: first(video) });
+      await runQueue({
+        operation: "merge",
+        audioFormat: "wav",
+        location: "custom",
+        outputDir: custom,
+      });
+      assert.equal(
+        byPath(video).output,
+        path.join(custom, "source_无音频_合并.mkv"),
+      );
+      assert.match(byPath(video).log, /已改用 MKV/);
       assert.equal(byPath(second).status, "failed");
       assert.match(byPath(second).error, /缺少/);
       await assert.rejects(
@@ -191,7 +283,7 @@ test(
       });
       assert.equal(byPath(video).status, "failed");
       assert.ok(byPath(video).log.includes("matches no streams"));
-      assert.equal(fs.existsSync(video.replace(/.mkv$/, ".wav")), false);
+      assert.equal(fs.existsSync(video.replace(/.mp4$/, ".wav")), false);
 
       // Cancellation leaves no output or temporary folder behind.
       await service.invoke("mediaRemove", { id: byPath(video).id });
@@ -273,4 +365,28 @@ test("media output name is automatic, follows output location and never overwrit
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+test("audio info reads codec, profile and bitrate, falling back to the MKV BPS tag", () => {
+  const { audioInfo } = require("../backend/core.cjs");
+  const aac = audioInfo({
+    codec_name: "aac",
+    profile: "LC",
+    bit_rate: "317375",
+    sample_rate: "48000",
+    channels: 2,
+  });
+  assert.equal(aac.profile, "LC");
+  assert.equal(aac.bitRate, 317375);
+  assert.equal(
+    audioInfo({ codec_name: "opus", tags: { BPS: "192000" } }).bitRate,
+    192000,
+  );
+  assert.equal(
+    audioInfo({ codec_name: "flac", profile: "unknown" }).bitRate,
+    0,
+  );
+  assert.equal(
+    audioInfo({ codec_name: "flac", profile: "unknown" }).profile,
+    undefined,
+  );
 });
