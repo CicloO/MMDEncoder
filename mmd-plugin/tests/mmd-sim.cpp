@@ -160,7 +160,7 @@ int wmain(int argc, wchar_t** argv) {
         p[0] = (BYTE)(x * 255 / w);  // B
         p[1] = (BYTE)(i * 4);        // G
         p[2] = y < h / 2 ? 255 : 0;  // R: bottom half red
-        p[3] = 255;
+        p[3] = x < w * 3 / 4 ? 255 : 0;  // A: right quarter transparent
       }
     dmo->ProcessInput(0, frame, DMO_INPUT_DATA_BUFFERF_TIME | DMO_INPUT_DATA_BUFFERF_TIMELENGTH,
                       (REFERENCE_TIME)i * v->AvgTimePerFrame, v->AvgTimePerFrame);

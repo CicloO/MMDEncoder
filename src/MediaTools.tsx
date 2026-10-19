@@ -7,6 +7,7 @@ import {
   FileVideo,
   Film,
   FolderOpen,
+  Info,
   LoaderCircle,
   Music,
   Play,
@@ -399,34 +400,42 @@ export function MediaTools({
             <section className="detail-card" aria-label="处理结果">
               <div className="detail-title">
                 <span className="eyebrow">当前文件</span>
-                <Button
-                  variant="ghost"
-                  onClick={() =>
-                    run("reveal", { path: selected.output || selected.path })
-                  }
-                >
-                  <FolderOpen size={14} />
-                  打开位置
-                </Button>
+                <div className="detail-actions">
+                  <Button
+                    variant="ghost"
+                    title="转换前 / 后的 ffprobe 参数"
+                    disabled={!!state.tools?.busy}
+                    onClick={async () => {
+                      setDetails(null);
+                      setDetailsError("");
+                      setDetailsOpen(true);
+                      try {
+                        setDetails(
+                          await call("details", {
+                            id: selected.id,
+                            media: true,
+                          }),
+                        );
+                      } catch (e) {
+                        setDetailsError((e as Error).message);
+                      }
+                    }}
+                  >
+                    <Info size={14} />
+                    文件详情
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() =>
+                      run("reveal", { path: selected.output || selected.path })
+                    }
+                  >
+                    <FolderOpen size={14} />
+                    打开位置
+                  </Button>
+                </div>
               </div>
               <h3 title={selected.path}>{selected.name}</h3>
-              <Button
-                disabled={!!state.tools?.busy}
-                onClick={async () => {
-                  setDetails(null);
-                  setDetailsError("");
-                  setDetailsOpen(true);
-                  try {
-                    setDetails(
-                      await call("details", { id: selected.id, media: true }),
-                    );
-                  } catch (e) {
-                    setDetailsError((e as Error).message);
-                  }
-                }}
-              >
-                文件详情 · 转换前 / 后
-              </Button>
               {selected.meta ? (
                 <FileMeta meta={selected.meta} />
               ) : (

@@ -316,19 +316,32 @@ static bool readFile(const std::wstring& path, std::string& out);
 
 // ------------------------------------------------------ settings window ---
 // MMD's "詳細設定" for this codec: the same choices as MMDEncoder's preset
-// manager (preset, follow MMD's size and frame rate, audio fade). The choice is
+// manager (preset, follow MMD's size and frame rate, alpha mask, audio fade). The choice is
 // saved to mmd-selection.json, which MMDEncoder also reads and writes.
 
-enum { IDC_PRESET = 101, IDC_FOLLOW = 102, IDC_FADE = 103 };
+enum { IDC_PRESET = 101, IDC_FOLLOW = 102, IDC_FADE = 103, IDC_MASK = 104 };
 static const double kFades[] = {0, 0.5, 1, 2};
 static const wchar_t* kFadeNames[] = {L"关闭", L"0.5 秒", L"1 秒", L"2 秒"};
 
 struct SettingsContext {
-  std::vector<std::pair<std::wstring, std::wstring>> presets;  // id, name
+  struct Preset {
+    std::wstring id, name;
+    int mask;  // 0 = per the switch, 1 = preset always writes a mask, 2 = mask-only preset
+  };
+  std::vector<Preset> presets;
   std::wstring presetId;
   bool followMmd = true;
+  bool alphaMask = false;
   double audioFade = 0;
 };
+
+// The mask switch follows the preset when the preset decides it.
+static void updateMaskBox(HWND dlg, SettingsContext* ctx) {
+  int i = (int)SendDlgItemMessageW(dlg, IDC_PRESET, CB_GETCURSEL, 0, 0);
+  int fixed = i >= 0 && i < (int)ctx->presets.size() ? ctx->presets[i].mask : 0;
+  CheckDlgButton(dlg, IDC_MASK, (fixed ? fixed == 1 : ctx->alphaMask) ? BST_CHECKED : BST_UNCHECKED);
+  EnableWindow(GetDlgItem(dlg, IDC_MASK), !fixed);
+}
 
 // In-memory dialog template (no .rc file needed).
 class DialogTemplate {
@@ -382,8 +395,8 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
     HWND presets = GetDlgItem(dlg, IDC_PRESET);
     int selected = -1;
     for (size_t i = 0; i < ctx->presets.size(); i++) {
-      SendMessageW(presets, CB_ADDSTRING, 0, (LPARAM)ctx->presets[i].second.c_str());
-      if (ctx->presets[i].first == ctx->presetId) selected = (int)i;
+      SendMessageW(presets, CB_ADDSTRING, 0, (LPARAM)ctx->presets[i].name.c_str());
+      if (ctx->presets[i].id == ctx->presetId) selected = (int)i;
     }
     SendMessageW(presets, CB_SETCURSEL, selected, 0);
     CheckDlgButton(dlg, IDC_FOLLOW, ctx->followMmd ? BST_CHECKED : BST_UNCHECKED);
@@ -394,6 +407,16 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
       if (kFades[i] == ctx->audioFade) fadeIndex = i;
     }
     SendMessageW(fade, CB_SETCURSEL, fadeIndex, 0);
+    updateMaskBox(dlg, ctx);
+    return TRUE;
+  }
+  if (msg == WM_COMMAND && LOWORD(wp) == IDC_MASK && HIWORD(wp) == BN_CLICKED) {
+    ctx->alphaMask = IsDlgButtonChecked(dlg, IDC_MASK) != BST_CHECKED;
+    CheckDlgButton(dlg, IDC_MASK, ctx->alphaMask ? BST_CHECKED : BST_UNCHECKED);
+    return TRUE;
+  }
+  if (msg == WM_COMMAND && LOWORD(wp) == IDC_PRESET && HIWORD(wp) == CBN_SELCHANGE) {
+    updateMaskBox(dlg, ctx);
     return TRUE;
   }
   if (msg == WM_COMMAND && (LOWORD(wp) == IDOK || LOWORD(wp) == IDCANCEL)) {
@@ -403,7 +426,7 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
         MessageBoxW(dlg, L"请选择导出预设。", L"MMDEncoder", MB_OK | MB_ICONWARNING);
         return TRUE;
       }
-      ctx->presetId = ctx->presets[i].first;
+      ctx->presetId = ctx->presets[i].id;
       ctx->followMmd = IsDlgButtonChecked(dlg, IDC_FOLLOW) == BST_CHECKED;
       int f = (int)SendDlgItemMessageW(dlg, IDC_FADE, CB_GETCURSEL, 0, 0);
       ctx->audioFade = kFades[f < 0 ? 0 : f];
@@ -428,27 +451,36 @@ static void showSettings(HWND parent) {
   }
   SettingsContext ctx;
   for (const Json& p : config[L"presets"].a)
-    if (p[L"unsupported"].s.empty()) ctx.presets.push_back({p[L"id"].s, p[L"name"].s});
+    if (p[L"unsupported"].s.empty()) {
+      const Json& s = p[L"settings"];
+      int mask = s[L"alphaMode"].s == L"mask"                               ? 2
+                 : s[L"alphaMask"].type == Json::Bool && s[L"alphaMask"].b ? 1
+                                                                            : 0;
+      ctx.presets.push_back({p[L"id"].s, p[L"name"].s, mask});
+    }
   raw.clear();
   if (readFile(dir + L"\\mmd-selection.json", raw) && JsonReader(raw).parse(selection)) {
     ctx.presetId = selection[L"presetId"].s;
     ctx.followMmd = selection[L"followMmd"].type != Json::Bool || selection[L"followMmd"].b;
     ctx.audioFade = selection[L"audioFade"].n;
+    ctx.alphaMask = selection[L"alphaMask"].type == Json::Bool && selection[L"alphaMask"].b;
   }
 
-  DialogTemplate t(L"MMDEncoder 导出设置", 270, 132);
+  DialogTemplate t(L"MMDEncoder 导出设置", 270, 148);
   const WORD STATIC_ = 0x0082, BUTTON_ = 0x0080, COMBO_ = 0x0085;
   t.control(0xFFFF, STATIC_, SS_LEFT, 10, 8, 250, 9, L"导出预设");
   t.control(IDC_PRESET, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 19, 250, 160, L"");
   t.control(IDC_FOLLOW, BUTTON_, BS_AUTOCHECKBOX | WS_TABSTOP, 10, 38, 250, 11,
             L"分辨率和帧率跟随 MMD（用这里设定的尺寸和帧率）");
-  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 56, 250, 9, L"音频淡入淡出");
-  t.control(IDC_FADE, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 67, 110, 80, L"");
-  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 88, 250, 26,
+  t.control(IDC_MASK, BUTTON_, BS_CHECKBOX | WS_TABSTOP, 10, 52, 250, 11,
+            L"同时导出 Alpha 遮罩（同名 _alpha 黑白视频）");
+  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 72, 250, 9, L"音频淡入淡出");
+  t.control(IDC_FADE, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 83, 110, 80, L"");
+  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 104, 250, 26,
             L"成片保存在 AVI 同目录、同名，自动合成音频，完成后删除占位 AVI。"
             L"这里的选择与 MMDEncoder 的“MMD 导出”同步。");
-  t.control(IDOK, BUTTON_, BS_DEFPUSHBUTTON | WS_TABSTOP, 148, 110, 54, 15, L"确定");
-  t.control(IDCANCEL, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 206, 110, 54, 15, L"取消");
+  t.control(IDOK, BUTTON_, BS_DEFPUSHBUTTON | WS_TABSTOP, 148, 126, 54, 15, L"确定");
+  t.control(IDCANCEL, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 206, 126, 54, 15, L"取消");
   if (DialogBoxIndirectParamW(g_module, t.get(), parent, settingsProc, (LPARAM)&ctx) != 1) return;
 
   SYSTEMTIME st;
@@ -458,7 +490,8 @@ static void showSettings(HWND parent) {
             st.wSecond, st.wMilliseconds);
   sprintf_s(fade, "%g", ctx.audioFade);
   std::string json = "{\n  \"presetId\": " + jsonString(ctx.presetId) + ",\n  \"followMmd\": " +
-                     (ctx.followMmd ? "true" : "false") + ",\n  \"audioFade\": " + fade +
+                     (ctx.followMmd ? "true" : "false") + ",\n  \"alphaMask\": " +
+                     (ctx.alphaMask ? "true" : "false") + ",\n  \"audioFade\": " + fade +
                      ",\n  \"savedAt\": \"" + saved + "\"\n}\n";
   std::wstring file = dir + L"\\mmd-selection.json", tmp = file + L".tmp";
   HANDLE h = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
@@ -996,6 +1029,8 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
     std::wstring cmd = quoteArg(ffmpeg);
     for (const Json& a : plan[L"args"].a) cmd += L" " + quoteArg(a.s);
     plog(L"output %s (preset %s)", output_.c_str(), plan[L"presetName"].s.c_str());
+    if (!plan[L"maskOutput"].s.empty()) plog(L"alpha mask %s", plan[L"maskOutput"].s.c_str());
+    for (const Json& n : plan[L"notes"].a) plog(L"note: %s", n.s.c_str());
     plog(L"ffmpeg: %s", cmd.c_str());
 
     // FFmpeg reads frames from stdin; its messages go to a log next to ours.

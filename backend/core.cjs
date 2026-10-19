@@ -521,9 +521,10 @@ function outputPaths(
         dir,
         stem + (maskOnly ? "_alpha." : ".") + s.container,
       ),
-      maskOutput = s.alphaMask && !maskOnly
-        ? p.join(dir, stem + "_alpha." + s.container)
-        : undefined;
+      maskOutput =
+        s.alphaMask && !maskOnly
+          ? p.join(dir, stem + "_alpha." + s.container)
+          : undefined;
     if (
       output.toLowerCase() === input.toLowerCase() ||
       maskOutput?.toLowerCase() === input.toLowerCase() ||
@@ -613,8 +614,21 @@ function metadata(data) {
     ),
     colorRange: v.color_range,
     colorSpace: v.color_space,
+    videoBitRate: videoBitRate(data, v),
     audio: a ? audioInfo(a) : undefined,
   };
+}
+// Video stream bitrate (bit/s): the stream's own value, MKV's BPS tag, or the
+// container's overall rate minus the audio; 0 when none is known.
+function videoBitRate(data, v) {
+  const own = Number(v.bit_rate || v.tags?.BPS || v.tags?.["BPS-eng"]);
+  if (own) return own;
+  const total = Number(data.format?.bit_rate);
+  if (!total) return 0;
+  const audio = data.streams
+    .filter((s) => s.codec_type === "audio")
+    .reduce((sum, s) => sum + (audioInfo(s).bitRate || 0), 0);
+  return total - audio > 0 ? total - audio : 0;
 }
 function dimensions(s, meta) {
   if (s.vsr)

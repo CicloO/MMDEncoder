@@ -58,6 +58,7 @@ function createService({
       presetId: "",
       followMmd: true,
       audioFade: 0,
+      alphaMask: false,
       savedAt: "",
       error: "",
       plugin: { available: false, installed: false, upToDate: false, path: "" },
@@ -206,6 +207,7 @@ function createService({
             presetId: state.mmd.presetId,
             followMmd: state.mmd.followMmd,
             audioFade: state.mmd.audioFade,
+            alphaMask: state.mmd.alphaMask,
             savedAt: state.mmd.savedAt,
           },
         },
@@ -234,6 +236,7 @@ function createService({
       presetId: s.presetId,
       followMmd: s.followMmd,
       audioFade: s.audioFade,
+      alphaMask: s.alphaMask,
       savedAt: s.savedAt,
     });
     return true;
@@ -324,10 +327,12 @@ function createService({
             stderr.trim().split("\n").slice(-3).join(" "),
         );
       if (!fs.existsSync(plan.temp)) throw Error("没有生成测试文件");
+      if (plan.maskTemp && !fs.existsSync(plan.maskTemp))
+        throw Error("没有生成 Alpha 遮罩测试文件");
       state.mmd.test = {
         ok: true,
         at: new Date().toISOString(),
-        message: `测试编码通过（${((Date.now() - started) / 1000).toFixed(1)} 秒）`,
+        message: `测试编码通过${plan.maskTemp ? "（含 Alpha 遮罩）" : ""}（${((Date.now() - started) / 1000).toFixed(1)} 秒）`,
       };
     } catch (e) {
       state.mmd.test = {
@@ -404,6 +409,8 @@ function createService({
         state.mmd.savedAt = saved.mmdExport.savedAt;
       if (typeof saved.mmdExport.followMmd === "boolean")
         state.mmd.followMmd = saved.mmdExport.followMmd;
+      if (typeof saved.mmdExport.alphaMask === "boolean")
+        state.mmd.alphaMask = saved.mmdExport.alphaMask;
     }
     state.settings = { ...core.DEFAULTS, ...schema(saved.settings) };
     for (const id of saved.deletedBuiltins || [])
@@ -1932,6 +1939,8 @@ function createService({
         }
         if (typeof payload.followMmd === "boolean")
           state.mmd.followMmd = payload.followMmd;
+        if (typeof payload.alphaMask === "boolean")
+          state.mmd.alphaMask = payload.alphaMask;
         state.mmd.savedAt = mmdExport.writeSelection({
           ...state.mmd,
           savedAt: undefined,

@@ -16,7 +16,7 @@ function fresh() {
 }
 const preset = (id) => core.BUILTINS.find((p) => p.id === id);
 
-test("frame rates from AvgTimePerFrame and presets the live export cannot use", () => {
+test("frame rates from AvgTimePerFrame and presets the live export can use", () => {
   const { mx } = fresh();
   assert.equal(mx.frameRate(166666).text, "60");
   assert.equal(mx.frameRate(333333).text, "30");
@@ -29,9 +29,15 @@ test("frame rates from AvgTimePerFrame and presets the live export cannot use", 
     }),
     /NVEncC/,
   );
-  assert.match(
-    mx.unsupported(preset("builtin-alpha-mask").settings),
-    /分离 Alpha/,
+  assert.equal(mx.unsupported(preset("builtin-alpha-mask").settings), "");
+  // A mask-only preset never runs the colour encoder, NVEncC or not.
+  assert.equal(
+    mx.unsupported({
+      ...preset("builtin-4k").settings,
+      encoder: "nvencc:hevc",
+      alphaMode: "mask",
+    }),
+    "",
   );
 });
 
@@ -322,6 +328,210 @@ test(
         middle - tail > 12,
         `fade out: end ${tail} dB vs middle ${middle} dB`,
       );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+// Writes a placeholder AVI like MMD's (FFV1 with its FOURCC patched to MMDE).
+function placeholderAvi(file) {
+  execFileSync(ff, [
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=black:s=16x16:r=60:d=1",
+    "-c:v",
+    "ffv1",
+    file,
+  ]);
+  const bytes = fs.readFileSync(file);
+  for (
+    let i = bytes.indexOf("FFV1");
+    i >= 0 && i < 4096;
+    i = bytes.indexOf("FFV1", i + 4)
+  )
+    bytes.write("MMDE", i, "latin1");
+  fs.writeFileSync(file, bytes);
+}
+// Runs a plan with BGRA frames whose alpha is 255 on the left half, 0 on the
+// right (or 255 everywhere when opaque).
+async function render(p, width, height, frames, opaque = false) {
+  const enc = spawn(p.exe, p.args, { stdio: ["pipe", "ignore", "pipe"] });
+  let err = "";
+  enc.stderr.on("data", (d) => (err += d));
+  const frame = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      frame.set([0x20, 0x40, 0xc0, opaque || x < width / 2 ? 255 : 0], i);
+    }
+  for (let i = 0; i < frames; i++)
+    if (!enc.stdin.write(frame))
+      await new Promise((r) => enc.stdin.once("drain", r));
+  enc.stdin.end();
+  assert.equal(await new Promise((r) => enc.on("close", r)), 0, err);
+}
+const grayAt = (file, x) =>
+  execFileSync(ff, [
+    "-v",
+    "error",
+    "-i",
+    file,
+    "-frames:v",
+    "1",
+    "-vf",
+    `crop=w=2:h=2:x=${x}:y=100,format=gray`,
+    "-f",
+    "rawvideo",
+    "-",
+  ])[0];
+
+test(
+  "alpha mask option: one FFmpeg writes the video and a lossless _alpha mask; mask-only presets write just the mask",
+  { skip: !fs.existsSync(ff), timeout: 120000 },
+  async () => {
+    const { root, mx } = fresh();
+    try {
+      const width = 320,
+        height = 240,
+        frames = 30;
+      mx.writeConfig({
+        settings: {
+          ...preset("builtin-1080-sw").settings,
+          resizeMode: "source",
+          audio: "none",
+        },
+        presetName: "x",
+        alphaMask: true,
+        engines: { ffmpeg: ff, ffprobe: fp },
+        appExe: "",
+        helper: "",
+      });
+      const avi = path.join(root, "舞台 A.avi");
+      placeholderAvi(avi);
+      const runtime = {
+        avi,
+        width,
+        height,
+        bits: 32,
+        bottomUp: true,
+        avgTimePerFrame: 333333,
+      };
+      const p = mx.plan(runtime);
+      assert.equal(p.maskOutput, path.join(root, "舞台 A_alpha.mp4"));
+      assert.equal(
+        p.args.filter((a) => a === "pipe:0").length,
+        1,
+        "frames are read once",
+      );
+      assert.ok(
+        p.args[p.args.indexOf("-filter_complex") + 1].startsWith(
+          "[0:v]vflip,split=2",
+        ),
+      );
+      await render(p, width, height, frames);
+      const notes = [];
+      const r = await mx.finish(
+        {
+          avi,
+          temp: p.temp,
+          output: p.output,
+          frames,
+          avgTimePerFrame: 333333,
+          startFrame: 0,
+          pmm: "",
+        },
+        mx.readConfig(),
+        (m) => notes.push(m),
+      );
+      assert.equal(r.mask, p.maskOutput, notes.join(" | "));
+      assert.ok(
+        !fs.existsSync(p.maskTemp) &&
+          !fs.existsSync(p.temp) &&
+          !fs.existsSync(avi),
+      );
+      const info = (file) =>
+        JSON.parse(
+          execFileSync(
+            fp,
+            ["-v", "error", "-show_streams", "-of", "json", file],
+            { encoding: "utf8" },
+          ),
+        ).streams;
+      const [m] = info(r.mask);
+      assert.equal(m.codec_name, "h264");
+      assert.equal(m.profile, "High 4:4:4 Predictive", "lossless mask");
+      assert.equal(Number(m.nb_frames), frames);
+      assert.ok(
+        grayAt(r.mask, 40) > 230 && grayAt(r.mask, 280) < 20,
+        "white where opaque, black where transparent",
+      );
+      assert.equal(info(r.output)[0].codec_name, "h264");
+
+      // Nothing transparent anywhere: the all-white mask is not kept.
+      const opaqueAvi = path.join(root, "opaque.avi");
+      placeholderAvi(opaqueAvi);
+      const po = mx.plan({ ...runtime, avi: opaqueAvi });
+      await render(po, width, height, frames, true);
+      const opaqueNotes = [];
+      const ro = await mx.finish(
+        {
+          avi: opaqueAvi,
+          temp: po.temp,
+          output: po.output,
+          frames,
+          avgTimePerFrame: 333333,
+          startFrame: 0,
+          pmm: "",
+        },
+        mx.readConfig(),
+        (m) => opaqueNotes.push(m),
+      );
+      assert.equal(ro.mask, undefined);
+      assert.ok(!fs.existsSync(po.maskOutput) && !fs.existsSync(po.maskTemp));
+      assert.ok(fs.existsSync(po.output), "the video itself is kept");
+      assert.match(opaqueNotes.join(), /遮罩全白.*未保留遮罩/);
+
+      // RGB24 frames carry no alpha: the export goes on without the mask.
+      const p24 = mx.plan({ ...runtime, bits: 24 });
+      assert.equal(p24.maskOutput, undefined);
+      assert.match(p24.notes.join(), /没有提供 Alpha/);
+
+      // Mask-only preset: the output is the mask itself, named _alpha, no audio.
+      mx.writeConfig({
+        settings: { ...preset("builtin-4k").settings, alphaMode: "mask" },
+        presetName: "mask",
+        engines: { ffmpeg: ff, ffprobe: fp },
+        appExe: "",
+        helper: "",
+      });
+      const avi2 = path.join(root, "only.avi");
+      placeholderAvi(avi2);
+      const q = mx.plan({ ...runtime, avi: avi2 });
+      assert.equal(q.output, path.join(root, "only_alpha.mp4"));
+      assert.equal(q.maskOutput, undefined);
+      await render(q, width, height, frames);
+      const r2 = await mx.finish(
+        {
+          avi: avi2,
+          temp: q.temp,
+          output: q.output,
+          frames,
+          avgTimePerFrame: 333333,
+          startFrame: 0,
+          pmm: "",
+        },
+        mx.readConfig(),
+      );
+      assert.equal(r2.audio, "none");
+      assert.deepEqual(
+        info(r2.output).map((s) => s.codec_type),
+        ["video"],
+      );
+      assert.ok(grayAt(r2.output, 40) > 230 && grayAt(r2.output, 280) < 20);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

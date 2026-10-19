@@ -1,4 +1,24 @@
 import { formatSize } from "./presentation";
+
+// ffprobe's "10.033333" → "00:00:10.033".
+const clock = (v: unknown) => {
+  const n = Number(v);
+  if (v === undefined || v === "" || !Number.isFinite(n)) return undefined;
+  const ms = Math.round(n * 1000);
+  const hms = [
+    Math.floor(ms / 3600000),
+    Math.floor(ms / 60000) % 60,
+    Math.floor(ms / 1000) % 60,
+  ]
+    .map((x) => String(x).padStart(2, "0"))
+    .join(":");
+  return `${hms}.${String(ms % 1000).padStart(3, "0")}`;
+};
+// Whole kbps with thousands separators: "10,081 kbps".
+const kbps = (bits: unknown) =>
+  Number(bits)
+    ? `${Math.round(Number(bits) / 1000).toLocaleString("en-US")} kbps`
+    : undefined;
 export function MediaDetails({
   details,
   media = false,
@@ -26,10 +46,8 @@ export function MediaDetails({
               </dd>
               <dt>时长 / 总码率</dt>
               <dd>
-                {data.format?.duration || "未知"} 秒 ·{" "}
-                {data.format?.bit_rate
-                  ? `${Number(data.format.bit_rate) / 1000} kbps`
-                  : "未知"}
+                {clock(data.format?.duration) || "未知"} ·{" "}
+                {kbps(data.format?.bit_rate) || "未知"}
               </dd>
             </dl>
             {data.streams?.map((s: any) => (
@@ -60,10 +78,9 @@ export function MediaDetails({
                       ? `${s.sample_rate} Hz`
                       : undefined,
                     声道: s.channel_layout || s.channels,
-                    流码率: s.bit_rate
-                      ? `${Number(s.bit_rate) / 1000} kbps`
-                      : undefined,
-                    时长: s.duration,
+                    // MKV keeps the stream bitrate in the BPS tag.
+                    流码率: kbps(s.bit_rate || s.tags?.BPS),
+                    时长: clock(s.duration),
                   })
                     .filter(([, v]) => v !== undefined && v !== "0")
                     .map(([k, v]) => (

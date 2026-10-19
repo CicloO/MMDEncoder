@@ -30,11 +30,19 @@ const audioShort = (a?: Audio) => (a ? rateText(a) : "无音轨");
 const audioText = (a: Audio) =>
   [audioName(a), rateText(a), channelText(a)].filter(Boolean).join(" · ");
 
+// Video bitrate in Mbps: "0.85" / "9.86" / "48.3" / "236".
+const mbps = (bits?: number) => {
+  if (!bits) return "";
+  const m = bits / 1e6;
+  return m >= 100 ? m.toFixed(0) : m >= 10 ? m.toFixed(1) : m.toFixed(2);
+};
+
 // One-line summary for queue rows.
 export function metaSummary(meta: MediaMeta) {
+  const video = mbps(meta.videoBitRate);
   return meta.audioOnly
     ? `${meta.audio ? audioText(meta.audio) : meta.codec.toUpperCase()} · ${formatDuration(meta.duration)} · ${formatSize(meta.size)}`
-    : `${meta.width}×${meta.height} · ${formatFPS(meta.fpsText || meta.fps || 0)} FPS · ${[audioShort(meta.audio), formatSize(meta.size)].filter(Boolean).join(" · ")}`;
+    : `${meta.width}×${meta.height} · ${formatFPS(meta.fpsText || meta.fps || 0)} FPS · ${[video && video + " Mbps", audioShort(meta.audio), formatSize(meta.size)].filter(Boolean).join(" · ")}`;
 }
 
 // Parameter block shown under "当前素材" / "当前文件".
@@ -70,6 +78,11 @@ export function FileMeta({ meta }: { meta: MediaMeta }) {
           {formatFPS(meta.fpsText || meta.fps || 0)}{" "}
           <small>FPS{meta.vfr ? " · 可变" : ""}</small>
         </span>
+        {mbps(meta.videoBitRate) && (
+          <span>
+            {mbps(meta.videoBitRate)} <small>Mbps</small>
+          </span>
+        )}
       </div>
       <div className="metadata">
         <span>{meta.codec.toUpperCase()}</span>

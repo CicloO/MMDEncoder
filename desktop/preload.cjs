@@ -57,6 +57,7 @@ const allowed = new Set([
   "engineFolder",
   "openDataFolder",
   "mmdOpenLog",
+  "mmdOpenLatest",
 ]);
 contextBridge.exposeInMainWorld("encoder", {
   invoke(action, payload) {

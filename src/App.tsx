@@ -75,9 +75,11 @@ const frameOptions = [
 ];
 // Presets an MMD export cannot use yet (mirrors backend/mmd-export.cjs).
 function mmdUnsupported(p: Preset) {
-  if (p.settings.alphaMode === "mask") return "分离 Alpha 暂不支持";
-  if (p.settings.encoder.startsWith("nvencc:")) return "NVEncC 暂不支持";
-  if (p.settings.alphaMask) return "分离 Alpha 暂不支持";
+  if (
+    p.settings.alphaMode !== "mask" &&
+    p.settings.encoder.startsWith("nvencc:")
+  )
+    return "NVEncC 暂不支持";
   return "";
 }
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
@@ -866,29 +868,34 @@ export default function App() {
               <section className="detail-card">
                 <div className="detail-title">
                   <span className="eyebrow">当前素材</span>
-                  <Button
-                    variant="ghost"
-                    onClick={() => action("reveal", { path: job.path })}
-                  >
-                    <FolderOpen size={14} />
-                    打开位置
-                  </Button>
+                  <div className="detail-actions">
+                    <Button
+                      variant="ghost"
+                      title="转换前 / 后的 ffprobe 参数"
+                      disabled={!!state.tools?.busy}
+                      onClick={async () => {
+                        setDetails(null);
+                        setModal("details");
+                        try {
+                          setDetails(await call("details", { id: job.id }));
+                        } catch (e) {
+                          setError((e as Error).message);
+                        }
+                      }}
+                    >
+                      <Info size={14} />
+                      文件详情
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => action("reveal", { path: job.path })}
+                    >
+                      <FolderOpen size={14} />
+                      打开位置
+                    </Button>
+                  </div>
                 </div>
                 <h3 title={job.name}>{job.name}</h3>
-                <Button
-                  disabled={!!state.tools?.busy}
-                  onClick={async () => {
-                    setDetails(null);
-                    setModal("details");
-                    try {
-                      setDetails(await call("details", { id: job.id }));
-                    } catch (e) {
-                      setError((e as Error).message);
-                    }
-                  }}
-                >
-                  文件详情 · 转换前 / 后
-                </Button>
                 {renderMeta()}
                 <p className="path-text" title={job.path}>
                   {job.path}
@@ -2038,6 +2045,38 @@ export default function App() {
               </small>
             </span>
           </label>
+          {(() => {
+            // A split-alpha preset always writes the mask; a mask-only preset
+            // writes nothing else, so the switch only matters for other presets.
+            const ps = presets.find(
+              (p) => p.id === state.mmd.presetId,
+            )?.settings;
+            const fixed = ps?.alphaMode === "mask" || !!ps?.alphaMask;
+            return (
+              <label className="check-card">
+                <input
+                  type="checkbox"
+                  checked={
+                    fixed ? ps?.alphaMode !== "mask" : state.mmd.alphaMask
+                  }
+                  disabled={mmdBusy || fixed}
+                  onChange={(e) =>
+                    mmdCall("mmdExportSet", { alphaMask: e.target.checked })
+                  }
+                />
+                <span>
+                  <strong>同时导出 Alpha 遮罩</strong>
+                  <small>
+                    {ps?.alphaMode === "mask"
+                      ? "所选预设只导出黑白遮罩。"
+                      : ps?.alphaMask
+                        ? "所选预设本身就会导出黑白遮罩。"
+                        : "成片之外再导出一个同名 _alpha 黑白遮罩（无损，白色不透明、黑色透明），可用于后期合成。"}
+                  </small>
+                </span>
+              </label>
+            );
+          })()}
           <Select
             id="mmd-audio-fade"
             label="音频淡入淡出"
@@ -2069,7 +2108,7 @@ export default function App() {
                   ? state.mmd.test.message
                   : state.mmd.lastExport
                     ? state.mmd.lastExport.ok
-                      ? `上次导出：${baseName(state.mmd.lastExport.output || "")}${state.mmd.lastExport.audio === "wav" ? "（音频取自工程 WAV）" : state.mmd.lastExport.audio === "avi" ? "（含音频）" : "（无音频）"}`
+                      ? `上次导出：${baseName(state.mmd.lastExport.output || "")}${state.mmd.lastExport.audio === "wav" ? "（音频取自工程 WAV）" : state.mmd.lastExport.audio === "avi" ? "（含音频）" : "（无音频）"}${state.mmd.lastExport.mask ? "，含 Alpha 遮罩" : ""}`
                       : `上次导出失败：${state.mmd.lastExport.error}`
                     : "成片保存在 AVI 同目录，自动合成音频，完成后删除占位 AVI。")}
             </p>
@@ -2079,6 +2118,14 @@ export default function App() {
                 onClick={() => mmdCall("mmdTest")}
               >
                 {mmdBusy ? "处理中…" : "测试编码"}
+              </Button>
+              <Button
+                disabled={!state.mmd.lastExport?.output}
+                title={state.mmd.lastExport?.output}
+                onClick={() => action("mmdOpenLatest")}
+              >
+                <Folder size={15} />
+                打开最新导出
               </Button>
               <Button onClick={() => action("mmdOpenLog")}>
                 <FolderOpen size={15} />

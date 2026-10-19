@@ -1,6 +1,6 @@
 {
   "name": "mmd-encoder",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "description": "MMD 独立视频压制工具",
   "license": "MIT",

@@ -48,6 +48,7 @@ export type Meta = {
   bitDepth: number;
   hasAlpha: boolean;
   vfr?: boolean;
+  videoBitRate?: number;
   audio?: {
     codec: string;
     sampleRate: number;
@@ -131,6 +132,7 @@ export type State = {
     presetId: string;
     followMmd: boolean;
     audioFade: number;
+    alphaMask: boolean;
     error: string;
     plugin: {
       available: boolean;
@@ -143,6 +145,7 @@ export type State = {
       ok: boolean;
       at: string;
       output?: string;
+      mask?: string;
       audio?: string;
       error?: string;
       startFrame?: number;

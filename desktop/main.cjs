@@ -8,6 +8,7 @@ const {
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs/promises");
+const fsSync = require("node:fs");
 const { createService } = require("../backend/service.cjs");
 const { checkForUpdate, RELEASES_URL } = require("../backend/update.cjs");
 const { createUpdater } = require("../backend/selfupdate.cjs");
@@ -236,6 +237,41 @@ else {
           );
           await fs.mkdir(logs, { recursive: true });
           return shell.openPath(logs);
+        }
+        if (action === "mmdOpenLatest") {
+          // The newest MMD export from the plugin's own history: select the
+          // video (or its mask) in Explorer, or open its folder if both are gone.
+          const history = path.join(
+            process.env.LOCALAPPDATA || app.getPath("appData"),
+            "MMDEncoder",
+            "mmd-plugin",
+            "exports.jsonl",
+          );
+          let last = null;
+          try {
+            const lines = (await fs.readFile(history, "utf8"))
+              .trim()
+              .split("\n");
+            for (let i = lines.length - 1; i >= 0 && !last; i--) {
+              try {
+                const entry = JSON.parse(lines[i]);
+                if (entry.output) last = entry;
+              } catch {}
+            }
+          } catch {}
+          if (!last) throw new Error("还没有 MMD 导出记录");
+          const file = [last.output, last.mask].find(
+            (f) => f && fsSync.existsSync(f),
+          );
+          if (file) {
+            shell.showItemInFolder(file);
+            return null;
+          }
+          const dir = path.dirname(last.output);
+          if (!fsSync.existsSync(dir))
+            throw new Error("上次导出的文件夹已不存在：" + dir);
+          await shell.openPath(dir);
+          return null;
         }
         if (action === "openDataFolder") {
           await fs.mkdir(dataDir, { recursive: true });

@@ -235,3 +235,30 @@ test("source metadata maps packed, semiplanar and float bit depths", () => {
     assert.equal(m.bitDepth, bitDepth, pix_fmt);
   }
 });
+test("video bitrate: stream value, MKV BPS tag, or total minus audio", () => {
+  const v = {
+    codec_type: "video",
+    width: 16,
+    height: 16,
+    avg_frame_rate: "30/1",
+    pix_fmt: "yuv420p",
+  };
+  const a = {
+    codec_type: "audio",
+    codec_name: "aac",
+    sample_rate: "48000",
+    channels: 2,
+    bit_rate: "320000",
+  };
+  const meta = (streams, format = {}) => c.metadata({ streams, format });
+  assert.equal(
+    meta([{ ...v, bit_rate: "10080827" }, a]).videoBitRate,
+    10080827,
+  );
+  assert.equal(
+    meta([{ ...v, tags: { BPS: "5000000" } }, a]).videoBitRate,
+    5000000,
+  );
+  assert.equal(meta([v, a], { bit_rate: "8320000" }).videoBitRate, 8000000);
+  assert.equal(meta([v, a]).videoBitRate, 0);
+});

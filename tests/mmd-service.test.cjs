@@ -39,9 +39,10 @@ test(
       assert.ok(c.helper.endsWith(path.join("backend", "mmd-export.cjs")));
       assert.ok(c.engines.ffmpeg && c.engines.ffprobe);
       assert.ok(c.presets.some((p) => p.id === "builtin-4k" && !p.unsupported));
-      assert.match(
+      assert.equal(
         c.presets.find((p) => p.id === "builtin-alpha-mask").unsupported,
-        /分离 Alpha/,
+        "",
+        "split alpha works in the live export",
       );
       assert.throws(() => mx.readConfig(), /还没有选择导出预设/);
 
@@ -99,10 +100,17 @@ test(
         ["builtin-4k", 2],
       );
 
-      // A preset the live export cannot use: refused, with a reason.
+      // The alpha mask switch is shared with the plugin and reaches the plan.
+      assert.equal(state().mmd.alphaMask, false, "mask is off by default");
+      await svc.invoke("mmdExportSet", { alphaMask: true });
+      assert.equal(mx.readSelection().alphaMask, true);
+      assert.equal(mx.readConfig().alphaMask, true);
+      assert.ok(mx.plan(runtime).maskOutput.endsWith("x_alpha.mp4"));
+      await svc.invoke("mmdTest");
+      assert.match(state().mmd.test.message, /含 Alpha 遮罩/);
       await svc.invoke("mmdExportSet", { presetId: "builtin-alpha-mask" });
-      assert.match(state().mmd.error, /分离 Alpha/);
-      assert.throws(() => mx.readConfig(), /分离 Alpha/);
+      assert.equal(state().mmd.error, "");
+      await svc.invoke("mmdExportSet", { alphaMask: false });
 
       // A personal preset that gets renamed, then deleted.
       await svc.invoke("savePreset", { name: "我的导出" });

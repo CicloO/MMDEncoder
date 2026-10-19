@@ -98,6 +98,10 @@
   gap: 4px;
   min-width: 0;
 }
+/* Long status text wraps on the left; the buttons only drop below it on narrow windows. */
+.status-row > p {
+  flex: 1 1 220px;
+}
 .row-actions {
   display: flex;
   gap: 9px;
@@ -248,8 +252,15 @@ svg {
   border-color: var(--color-primary);
   font-weight: 650;
 }
+/* On hover a primary button takes the plain hover background (.button:hover
+   above), so its text switches to the primary colour to stay readable. */
 .button.primary:hover:not(:disabled) {
-  filter: brightness(1.08);
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.button.danger:hover:not(:disabled),
+.button.stop:hover:not(:disabled) {
+  border-color: var(--color-danger);
 }
 .button.ghost {
   border-color: transparent;
@@ -557,6 +568,10 @@ svg {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.detail-actions {
+  display: flex;
+  gap: 4px;
 }
 .detail-card h3 {
   overflow-wrap: anywhere;

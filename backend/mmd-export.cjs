@@ -7,8 +7,8 @@
 //   plan   - at the first frame: build the FFmpeg command that reads MMD's raw
 //            frames from stdin and encodes them with the chosen preset.
 //   finish - after rendering: add audio (from the AVI, or cut from the project's
-//            WAV when the export did not start at frame 0), then delete MMD's
-//            placeholder AVI.
+//            WAV when the export did not start at frame 0), move the optional
+//            alpha mask into place, then delete MMD's placeholder AVI.
 // The app writes the chosen preset and tool paths to mmd-export.json.
 const fs = require("node:fs");
 const path = require("node:path");
@@ -50,6 +50,8 @@ function readSelection() {
       followMmd: s.followMmd !== false,
       // Seconds of audio fade-in and fade-out (0 = off).
       audioFade: FADES.includes(s.audioFade) ? s.audioFade : 0,
+      // Also write a black-and-white alpha mask (<name>_alpha.<ext>).
+      alphaMask: s.alphaMask === true,
       savedAt: typeof s.savedAt === "string" ? s.savedAt : "",
     };
   } catch {
@@ -57,11 +59,18 @@ function readSelection() {
   }
 }
 
-function writeSelection({ presetId = "", followMmd = true, audioFade = 0, savedAt }) {
+function writeSelection({
+  presetId = "",
+  followMmd = true,
+  audioFade = 0,
+  alphaMask = false,
+  savedAt,
+}) {
   const selection = {
     presetId,
     followMmd,
     audioFade,
+    alphaMask,
     savedAt: savedAt || new Date().toISOString(),
   };
   writeAtomic(selectionPath(), selection);
@@ -78,6 +87,7 @@ function writeConfig({
   presetId = "",
   followMmd = true,
   audioFade = 0,
+  alphaMask = false,
   engines,
   appExe,
   helper,
@@ -85,7 +95,7 @@ function writeConfig({
   if (!presets) {
     const id = presetId || "export";
     presets = [{ id, name: presetName, settings }];
-    writeSelection({ presetId: id, followMmd, audioFade });
+    writeSelection({ presetId: id, followMmd, audioFade, alphaMask });
   }
   const config = {
     version: 2,
@@ -111,7 +121,9 @@ function readConfig() {
     throw Error("导出设置版本不支持，请打开 MMDEncoder 重新选择导出预设");
   const selection = readSelection();
   if (!selection?.presetId)
-    throw Error("还没有选择导出预设：请在 MMDEncoder 的“预设管理”或 MMD 的“詳細設定”里选择");
+    throw Error(
+      "还没有选择导出预设：请在 MMDEncoder 的“预设管理”或 MMD 的“詳細設定”里选择",
+    );
   const preset = config.presets.find((p) => p.id === selection.presetId);
   if (!preset) throw Error("所选导出预设已不存在，请重新选择");
   if (preset.unsupported) throw Error(preset.unsupported);
@@ -124,17 +136,52 @@ function readConfig() {
     settings: preset.settings,
     followMmd: selection.followMmd,
     audioFade: selection.audioFade,
+    alphaMask: selection.alphaMask,
   };
 }
 
 // Why a preset cannot be used for a live MMD export (empty string = usable).
 function unsupported(s) {
-  if (s.alphaMode === "mask")
-    return "分离 Alpha（仅黑白遮罩）暂不支持 MMD 直接导出";
-  if (s.encoder.startsWith("nvencc:"))
+  if (s.alphaMode !== "mask" && s.encoder.startsWith("nvencc:"))
     return "NVEncC（含 RTX 超分 / 补帧）需要两段处理，MMD 直接导出暂不支持";
-  if (s.alphaMask) return "分离 Alpha（额外遮罩文件）暂不支持 MMD 直接导出";
   return "";
+}
+
+// Where the mask is encoded before finish moves it next to the video.
+const maskTemp = (temp) => {
+  const ext = path.extname(temp);
+  return temp.endsWith(".mmdencoder-video" + ext)
+    ? temp.slice(0, -(".mmdencoder-video" + ext).length) +
+        ".mmdencoder-mask" +
+        ext
+    : temp;
+};
+const maskOutput = (output) => {
+  const ext = path.extname(output);
+  return output.slice(0, -ext.length) + "_alpha" + ext;
+};
+
+// FFmpeg args for MMD's raw frames on stdin instead of a file input.
+function fromPipe(args, runtime, rate, alpha) {
+  args = [...args];
+  const input = args.indexOf("pipe:0");
+  args.splice(
+    input - 1,
+    2,
+    "-f",
+    "rawvideo",
+    "-pix_fmt",
+    alpha ? "bgra" : "bgr24",
+    "-video_size",
+    `${runtime.width}x${runtime.height}`,
+    "-framerate",
+    rate.text,
+    "-i",
+    "pipe:0",
+  );
+  // Progress output is useless here and would fill the plugin's log pipe.
+  for (let i; (i = args.indexOf("-progress")) >= 0;) args.splice(i, 2);
+  return args;
 }
 
 // Exact frame rate from DirectShow's AvgTimePerFrame (100 ns units).
@@ -182,6 +229,16 @@ function plan(runtime, config = readConfig()) {
     outputMode: "source",
     nameTemplate: "{name}",
   };
+  // The mask: from the export option or a split-alpha preset. MMD only sends
+  // alpha with 32-bit frames; without it the mask is skipped, not the export.
+  const notes = [];
+  let mask =
+    s.alphaMode !== "mask" && (config.alphaMask === true || !!s.alphaMask);
+  if (mask && !alpha) {
+    mask = false;
+    notes.push("MMD 没有提供 Alpha 画面，未导出遮罩");
+  }
+  out.alphaMask = mask;
   const paths = core.outputPaths(runtime.avi, out, 1, fs.existsSync);
   const ext = path.extname(paths.output);
   const temp = path.join(
@@ -190,41 +247,54 @@ function plan(runtime, config = readConfig()) {
   );
   // Video only; audio is added in finish once the whole render is known.
   const job = { path: "pipe:0", meta: { ...meta, audio: undefined } };
-  const [command] = core.buildCommands(
+  const commands = core.buildCommands(
     job,
     { ...out, audio: "none" },
     config.engines,
-    {
-      output: temp,
-    },
-  );
-  const args = [...command.args];
-  const input = args.indexOf("pipe:0");
-  args.splice(
-    input - 1,
-    2,
-    "-f",
-    "rawvideo",
-    "-pix_fmt",
-    alpha ? "bgra" : "bgr24",
-    "-video_size",
-    `${runtime.width}x${runtime.height}`,
-    "-framerate",
-    rate.text,
-    "-i",
-    "pipe:0",
+    { output: temp, maskOutput: mask ? maskTemp(temp) : undefined },
   );
   // DirectShow frames are usually stored bottom-up.
-  const vf = args.indexOf("-vf");
-  if (runtime.bottomUp && vf >= 0) args[vf + 1] = "vflip," + args[vf + 1];
-  // Progress output is useless here and would fill the plugin's log pipe.
-  const progress = args.indexOf("-progress");
-  if (progress >= 0) args.splice(progress, 2);
+  const flip = runtime.bottomUp ? "vflip," : "";
+  let args;
+  if (commands.length === 1) {
+    args = fromPipe(commands[0].args, runtime, rate, alpha);
+    const vf = args.indexOf("-vf");
+    if (flip && vf >= 0) args[vf + 1] = flip + args[vf + 1];
+  } else {
+    // Colour video and mask from one FFmpeg: MMD's frames are read once and
+    // split, each branch keeping its own filters and encoder options.
+    const [video, matte] = commands.map((c) =>
+      fromPipe(c.args, runtime, rate, alpha),
+    );
+    const outputOf = (a) => {
+      const m = a.indexOf("-map");
+      if (a[m + 2] !== "-vf") throw Error("无法组合遮罩命令");
+      return { filter: a[m + 3], rest: a.slice(m + 4) };
+    };
+    const v = outputOf(video),
+      k = outputOf(matte);
+    args = [
+      ...video.slice(0, video.indexOf("-map")),
+      "-filter_complex",
+      `[0:v]${flip}split=2[c][k];[c]${v.filter}[vc];[k]${k.filter}[vk]`,
+      "-map",
+      "[vc]",
+      ...v.rest,
+      "-map",
+      "[vk]",
+      ...k.rest,
+    ];
+  }
+  const command = commands[0];
   return {
     exe: command.exe,
     args,
     temp,
     output: paths.output,
+    ...(mask
+      ? { maskTemp: maskTemp(temp), maskOutput: maskOutput(paths.output) }
+      : {}),
+    notes,
     fps: rate,
     presetName: config.presetName,
   };
@@ -298,7 +368,8 @@ function projectWav(pmm) {
 }
 
 function audioArgs(s) {
-  if (s.audio === "none") return null;
+  // A mask-only export is the mask alone, without sound.
+  if (s.audio === "none" || s.alphaMode === "mask") return null;
   const args = ["-c:a", s.audio];
   if (["aac", "libopus"].includes(s.audio))
     args.push(
@@ -306,6 +377,30 @@ function audioArgs(s) {
       (s.audioBitrate || (s.audio === "aac" ? 192 : 0) || 192) + "k",
     );
   return args;
+}
+
+// The mask's single luma level when every pixel of every frame is the same,
+// otherwise null. Decodes the lossless mask once with signalstats.
+async function flatLevel(config, file) {
+  const { stderr } = await run(config.engines.ffmpeg, [
+    "-hide_banner",
+    "-nostdin",
+    "-nostats",
+    "-v",
+    "info",
+    "-i",
+    file,
+    "-vf",
+    "signalstats,metadata=print:key=lavfi.signalstats.YMIN,metadata=print:key=lavfi.signalstats.YMAX",
+    "-f",
+    "null",
+    "-",
+  ]);
+  const values = [
+    ...stderr.matchAll(/lavfi\.signalstats\.Y(?:MIN|MAX)=(\d+)/g),
+  ].map((m) => Number(m[1]));
+  if (!values.length) throw Error("没有读到遮罩画面");
+  return values.every((v) => v === values[0]) ? values[0] : null;
 }
 
 // job: { avi, temp, output, frames, avgTimePerFrame, startFrame, pmm }
@@ -392,10 +487,35 @@ async function finish(job, config = readConfig(), log = () => {}) {
   const result = await probe(config, job.output);
   const video = result.streams?.find((x) => x.codec_type === "video");
   if (!video) throw Error("成片没有视频流：" + job.output);
+  // The mask was encoded next to the video during the render.
+  let mask = "";
+  const matte = maskTemp(job.temp);
+  if (matte !== job.temp && fs.existsSync(matte)) {
+    // One flat value from start to end (all white: nothing transparent; all
+    // black: nothing visible) carries no information, so it is not kept.
+    const flat = await flatLevel(config, matte).catch((e) => {
+      log("无法检查遮罩内容，照常保留：" + e.message);
+      return null;
+    });
+    if (flat !== null) {
+      fs.rmSync(matte, { force: true });
+      log(
+        flat >= 128
+          ? "遮罩全白（画面没有透明区域），未保留遮罩"
+          : "遮罩全黑（画面全透明），未保留遮罩",
+      );
+    } else {
+      mask = maskOutput(job.output);
+      if (fs.existsSync(mask)) throw Error("遮罩文件已存在，未覆盖：" + mask);
+      fs.renameSync(matte, mask);
+      log("Alpha 遮罩：" + mask);
+    }
+  }
   // Only ever delete an AVI this plugin wrote (placeholder frames only).
   if (placeholder) fs.rmSync(job.avi, { force: true });
   return {
     output: job.output,
+    ...(mask ? { mask } : {}),
     audio: source,
     duration: Number(result.format?.duration) || 0,
     aviDeleted: placeholder,

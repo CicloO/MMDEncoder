@@ -116,6 +116,7 @@ try {
     settings,
     presetName: "默认 1080p · CPU",
     presetId: "builtin-1080-sw",
+    alphaMask: true,
     engines: { ffmpeg: ff, ffprobe: fp },
     appExe,
     helper: path.join(root, "backend/mmd-export.cjs"),
@@ -152,9 +153,17 @@ try {
   check(fs.existsSync(mp4), "MP4 created next to the AVI with the AVI's name");
   check(!fs.existsSync(avi), "placeholder AVI deleted");
   check(
-    !fs.readdirSync(dir).some((n) => n.includes(".mmdencoder-video")),
-    "temporary video removed",
+    !fs.readdirSync(dir).some((n) => n.includes(".mmdencoder-")),
+    "temporary video and mask removed",
   );
+  const mask = path.join(dir, "导出 test_alpha.mp4");
+  if (fs.existsSync(mask)) {
+    const m = probe(mask).streams;
+    check(
+      m.length === 1 && m[0].profile === "High 4:4:4 Predictive" && Number(m[0].nb_frames) === 120,
+      "lossless alpha mask with 120 frames next to the MP4",
+    );
+  } else check(false, "alpha mask written");
   if (fs.existsSync(mp4)) {
     const info = probe(mp4);
     const v = info.streams.find((s) => s.codec_type === "video");
