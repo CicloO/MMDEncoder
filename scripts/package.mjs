@@ -75,6 +75,34 @@ await fs.rename(
   path.join(dest, "electron.exe"),
   path.join(dest, "MMDEncoder.exe"),
 );
+// Explorer shows the icon and description stored in the exe itself, which are
+// still Electron's; write ours (the window icon is set separately at runtime).
+const rcedit = path.join(
+  path.dirname(require.resolve("rcedit/package.json")),
+  "bin",
+  "rcedit-x64.exe",
+);
+execFileSync(
+  rcedit,
+  [
+    path.join(dest, "MMDEncoder.exe"),
+    "--set-icon",
+    path.join(root, "assets", "icon.ico"),
+    "--set-file-version",
+    version,
+    "--set-product-version",
+    version,
+    ...Object.entries({
+      FileDescription: "MMDEncoder",
+      ProductName: "MMDEncoder",
+      CompanyName: "CicloO",
+      LegalCopyright: "Copyright (c) 2026 CicloO",
+      OriginalFilename: "MMDEncoder.exe",
+      InternalName: "MMDEncoder",
+    }).flatMap(([key, value]) => ["--set-version-string", key, value]),
+  ],
+  { windowsHide: true },
+);
 const appDir = path.join(dest, "resources", "app");
 for (const [from, to] of [
   ["README.md", "README.md"],
