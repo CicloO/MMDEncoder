@@ -99,3 +99,71 @@ test("real alpha retention and matching resized mask for ProRes and VP9", () => 
     assert.ok(mean > 120 && mean < 136, `${encoder} alpha ${mean}`);
   }
 });
+test("mask only: one lossless _alpha file, no colour video or audio, any encoder setting", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-mask-only-"));
+  const input = path.join(dir, "input.mkv");
+  execFileSync(ff, [
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "testsrc2=s=128x72:r=30:d=0.3,format=yuva444p,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a=128",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=d=0.3",
+    "-c:v",
+    "ffv1",
+    "-shortest",
+    input,
+  ]);
+  const meta = { width: 128, height: 72, hasAlpha: true, audio: true };
+  // The colour encoder (NVEncC here) is not used for the mask.
+  const s = {
+    ...c.DEFAULTS,
+    encoder: "nvencc:hevc",
+    preset: "p4",
+    outputMode: "source",
+    alphaMode: "mask",
+    alphaMask: false,
+  };
+  assert.deepEqual(c.validate(s, meta), []);
+  assert.match(
+    c.validate(s, { ...meta, hasAlpha: false }).join(),
+    /不能生成遮罩/,
+  );
+  assert.ok(c.validate({ ...s, encoder: "nvencc:h264", vsr: true }).length);
+  for (const container of ["mp4", "webm"]) {
+    const paths = c.outputPaths(input, { ...s, container });
+    assert.equal(paths.output, path.join(dir, "input_alpha." + container));
+    assert.equal(paths.maskOutput, undefined);
+    const cmds = c.buildCommands({ path: input, meta }, { ...s, container }, { ffmpeg: ff }, paths);
+    assert.equal(cmds.length, 1);
+    assert.equal(cmds[0].output, paths.output);
+    assert.equal(cmds[0].mask, false, "the mask is the main output");
+    execFileSync(cmds[0].exe, cmds[0].args, { stdio: "pipe" });
+    const streams = JSON.parse(
+      execFileSync(fp, ["-v", "error", "-show_streams", "-of", "json", paths.output], {
+        encoding: "utf8",
+      }),
+    ).streams;
+    assert.deepEqual(streams.map((x) => x.codec_type), ["video"]);
+    assert.equal(streams[0].codec_name, container === "webm" ? "vp9" : "h264");
+    const gray = execFileSync(ff, [
+      "-v",
+      "error",
+      "-i",
+      paths.output,
+      "-vf",
+      "format=gray",
+      "-frames:v",
+      "1",
+      "-f",
+      "rawvideo",
+      "pipe:1",
+    ]);
+    const mean = [...gray].reduce((a, b) => a + b, 0) / gray.length;
+    assert.ok(mean > 120 && mean < 136, `${container} mask ${mean}`);
+  }
+});

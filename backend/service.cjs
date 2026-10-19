@@ -11,6 +11,8 @@ const {
 } = require("./enhancements.cjs");
 const media = require("./media.cjs");
 const { createTools, DEFAULT_ROOT } = require("./tools.cjs");
+const mmdExport = require("./mmd-export.cjs");
+const mmdPlugin = require("./mmd-plugin.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
   engineDir,
@@ -18,6 +20,13 @@ function createService({
   onUpdate,
   toolsRoot = process.env.MMD_TEST_TOOLS_ROOT,
   toolOptions = {},
+  // MMD export plugin DLL shipped with the app (packaged) or built locally (dev).
+  mmdPluginDll = [
+    path.join(__dirname, "..", "mmd-plugin", "MMDEncoderPlugin.dll"),
+    path.join(__dirname, "..", "mmd-plugin", "build", "MMDEncoderPlugin.dll"),
+  ].find((p) => fs.existsSync(p)) || "",
+  // Program the plugin runs in Node mode for its helper (MMDEncoder.exe when packaged).
+  mmdAppExe = process.execPath,
 } = {}) {
   dataDir = dataDir || path.join(os.tmpdir(), "mmd-encoder");
   const children = new Set();
@@ -44,6 +53,17 @@ function createService({
       message: "启用后请先验证本机 RTX 功能",
     },
     mediaJobs: [],
+    // MMD export plugin: chosen preset, plugin install state, last test / export.
+    mmd: {
+      presetId: "",
+      followMmd: true,
+      audioFade: 0,
+      savedAt: "",
+      error: "",
+      plugin: { available: false, installed: false, upToDate: false, path: "" },
+      test: null,
+      lastExport: null,
+    },
     engineInfo: { ffmpeg: "", ffprobe: "", nvencc: "" },
     detectionLog: "",
   };
@@ -182,12 +202,143 @@ function createService({
           ),
           deletedBuiltins: [...deletedBuiltins],
           presetOrder: state.presets.map((p) => p.id),
+          mmdExport: {
+            presetId: state.mmd.presetId,
+            followMmd: state.mmd.followMmd,
+            audioFade: state.mmd.audioFade,
+            savedAt: state.mmd.savedAt,
+          },
         },
         null,
         2,
       ),
     );
     fs.renameSync(tmp, target);
+    syncMmdExport();
+  }
+  // The export choice is shared with the plugin's settings window in MMD through
+  // mmd-selection.json; take it over when it was saved there more recently.
+  function adoptMmdSelection() {
+    const s = mmdExport.readSelection();
+    const m = state.mmd;
+    if (!s) {
+      // First run with a choice from settings.json: publish it for the plugin.
+      if (m.presetId) {
+        const saved = mmdExport.writeSelection(m);
+        m.savedAt = saved.savedAt;
+      }
+      return false;
+    }
+    if (s.savedAt <= (m.savedAt || "")) return false;
+    Object.assign(m, {
+      presetId: s.presetId,
+      followMmd: s.followMmd,
+      audioFade: s.audioFade,
+      savedAt: s.savedAt,
+    });
+    return true;
+  }
+  // Keep the plugin's mmd-export.json (tools, helper, every preset) in step:
+  // every preset change goes through persist(), tool changes through detect().
+  function syncMmdExport() {
+    const m = state.mmd;
+    m.error = "";
+    try {
+      adoptMmdSelection();
+      mmdExport.writeConfig({
+        presets: state.presets.map(({ id, name, settings }) => ({ id, name, settings })),
+        engines: state.engineInfo,
+        appExe: mmdAppExe,
+        helper: path.join(__dirname, "mmd-export.cjs"),
+      });
+    } catch (e) {
+      m.error = "无法写入导出设置：" + e.message;
+      return;
+    }
+    const preset = state.presets.find((p) => p.id === m.presetId);
+    m.error = !m.presetId
+      ? ""
+      : !preset
+        ? "导出预设已被删除，请重新选择"
+        : mmdExport.unsupported(preset.settings) ||
+          (!state.engineInfo.ffmpeg || !state.engineInfo.ffprobe
+            ? "请先在“设置与引擎”里安装编码工具"
+            : "");
+  }
+  function lastMmdExport() {
+    try {
+      const lines = fs
+        .readFileSync(mmdExport.historyPath(), "utf8")
+        .trim()
+        .split("\n");
+      return JSON.parse(lines[lines.length - 1]);
+    } catch {
+      return null;
+    }
+  }
+  async function refreshMmdPlugin() {
+    state.mmd.plugin = await mmdPlugin.status(mmdPluginDll);
+    state.mmd.lastExport = lastMmdExport();
+  }
+  // Encode a short synthetic clip exactly as an MMD export would.
+  async function testMmdExport() {
+    syncMmdExport();
+    if (state.mmd.error) throw Error(state.mmd.error);
+    if (!state.mmd.presetId) throw Error("请先选择导出预设");
+    const dir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "mmdencoder-export-test-"),
+    );
+    const started = Date.now();
+    try {
+      const width = 640,
+        height = 360,
+        frames = 30;
+      const plan = mmdExport.plan({
+        avi: path.join(dir, "test.avi"),
+        width,
+        height,
+        bits: 32,
+        bottomUp: true,
+        avgTimePerFrame: 333333,
+      });
+      const child = spawn(plan.exe, plan.args, {
+        windowsHide: true,
+        stdio: ["pipe", "ignore", "pipe"],
+      });
+      children.add(child);
+      let stderr = "";
+      child.stderr.on("data", (d) => (stderr = (stderr + d).slice(-4000)));
+      child.stdin.on("error", () => {});
+      const frame = Buffer.alloc(width * height * 4, 0x80);
+      for (let i = 0; i < frames; i++)
+        if (!child.stdin.write(frame))
+          await new Promise((r) => child.stdin.once("drain", r));
+      child.stdin.end();
+      const code = await new Promise((r) => child.on("close", r));
+      children.delete(child);
+      if (code !== 0)
+        throw Error(
+          "编码失败（退出码 " +
+            code +
+            "）：" +
+            stderr.trim().split("\n").slice(-3).join(" "),
+        );
+      if (!fs.existsSync(plan.temp)) throw Error("没有生成测试文件");
+      state.mmd.test = {
+        ok: true,
+        at: new Date().toISOString(),
+        message: `测试编码通过（${((Date.now() - started) / 1000).toFixed(1)} 秒）`,
+      };
+    } catch (e) {
+      state.mmd.test = {
+        ok: false,
+        at: new Date().toISOString(),
+        message: e.message,
+      };
+      throw e;
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   }
   function schema(p, full = false) {
     if (!p || typeof p !== "object" || Array.isArray(p))
@@ -244,6 +395,16 @@ function createService({
       fs.readFileSync(path.join(dataDir, "settings.json"), "utf8"),
     );
     if (saved.version !== 1) throw Error("版本不支持");
+    if (saved.mmdExport && typeof saved.mmdExport === "object") {
+      if (typeof saved.mmdExport.presetId === "string")
+        state.mmd.presetId = saved.mmdExport.presetId;
+      if ([0, 0.5, 1, 2].includes(saved.mmdExport.audioFade))
+        state.mmd.audioFade = saved.mmdExport.audioFade;
+      if (typeof saved.mmdExport.savedAt === "string")
+        state.mmd.savedAt = saved.mmdExport.savedAt;
+      if (typeof saved.mmdExport.followMmd === "boolean")
+        state.mmd.followMmd = saved.mmdExport.followMmd;
+    }
     state.settings = { ...core.DEFAULTS, ...schema(saved.settings) };
     for (const id of saved.deletedBuiltins || [])
       if (typeof id === "string") deletedBuiltins.add(id);
@@ -868,6 +1029,7 @@ function createService({
       .finally(() => {
         state.detecting = false;
         detectPromise = null;
+        syncMmdExport();
         emit();
       });
     return detectPromise;
@@ -989,12 +1151,18 @@ function createService({
       errors.push("RTX 设置尚未通过本机验证，请在 RTX 增强页验证所选设置");
     if (!job.meta) errors.push("素材信息尚未读取成功");
     if (!state.engineInfo.ffmpeg) errors.push("未找到 FFmpeg");
-    if (s.encoder.startsWith("nvencc:") && !state.engineInfo.nvencc)
+    // Mask only encodes with FFmpeg's lossless x264 / VP9, not the chosen encoder.
+    const maskOnly = s.alphaMode === "mask";
+    if (!maskOnly && s.encoder.startsWith("nvencc:") && !state.engineInfo.nvencc)
       errors.push("未找到 NVEncC");
-    if (!state.detecting && !state.engines.some((e) => e.id === s.encoder))
+    if (
+      !maskOnly &&
+      !state.detecting &&
+      !state.engines.some((e) => e.id === s.encoder)
+    )
       errors.push("编码器当前不可用，请重新检测或选择其他编码器");
     const available = state.engines.find((e) => e.id === s.encoder);
-    if (available && !available.depths.includes(s.bitDepth))
+    if (!maskOnly && available && !available.depths.includes(s.bitDepth))
       errors.push("此编码器未通过所选位深的实测");
     if (
       s.encoder === "nvencc:hevc" &&
@@ -1026,9 +1194,11 @@ function createService({
       }
     })();
     const meta = job.meta;
-    const summary = meta
-      ? `${meta.width} × ${meta.height} · ${meta.fpsText || "未知"}${target ? " → " + s.fps : ""} FPS / ${core.ENGINES.find((e) => e.id === s.encoder)?.label || s.encoder} · ${s.bitDepth}-bit · ${s.audio === "none" ? "无音频" : s.audio.toUpperCase()} · ${s.container.toUpperCase()}${target > meta.fps ? "；通过重复帧提高帧率，不生成新的运动细节" : ""}${s.encoder.startsWith("nvencc:") ? "；NVEncC 预处理需要额外临时磁盘空间" : ""}`
-      : "";
+    const summary = !meta
+      ? ""
+      : maskOnly
+        ? `${meta.width} × ${meta.height} · ${meta.fpsText || "未知"}${target ? " → " + s.fps : ""} FPS / 分离 Alpha · 仅黑白遮罩 · ${s.container === "webm" ? "VP9" : "H.264"} 无损 · 无音频 · ${s.container.toUpperCase()}`
+        : `${meta.width} × ${meta.height} · ${meta.fpsText || "未知"}${target ? " → " + s.fps : ""} FPS / ${core.ENGINES.find((e) => e.id === s.encoder)?.label || s.encoder} · ${s.bitDepth}-bit · ${s.audio === "none" ? "无音频" : s.audio.toUpperCase()} · ${s.container.toUpperCase()}${target > meta.fps ? "；通过重复帧提高帧率，不生成新的运动细节" : ""}${s.encoder.startsWith("nvencc:") ? "；NVEncC 预处理需要额外临时磁盘空间" : ""}`;
     return {
       ...paths,
       dimensions: meta ? core.dimensions(s, meta) : null,
@@ -1076,12 +1246,15 @@ function createService({
         errors.push("RTX 设置未通过本机验证");
       if (errors.length) throw Error(errors.join("；"));
       const engine = state.engines.find((e) => e.id === s.encoder);
-      if (!engine || !engine.depths.includes(s.bitDepth))
+      if (
+        s.alphaMode !== "mask" &&
+        (!engine || !engine.depths.includes(s.bitDepth))
+      )
         throw Error("所选编码器或位深未通过本机试编码，请调整参数");
       if (
         s.encoder === "nvencc:hevc" &&
         s.alphaMode === "preserve" &&
-        !engine.alpha
+        !engine?.alpha
       )
         throw Error("本机未通过 HEVC Alpha 试编码，已停止以避免丢失透明通道");
       let paths = maskOnly
@@ -1728,6 +1901,48 @@ function createService({
         persist();
         break;
       }
+      case "mmdStatus":
+        // Pick up a choice made in MMD since the last look.
+        if (adoptMmdSelection()) persist();
+        else syncMmdExport();
+        await refreshMmdPlugin();
+        break;
+      case "mmdInstall":
+        state.mmd.plugin = await mmdPlugin.install(mmdPluginDll);
+        break;
+      case "mmdUninstall":
+        state.mmd.plugin = await mmdPlugin.uninstall(mmdPluginDll);
+        break;
+      case "mmdExportSet": {
+        // Apply the change on top of a choice made meanwhile in MMD.
+        adoptMmdSelection();
+        if (typeof payload.presetId === "string") {
+          if (
+            payload.presetId &&
+            !state.presets.some((p) => p.id === payload.presetId)
+          )
+            throw Error("未找到预设");
+          state.mmd.presetId = payload.presetId;
+          state.mmd.test = null;
+        }
+        if (payload.audioFade !== undefined) {
+          if (![0, 0.5, 1, 2].includes(payload.audioFade))
+            throw Error("淡入淡出时长无效");
+          state.mmd.audioFade = payload.audioFade;
+        }
+        if (typeof payload.followMmd === "boolean")
+          state.mmd.followMmd = payload.followMmd;
+        state.mmd.savedAt = mmdExport.writeSelection({
+          ...state.mmd,
+          savedAt: undefined,
+        }).savedAt;
+        persist();
+        break;
+      }
+      case "mmdTest":
+        if (state.running) throw Error("请等待当前压制结束后再测试");
+        await testMmdExport();
+        break;
       default:
         throw Error("不支持的操作：" + action);
     }

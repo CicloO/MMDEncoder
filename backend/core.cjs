@@ -215,7 +215,35 @@ function filename(name) {
     throw Error("输出名称包含非法字符或 Windows 保留名");
   return name;
 }
+// How the black-and-white mask is encoded: lossless x264 (VP9 in WebM), no audio.
+function maskSettings(s) {
+  return {
+    ...s,
+    encoder: s.container === "webm" ? "libvpx-vp9" : "libx264",
+    alphaMode: "discard",
+    alphaMask: false,
+    audio: "none",
+    bitDepth: 8,
+    chroma: "420",
+    quality: 0,
+    preset: "medium",
+    rateControl: "quality",
+    lookahead: 0,
+    lookaheadLevel: 0,
+    bframes: -1,
+    gop: -1,
+  };
+}
 function validate(s, meta) {
+  // Mask only: the colour encoder and audio settings are not used, so check
+  // the mask's own encoding; RTX stays refused and the source needs alpha.
+  if (s.alphaMode === "mask") {
+    const e = validate({ ...maskSettings(s), vsr: false, vfg: false }, meta);
+    if (s.vsr || s.vfg)
+      e.push("RTX 增强暂不能与保留 Alpha 或独立 Alpha 遮罩组合");
+    if (meta && !meta.hasAlpha) e.push("源视频没有可读 Alpha，不能生成遮罩");
+    return [...new Set(e)];
+  }
   const e = [];
   const check = (ok, msg) => {
     if (!ok) e.push(msg);
@@ -283,7 +311,8 @@ function validate(s, meta) {
     rateControl: ["quality", "qp", "bitrate"],
     audio: ["aac", "flac", "pcm_s16le", "libopus", "none"],
     // black / white are kept so presets saved before 1.3.0 still load.
-    alphaMode: ["discard", "green", "black", "white", "preserve"],
+    // mask = only the black-and-white alpha mask, no colour video.
+    alphaMode: ["discard", "green", "black", "white", "preserve", "mask"],
     resizeMode: ["source", "custom", "long"],
     resizeAxis: ["width", "height"],
     outputMode: ["source", "encoded", "custom"],
@@ -484,10 +513,15 @@ function outputPaths(
         })[k],
     ),
   );
+  const maskOnly = s.alphaMode === "mask";
   for (let n = 1; n < 100000; n++) {
     const stem = base + (n === 1 ? "" : ` (${n})`);
-    const output = p.join(dir, stem + "." + s.container),
-      maskOutput = s.alphaMask
+    // Mask only: the mask is the one output, still named with the _alpha suffix.
+    const output = p.join(
+        dir,
+        stem + (maskOnly ? "_alpha." : ".") + s.container,
+      ),
+      maskOutput = s.alphaMask && !maskOnly
         ? p.join(dir, stem + "_alpha." + s.container)
         : undefined;
     if (
@@ -771,8 +805,12 @@ function buildCommands(job, s, engines, paths) {
         ]
       : ["-an"];
   const result = [];
-  for (const mask of [false, ...(s.alphaMask ? [true] : [])]) {
-    const output = mask ? paths.maskOutput : paths.output;
+  // Mask only: one mask encode written as the main output (no audio, no colour).
+  const maskOnly = s.alphaMode === "mask";
+  for (const mask of maskOnly
+    ? [true]
+    : [false, ...(s.alphaMask ? [true] : [])]) {
+    const output = mask && !maskOnly ? paths.maskOutput : paths.output;
     if (s.encoder.startsWith("nvencc:") && !mask) {
       const prep = output + ".prepare.mkv",
         encoded = output + ".nvenc.mkv";
@@ -896,20 +934,7 @@ function buildCommands(job, s, engines, paths) {
         output,
       });
     } else {
-      const ms = mask
-        ? {
-            ...s,
-            encoder: s.container === "webm" ? "libvpx-vp9" : "libx264",
-            alphaMode: "discard",
-            bitDepth: 8,
-            chroma: "420",
-            quality: 0,
-            preset: "medium",
-            rateControl: "quality",
-            bframes: -1,
-            gop: -1,
-          }
-        : s;
+      const ms = mask ? maskSettings(s) : s;
       result.push({
         exe: engines.ffmpeg,
         args: [
@@ -932,7 +957,7 @@ function buildCommands(job, s, engines, paths) {
         ],
         stage: mask ? "Alpha 遮罩" : "视频编码",
         output,
-        mask,
+        mask: mask && !maskOnly,
       });
     }
   }

@@ -11,3 +11,5 @@ work/
 premium-audit.json
 *.zip
 *.zip.sha256
+mmd-plugin/build/
+mmd-plugin/probe-package/

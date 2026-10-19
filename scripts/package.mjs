@@ -94,6 +94,25 @@ for (const name of ["desktop", "backend", "dist", "assets"])
   await fs.cp(path.join(root, name), path.join(appDir, name), {
     recursive: true,
   });
+// MMD export plugin DLL (built by mmd-plugin/build.cmd with VS Build Tools).
+const pluginDll = path.join(
+  root,
+  "mmd-plugin",
+  "build",
+  "MMDEncoderPlugin.dll",
+);
+try {
+  await fs.access(pluginDll);
+} catch {
+  throw new Error(
+    "缺少 MMD 导出插件，请先运行 mmd-plugin\\build.cmd：" + pluginDll,
+  );
+}
+await fs.mkdir(path.join(appDir, "mmd-plugin"), { recursive: true });
+await fs.copyFile(
+  pluginDll,
+  path.join(appDir, "mmd-plugin", "MMDEncoderPlugin.dll"),
+);
 await fs.writeFile(
   path.join(appDir, "package.json"),
   JSON.stringify({

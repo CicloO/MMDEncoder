@@ -16,6 +16,11 @@ const allowed = new Set([
   "restoreBuiltinPresets",
   "reorderJobs",
   "mediaReorder",
+  "mmdStatus",
+  "mmdInstall",
+  "mmdUninstall",
+  "mmdExportSet",
+  "mmdTest",
   "setToolsRoot",
   "details",
   "pickMedia",
@@ -51,6 +56,7 @@ const allowed = new Set([
   "reveal",
   "engineFolder",
   "openDataFolder",
+  "mmdOpenLog",
 ]);
 contextBridge.exposeInMainWorld("encoder", {
   invoke(action, payload) {

@@ -62,7 +62,7 @@ export function Select({
   id: string;
   label: string;
   value: string | number;
-  options: { value: string | number; label: string }[];
+  options: { value: string | number; label: string; disabled?: boolean }[];
   onChange: (value: string) => void;
   hint?: string;
   disabled?: boolean;
@@ -77,7 +77,7 @@ export function Select({
         aria-describedby={hint ? `${id}-hint` : undefined}
       >
         {options.map((o) => (
-          <option key={o.value} value={o.value}>
+          <option key={o.value} value={o.value} disabled={o.disabled}>
             {o.label}
           </option>
         ))}

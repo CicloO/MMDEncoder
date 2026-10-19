@@ -31,7 +31,6 @@ export function RtxSettings({
   );
   return (
     <>
-      <h3>RTX 视频增强</h3>
       <p className="hint">
         仅 NVEncC；验证所选配置后可编码。需要兼容驱动与 NVIDIA VFX SDK 运行库 /
         模型；不会自动替换为普通缩放或重复帧。

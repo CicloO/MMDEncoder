@@ -316,6 +316,10 @@ svg {
   gap: 10px;
   align-items: center;
 }
+/* One font for Latin and Chinese, so "MMD 导出" matches its neighbours. */
+.header-actions .button {
+  font-family: "Microsoft YaHei UI", sans-serif;
+}
 .status-dot {
   width: 6px;
   height: 6px;
@@ -819,11 +823,14 @@ input:not([type="checkbox"]):hover {
   font-size: 11px;
   color: var(--color-primary);
 }
-.advanced-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: start;
-  gap: 10px;
+/* "复制命令" sits on the summary line; the expanded command keeps full width. */
+.command-row {
+  position: relative;
+}
+.command-row > .button {
+  position: absolute;
+  top: 3px;
+  right: 0;
 }
 .command-details summary,
 .engine-paths summary {

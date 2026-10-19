@@ -29,6 +29,7 @@ import {
   Save,
   FilePlus2,
   ExternalLink,
+  Clapperboard,
   Eye,
   EyeOff,
   GripVertical,
@@ -72,6 +73,14 @@ const frameOptions = [
   })),
   { value: "custom", label: "自定义帧率" },
 ];
+// Presets an MMD export cannot use yet (mirrors backend/mmd-export.cjs).
+function mmdUnsupported(p: Preset) {
+  if (p.settings.alphaMode === "mask") return "分离 Alpha 暂不支持";
+  if (p.settings.encoder.startsWith("nvencc:")) return "NVEncC 暂不支持";
+  if (p.settings.alphaMask) return "分离 Alpha 暂不支持";
+  return "";
+}
+const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 export default function App() {
   // Light is the default. A new key so the old auto-saved "dark" default does not stick.
   const [theme, setTheme] = useState(() => {
@@ -318,6 +327,26 @@ export default function App() {
       throw e;
     }
   }
+  // MMD export plugin actions run one at a time (install, test encode, …).
+  const [mmdBusy, setMmdBusy] = useState(false);
+  async function mmdCall(
+    actionName: string,
+    payload?: unknown,
+    message?: string,
+  ) {
+    setMmdBusy(true);
+    try {
+      await call(actionName, payload, message);
+    } catch {
+      /* the error is shown in the dialog */
+    } finally {
+      setMmdBusy(false);
+    }
+  }
+  useEffect(() => {
+    if (modal === "mmd" && window.encoder) void mmdCall("mmdStatus");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modal]);
   function action(actionName: string, payload?: unknown, message?: string) {
     void call(actionName, payload, message).catch(() => {});
   }
@@ -621,6 +650,10 @@ export default function App() {
           <Button onClick={() => setModal("presets")}>
             <Bookmark size={16} />
             预设管理
+          </Button>
+          <Button onClick={() => setModal("mmd")}>
+            <Clapperboard size={16} />
+            MMD 导出
           </Button>
           <Button
             title="设置与引擎"
@@ -1330,7 +1363,6 @@ export default function App() {
                 )}
                 {tab === "audio" && (
                   <>
-                    <h3 className="panel-subtitle">保留声音的细节</h3>
                     <Select
                       id="audio"
                       label="音频编码"
@@ -1389,7 +1421,6 @@ export default function App() {
                 )}
                 {tab === "alpha" && (
                   <>
-                    <h3 className="panel-subtitle">彩色视频与透明遮罩</h3>
                     <Select
                       id="alphaMode"
                       label="透明通道处理"
@@ -1407,6 +1438,7 @@ export default function App() {
                           value: "split",
                           label: "分离 Alpha · 彩色视频 + 黑白遮罩",
                         },
+                        { value: "mask", label: "分离 Alpha · 仅黑白遮罩" },
                         { value: "green", label: "合成到绿幕（#00FF00）" },
                         // Older presets may still use black / white.
                         ...(s.alphaMode === "black"
@@ -1446,12 +1478,27 @@ export default function App() {
                         </p>
                       </>
                     )}
-                    {s.alphaMask && job?.meta && !job.meta.hasAlpha && (
-                      <p className="inline-error">
-                        当前素材没有可读取的 Alpha
-                        通道，不能分离遮罩。请选择其他处理方式或包含透明通道的视频。
-                      </p>
+                    {s.alphaMode === "mask" && (
+                      <>
+                        <div className="alpha-diagram">
+                          <div className="alpha-swatch mask">A</div>
+                        </div>
+                        <p className="hint">
+                          只导出同尺寸、同帧率的黑白遮罩（_alpha
+                          后缀，无损，不含音频），不导出彩色视频。WebM 用
+                          VP9，其他格式用
+                          H.264；画质页的编码器设置不影响遮罩。白色表示不透明，黑色表示透明，灰色保留半透明信息。
+                        </p>
+                      </>
                     )}
+                    {(s.alphaMask || s.alphaMode === "mask") &&
+                      job?.meta &&
+                      !job.meta.hasAlpha && (
+                        <p className="inline-error">
+                          当前素材没有可读取的 Alpha
+                          通道，不能导出遮罩。请选择其他处理方式或包含透明通道的视频。
+                        </p>
+                      )}
                   </>
                 )}
                 {tab === "output" && (
@@ -1524,13 +1571,6 @@ export default function App() {
                 )}
                 {tab === "advanced" && (
                   <>
-                    <div className="advanced-title">
-                      <h3 className="panel-subtitle">编码细节</h3>
-                      <Button disabled={!job} onClick={copy}>
-                        <Copy size={14} />
-                        复制命令
-                      </Button>
-                    </div>
                     <div className="form-row">
                       <Select
                         id="chroma"
@@ -1583,10 +1623,16 @@ export default function App() {
                           : "仅 NVIDIA HEVC / AV1",
                       )}
                     </div>
-                    <details className="command-details">
-                      <summary>查看完整命令</summary>
-                      <pre>{preview?.command || "添加视频后生成命令"}</pre>
-                    </details>
+                    <div className="command-row">
+                      <details className="command-details">
+                        <summary>查看完整命令</summary>
+                        <pre>{preview?.command || "添加视频后生成命令"}</pre>
+                      </details>
+                      <Button disabled={!job} onClick={copy}>
+                        <Copy size={14} />
+                        复制命令
+                      </Button>
+                    </div>
                   </>
                 )}
                 {s.encoder.startsWith("nvencc:") && (
@@ -1615,33 +1661,47 @@ export default function App() {
                 : "保持源分辨率与帧率"}{" "}
               <ArrowRight size={15} />
               <span>
-                {engine?.label || s.encoder} · {s.bitDepth}-bit
+                {s.alphaMode === "mask"
+                  ? "Alpha 黑白遮罩"
+                  : `${engine?.label || s.encoder} · ${s.bitDepth}-bit`}
               </span>
             </strong>
             <span className="output-facts">
-              {s.encoder === "prores_ks" ? (
-                `ProRes ${s.chroma === "444" ? "4444" : "HQ"}`
+              {s.alphaMode === "mask" ? (
+                <>
+                  {s.container === "webm" ? "VP9" : "H.264"} 无损
+                  <i /> 无音频
+                  <i /> 输出 → {s.container.toUpperCase()}
+                </>
               ) : (
                 <>
-                  {s.rateControl === "bitrate"
-                    ? `${s.bitrate} kbps`
-                    : `${s.rateControl === "qp" ? "QP" : backend === "cpu" ? "CRF" : "CQ"} ${s.quality}`}{" "}
-                  · {s.preset}
-                </>
-              )}
-              <i />
-              音频 →{" "}
-              {job?.meta && !job.meta.audio ? "无音轨" : audioLabels[s.audio]}
-              {(!job?.meta || job.meta.audio) &&
-              ["aac", "libopus"].includes(s.audio) &&
-              s.audioBitrate > 0
-                ? ` · ${s.audioBitrate} kbps`
-                : ""}{" "}
-              {s.alphaMode === "preserve" && " · 保留 Alpha"}
-              <i /> 输出 → {s.container.toUpperCase()}{" "}
-              {s.alphaMask && (
-                <>
-                  <i />+ Alpha 遮罩
+                  {s.encoder === "prores_ks" ? (
+                    `ProRes ${s.chroma === "444" ? "4444" : "HQ"}`
+                  ) : (
+                    <>
+                      {s.rateControl === "bitrate"
+                        ? `${s.bitrate} kbps`
+                        : `${s.rateControl === "qp" ? "QP" : backend === "cpu" ? "CRF" : "CQ"} ${s.quality}`}{" "}
+                      · {s.preset}
+                    </>
+                  )}
+                  <i />
+                  音频 →{" "}
+                  {job?.meta && !job.meta.audio
+                    ? "无音轨"
+                    : audioLabels[s.audio]}
+                  {(!job?.meta || job.meta.audio) &&
+                  ["aac", "libopus"].includes(s.audio) &&
+                  s.audioBitrate > 0
+                    ? ` · ${s.audioBitrate} kbps`
+                    : ""}{" "}
+                  {s.alphaMode === "preserve" && " · 保留 Alpha"}
+                  <i /> 输出 → {s.container.toUpperCase()}{" "}
+                  {s.alphaMask && (
+                    <>
+                      <i />+ Alpha 遮罩
+                    </>
+                  )}
                 </>
               )}
             </span>
@@ -1891,6 +1951,142 @@ export default function App() {
             新建预设
           </Button>
         </div>
+      </Modal>
+      <Modal
+        error={error}
+        open={modal === "mmd"}
+        onClose={() => setModal("")}
+        title="MMD 导出"
+        description="把一个预设当作 MMD 的视频编码器：在 MMD 的“AVI 输出”里选择视频编码“MMDEncoder”，直接导出带音频的成片。这里的选择也可以在 MMD 的“詳細設定”里修改。"
+      >
+        <section
+          className="modal-section"
+          aria-label="插件"
+          aria-busy={mmdBusy}
+        >
+          <h3>插件</h3>
+          <div className="status-row">
+            <p>
+              {!state.mmd.plugin.available
+                ? "这个版本没有附带 MMD 导出插件。"
+                : !state.mmd.plugin.installed
+                  ? "未安装。安装后在 MMD 的“AVI 输出”里选择视频编码“MMDEncoder”。"
+                  : state.mmd.plugin.upToDate
+                    ? "已安装，在 MMD 的“AVI 输出”里选择视频编码“MMDEncoder”。"
+                    : "已安装，有新版插件可以更新（MMD 重启后生效）。"}
+            </p>
+            <div className="row-actions">
+              {state.mmd.plugin.available &&
+                (!state.mmd.plugin.installed || !state.mmd.plugin.upToDate) && (
+                  <Button
+                    variant="primary"
+                    disabled={mmdBusy}
+                    onClick={() =>
+                      mmdCall("mmdInstall", undefined, "MMD 导出插件已安装")
+                    }
+                  >
+                    {state.mmd.plugin.installed ? "更新插件" : "安装到 MMD"}
+                  </Button>
+                )}
+              {state.mmd.plugin.installed && (
+                <Button
+                  disabled={mmdBusy}
+                  onClick={() =>
+                    mmdCall("mmdUninstall", undefined, "MMD 导出插件已卸载")
+                  }
+                >
+                  卸载
+                </Button>
+              )}
+            </div>
+          </div>
+        </section>
+        <section className="modal-section" aria-label="导出设置">
+          <h3>导出设置</h3>
+          <Select
+            id="mmd-export-preset"
+            label="导出预设"
+            value={state.mmd.presetId}
+            disabled={mmdBusy}
+            options={[
+              { value: "", label: "未选择" },
+              ...presets.map((p) => {
+                const why = mmdUnsupported(p);
+                return {
+                  value: p.id,
+                  label: why ? `${p.name}（${why}）` : p.name,
+                  disabled: !!why,
+                };
+              }),
+            ]}
+            onChange={(presetId) => mmdCall("mmdExportSet", { presetId })}
+          />
+          <label className="check-card">
+            <input
+              type="checkbox"
+              checked={state.mmd.followMmd}
+              disabled={mmdBusy}
+              onChange={(e) =>
+                mmdCall("mmdExportSet", { followMmd: e.target.checked })
+              }
+            />
+            <span>
+              <strong>分辨率和帧率跟随 MMD</strong>
+              <small>
+                使用 MMD“AVI
+                输出”里设定的尺寸和帧率，忽略预设里的分辨率与帧率；编码器、画质和音频仍按预设。
+              </small>
+            </span>
+          </label>
+          <Select
+            id="mmd-audio-fade"
+            label="音频淡入淡出"
+            value={String(state.mmd.audioFade)}
+            disabled={mmdBusy}
+            hint="从歌曲中间开始或结束的片段，首尾不会突然开始或戛然而止。"
+            options={[
+              { value: "0", label: "关闭" },
+              { value: "0.5", label: "0.5 秒" },
+              { value: "1", label: "1 秒" },
+              { value: "2", label: "2 秒" },
+            ]}
+            onChange={(v) => mmdCall("mmdExportSet", { audioFade: Number(v) })}
+          />
+        </section>
+        <section className="modal-section" aria-label="测试与日志">
+          <h3>测试与日志</h3>
+          <div className="status-row">
+            <p
+              className={
+                state.mmd.error || state.mmd.test?.ok === false
+                  ? "inline-error"
+                  : undefined
+              }
+              role={state.mmd.error ? "alert" : "status"}
+            >
+              {state.mmd.error ||
+                (state.mmd.test
+                  ? state.mmd.test.message
+                  : state.mmd.lastExport
+                    ? state.mmd.lastExport.ok
+                      ? `上次导出：${baseName(state.mmd.lastExport.output || "")}${state.mmd.lastExport.audio === "wav" ? "（音频取自工程 WAV）" : state.mmd.lastExport.audio === "avi" ? "（含音频）" : "（无音频）"}`
+                      : `上次导出失败：${state.mmd.lastExport.error}`
+                    : "成片保存在 AVI 同目录，自动合成音频，完成后删除占位 AVI。")}
+            </p>
+            <div className="row-actions">
+              <Button
+                disabled={mmdBusy || !state.mmd.presetId || !!state.mmd.error}
+                onClick={() => mmdCall("mmdTest")}
+              >
+                {mmdBusy ? "处理中…" : "测试编码"}
+              </Button>
+              <Button onClick={() => action("mmdOpenLog")}>
+                <FolderOpen size={15} />
+                打开导出日志
+              </Button>
+            </div>
+          </div>
+        </section>
       </Modal>
       <Modal
         error={error}

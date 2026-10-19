@@ -127,6 +127,28 @@ export type State = {
     signature: string;
   };
   mediaJobs: MediaJob[];
+  mmd: {
+    presetId: string;
+    followMmd: boolean;
+    audioFade: number;
+    error: string;
+    plugin: {
+      available: boolean;
+      installed: boolean;
+      upToDate: boolean;
+      path: string;
+    };
+    test: { ok: boolean; at: string; message: string } | null;
+    lastExport: {
+      ok: boolean;
+      at: string;
+      output?: string;
+      audio?: string;
+      error?: string;
+      startFrame?: number;
+      frames?: number;
+    } | null;
+  };
   engineInfo: { ffmpeg: string; ffprobe: string; nvencc: string };
   notice?: string;
   tools?: {

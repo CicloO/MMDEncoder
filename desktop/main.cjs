@@ -227,6 +227,16 @@ else {
             );
           return service.getState();
         }
+        if (action === "mmdOpenLog") {
+          const logs = path.join(
+            process.env.LOCALAPPDATA || app.getPath("appData"),
+            "MMDEncoder",
+            "mmd-plugin",
+            "logs",
+          );
+          await fs.mkdir(logs, { recursive: true });
+          return shell.openPath(logs);
+        }
         if (action === "openDataFolder") {
           await fs.mkdir(dataDir, { recursive: true });
           return shell.openPath(dataDir);
@@ -295,6 +305,11 @@ else {
           "restoreBuiltinPresets",
           "reorderJobs",
           "mediaReorder",
+          "mmdStatus",
+          "mmdInstall",
+          "mmdUninstall",
+          "mmdExportSet",
+          "mmdTest",
           "setToolsRoot",
           "details",
           "detect",
