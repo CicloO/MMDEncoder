@@ -48,6 +48,7 @@ const app = await electron.launch({
   timeout: 60000,
 });
 const errors = [];
+let passed = false;
 try {
   const page = await app.firstWindow();
   page.setDefaultTimeout(12000);
@@ -253,6 +254,9 @@ try {
     ),
   );
   console.log("Desktop flow PASS", state.jobs[0].output);
+  passed = true;
 } finally {
   await app.close();
+  // Keep the working folder only when something failed.
+  if (passed) fs.rmSync(testDir, { recursive: true, force: true });
 }

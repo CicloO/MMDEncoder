@@ -24,6 +24,7 @@ const app = await electron.launch({
   },
   timeout: 60000,
 });
+let passed = false;
 try {
   const page = await app.firstWindow();
   await page.getByRole("heading", { name: "视频队列" }).waitFor();
@@ -48,6 +49,9 @@ try {
     timeout: 15000,
   });
   console.log("Packaged resolution and alpha UI PASS");
+  passed = true;
 } finally {
   await app.close();
+  // Keep the working folder only when something failed.
+  if (passed) fs.rmSync(data, { recursive: true, force: true });
 }

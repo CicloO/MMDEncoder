@@ -68,6 +68,7 @@ try {
 }
 app = await launch(managed, path.join(data, "existing"));
 const checks = [];
+let passed = false;
 try {
   const page = await app.firstWindow();
   page.setDefaultTimeout(20000);
@@ -232,6 +233,9 @@ try {
     JSON.stringify({ date: new Date().toISOString(), checks, data }, null, 2),
   );
   console.log("Desktop tools PASS", checks);
+  passed = true;
 } finally {
   await app.close();
+  // Keep the working folder only when something failed.
+  if (passed) fs.rmSync(data, { recursive: true, force: true });
 }

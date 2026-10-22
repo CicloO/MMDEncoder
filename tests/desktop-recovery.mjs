@@ -73,6 +73,7 @@ async function launch() {
 }
 let { app, page } = await launch();
 const checks = [];
+let passed = false;
 try {
   await expect
     .poll(
@@ -299,6 +300,9 @@ try {
     JSON.stringify({ passed: true, checks, dir }, null, 2),
   );
   console.log("Desktop recovery PASS", checks);
+  passed = true;
 } finally {
   await app.close();
+  // Keep the working folder only when something failed.
+  if (passed) fs.rmSync(dir, { recursive: true, force: true });
 }
