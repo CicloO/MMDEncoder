@@ -177,6 +177,13 @@ export function TrimTools({
   }, [ready?.id, ready?.from, ready?.to, o.mmdFrames]);
 
   const cuts = ready && ready.cuts !== "all" ? (ready.cuts as number[]) : null;
+  // Without smart cut (or where it can't be used) a cut can only start at
+  // these frames, so the slider snaps to them.
+  const snapping = !!cuts && (!t.smart || !!ready?.smartBlocker);
+  const nearestCut = (f: number) =>
+    cuts!.reduce((best, c) =>
+      Math.abs(c - f) < Math.abs(best - f) ? c : best,
+    );
   const move = (to: number) =>
     ready &&
     setCursor({
@@ -207,13 +214,22 @@ export function TrimTools({
     else setRange(ready.from ?? 0, f);
     move(f);
   }
+  // ←/→ one frame, ↑/↓ previous / next cut point (Shift+←/→ too); also on
+  // the slider itself, whose own arrow-key steps are replaced by these.
   function onKey(e: React.KeyboardEvent) {
-    if (!ready || (e.target as HTMLElement).tagName === "INPUT") return;
-    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    const el = e.target as HTMLInputElement;
+    if (!ready || (el.tagName === "INPUT" && el.type !== "range")) return;
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
       e.preventDefault();
-      const dir = e.key === "ArrowRight" ? 1 : -1;
-      if (e.shiftKey) jump(dir);
-      else move(frame + dir);
+      if (e.key === "ArrowUp") jump(-1);
+      else if (e.key === "ArrowDown") jump(1);
+      else {
+        const dir = e.key === "ArrowRight" ? 1 : -1;
+        if (e.shiftKey) jump(dir);
+        else move(frame + dir);
+      }
+    } else if (el.type === "range") {
+      return;
     } else if (e.key.toLowerCase() === "i") {
       setRange(frame, ready.to === ready.frames ? "end" : (ready.to ?? 0));
     } else if (e.key.toLowerCase() === "o") {
@@ -304,8 +320,14 @@ export function TrimTools({
     </li>
   );
 
-  const pct = (f: number) =>
-    ready?.frames ? `${(100 * f) / ready.frames}%` : "0%";
+  // Position on the slider: frame 0 at the thumb's leftmost centre, the
+  // last frame at its rightmost (the marks layer is inset by half a thumb).
+  const pct = (f: number) => {
+    const last = (ready?.frames || 1) - 1;
+    return last > 0
+      ? `${(100 * Math.min(Math.max(f, 0), last)) / last}%`
+      : "0%";
+  };
 
   return (
     <>
@@ -442,32 +464,44 @@ export function TrimTools({
                 )}
               </div>
               <div className="trim-track">
-                <div
-                  className="trim-range"
-                  style={{
-                    left: pct(ready.from ?? 0),
-                    width: `calc(${pct((ready.to ?? 0) - (ready.from ?? 0))})`,
-                  }}
-                />
-                {cuts &&
-                  cuts.length <= 400 &&
-                  cuts.map((c) => (
-                    <i key={c} className="trim-tick" style={{ left: pct(c) }} />
-                  ))}
+                <div className="trim-marks" aria-hidden="true">
+                  <div className="trim-rail" />
+                  <div
+                    className="trim-range"
+                    style={{
+                      left: pct(ready.from ?? 0),
+                      right: `calc(100% - ${pct((ready.to ?? 1) - 1)})`,
+                    }}
+                  />
+                  {cuts &&
+                    cuts.length <= 400 &&
+                    cuts.map((c) => (
+                      <i
+                        key={c}
+                        className="trim-tick"
+                        style={{ left: pct(c) }}
+                      />
+                    ))}
+                </div>
                 <input
                   type="range"
                   aria-label="当前帧"
+                  aria-valuetext={`第 ${frame} 帧`}
                   min={0}
                   max={(ready.frames || 1) - 1}
                   value={frame}
-                  onChange={(e) => move(Number(e.target.value))}
+                  onChange={(e) => {
+                    // Pointer drags and clicks (keys are handled by onKey).
+                    const v = Number(e.target.value);
+                    move(snapping ? nearestCut(v) : v);
+                  }}
                 />
               </div>
               <div className="trim-buttons">
                 <Button
                   variant="ghost icon"
                   aria-label="上一个可切位置"
-                  title="上一个可切位置（Shift+←）"
+                  title="上一个可切位置（↑）"
                   onClick={() => jump(-1)}
                 >
                   <ChevronFirst size={16} />
@@ -491,7 +525,7 @@ export function TrimTools({
                 <Button
                   variant="ghost icon"
                   aria-label="下一个可切位置"
-                  title="下一个可切位置（Shift+→）"
+                  title="下一个可切位置（↓）"
                   onClick={() => jump(1)}
                 >
                   <ChevronLast size={16} />

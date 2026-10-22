@@ -64,7 +64,7 @@ export function RtxSettings({
             { value: "lanczos", label: "Lanczos · 标准缩放" },
             {
               value: "artcnn",
-              label: "ArtCNN · AI 放大（推荐）",
+              label: "ArtCNN · AI 放大",
               disabled: !placebo && upscaler !== "artcnn",
             },
             { value: "vsr", label: "RTX VSR · NVIDIA 超分" },
