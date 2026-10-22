@@ -40,12 +40,12 @@ test("HEVC Alpha validates explicit constraints and preserves alpha during prepa
     { ffmpeg: "ffmpeg", nvencc: "NVEncC" },
     { output: "output.mov" },
   );
-  assert.ok(commands[0].args.includes("yuva444p"));
-  assert.ok(commands[1].args.includes("yuva420"));
-  assert.ok(commands[1].args.includes("--alpha-channel-mode"));
-  assert.ok(commands[2].args.includes("copy"));
+  assert.ok(commands[0].pipeFrom.args.includes("yuva444p"));
+  assert.ok(commands[0].args.includes("yuva420"));
+  assert.ok(commands[0].args.includes("--alpha-channel-mode"));
+  assert.ok(commands[1].args.includes("copy"));
 });
-const { ff, nv } = require("./engines.cjs");
+const { ff, nv, runCommand } = require("./engines.cjs");
 const dir = fs.existsSync(ff) && fs.existsSync(nv);
 test(
   "real NVEncC HEVC contains an eight-bit alpha auxiliary layer",
@@ -81,8 +81,7 @@ test(
         { ffmpeg: ff, nvencc: nv },
         { output },
       );
-      for (const cmd of commands)
-        execFileSync(cmd.exe, cmd.args, { stdio: "pipe" });
+      for (const cmd of commands) runCommand(cmd);
       let trace = "";
       const { spawnSync } = require("node:child_process");
       trace = spawnSync(

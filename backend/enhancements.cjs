@@ -74,7 +74,9 @@ async function probe(s, engines, run) {
     );
     let log = "";
     for (const c of commands) {
-      const r = await run(c.exe, c.args, { timeout: 180000 });
+      const r = c.pipeFrom
+        ? await run.piped(c, { timeout: 180000 })
+        : await run(c.exe, c.args, { timeout: 180000 });
       log += r.stdout + r.stderr;
     }
     const actual = await run(

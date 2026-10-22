@@ -217,8 +217,12 @@ try {
   assert.deepEqual(axe.violations, []);
   checks.push("media narrow viewport and accessibility");
   await page.getByRole("button", { name: "视频压制", exact: true }).click();
-  await page.getByRole("button", { name: "RTX 增强", exact: true }).click();
-  await page.locator("#vsr").check();
+  await page.getByRole("button", { name: "超分补帧", exact: true }).click();
+  await page.selectOption("#upscaler", "artcnn");
+  await expect(page.getByText(/保留原有颗粒质感/)).toBeVisible();
+  checks.push("ArtCNN upscaler choice");
+  await screenshot(app, "upscale-artcnn.png");
+  await page.selectOption("#upscaler", "vsr");
   await page.selectOption("#vsrQuality", "16");
   await expect(page.getByText(/16–19 补细节/)).toBeVisible();
   checks.push("RTX controls and detail restoration semantics");

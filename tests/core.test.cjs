@@ -30,19 +30,21 @@ test("audio bitrate reaches FFmpeg and NVEncC preparation", () => {
   };
   for (const encoder of ["libx264", "nvencc:hevc"]) {
     for (const audio of ["aac", "libopus"]) {
-      const args = c.buildCommands(
-        job,
-        {
-          ...c.DEFAULTS,
-          encoder,
-          container: "mkv",
-          preset: encoder.startsWith("nvencc") ? "p7" : "medium",
-          audio,
-          audioBitrate: 128,
-        },
-        { ffmpeg: "ffmpeg", nvencc: "NVEncC" },
-        { output: "out.mkv" },
-      )[0].args;
+      const args = c
+        .buildCommands(
+          job,
+          {
+            ...c.DEFAULTS,
+            encoder,
+            container: "mkv",
+            preset: encoder.startsWith("nvencc") ? "p7" : "medium",
+            audio,
+            audioBitrate: 128,
+          },
+          { ffmpeg: "ffmpeg", nvencc: "NVEncC" },
+          { output: "out.mkv" },
+        )
+        .at(-1).args; // NVEncC: audio is added when packaging
       assert.equal(args[args.indexOf("-b:a") + 1], "128k");
     }
   }

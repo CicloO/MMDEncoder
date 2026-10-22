@@ -35,6 +35,7 @@ export type Settings = {
   vsrScale: number;
   vsrQuality: number;
   vsrStrength: number;
+  upscaler: "lanczos" | "artcnn";
   vfg: boolean;
   vfgMultiplier: number;
   vfgMode: string;
@@ -227,7 +228,14 @@ export type State = {
       };
     } | null;
   };
-  engineInfo: { ffmpeg: string; ffprobe: string; nvencc: string };
+  engineInfo: {
+    ffmpeg: string;
+    ffprobe: string;
+    nvencc: string;
+    soxr?: boolean;
+    // FFmpeg can run libplacebo on Vulkan (ArtCNN upscaling).
+    libplacebo?: boolean;
+  };
   notice?: string;
   tools?: {
     busy: boolean;

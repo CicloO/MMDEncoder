@@ -5,22 +5,27 @@ const base = { ...c.DEFAULTS, encoder: "nvencc:hevc", preset: "p4", vsr: true };
 const { probe } = require("../backend/enhancements.cjs");
 test("VSR probe accepts selected integer and rational FPS and rejects incorrect output FPS", async () => {
   const engines = { ffmpeg: "ffmpeg", ffprobe: "ffprobe", nvencc: "nvencc" };
-  const run = (rate) => async (exe) =>
-    exe === "ffprobe"
-      ? {
-          stdout: JSON.stringify({
-            streams: [
-              {
-                codec_type: "video",
-                width: 2560,
-                height: 1440,
-                avg_frame_rate: rate,
-              },
-            ],
-          }),
-          stderr: "",
-        }
-      : { stdout: "", stderr: "" };
+  const run = (rate) => {
+    const fn = async (exe) =>
+      exe === "ffprobe"
+        ? {
+            stdout: JSON.stringify({
+              streams: [
+                {
+                  codec_type: "video",
+                  width: 2560,
+                  height: 1440,
+                  avg_frame_rate: rate,
+                },
+              ],
+            }),
+            stderr: "",
+          }
+        : { stdout: "", stderr: "" };
+    // NVEncC is fed by FFmpeg through a pipe.
+    fn.piped = (c, o) => fn(c.exe, c.args, o);
+    return fn;
+  };
   for (const fps of ["30", "30000/1001"]) {
     assert.match(
       await probe(
@@ -75,11 +80,13 @@ test("RTX validation, exact NVIDIA modes, source scaling and frame multiplier", 
     { ffmpeg: "ff", nvencc: "nv" },
     { output: "out.mkv" },
   );
-  assert.ok(cmds[1].args.includes("algo=ngx-vsr,vsr-quality=4,vsr-strength=1"));
-  assert.ok(cmds[1].args.includes("1280x720"));
-  assert.ok(cmds[1].args.includes("mode=high,multiplier=4"));
+  assert.ok(cmds[0].args.includes("algo=ngx-vsr,vsr-quality=4,vsr-strength=1"));
+  assert.ok(cmds[0].args.includes("1280x720"));
+  assert.ok(cmds[0].args.includes("mode=high,multiplier=4"));
   assert.ok(
-    !cmds[0].args.some((a) => typeof a === "string" && a.includes("w=1280")),
+    !cmds[0].pipeFrom.args.some(
+      (a) => typeof a === "string" && a.includes("w=1280"),
+    ),
   );
 });
 test("recommended presets pair hardware and software variants and scale by the long edge", () => {

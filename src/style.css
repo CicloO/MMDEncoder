@@ -107,6 +107,18 @@
   gap: 9px;
   flex-wrap: wrap;
 }
+/* 超分补帧: the RTX check button with its result beside it. */
+.rtx-verify {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.rtx-verify .hint {
+  margin: 0;
+  flex: 1 1 200px;
+}
 .modal.wide {
   width: min(1180px, calc(100vw - 36px));
 }

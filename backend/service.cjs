@@ -222,7 +222,10 @@ function createService({
               Object.fromEntries(
                 Object.entries(shipped.settings).filter(
                   ([k, v]) =>
-                    !(["hiRes", "editFriendly"].includes(k) && v === false),
+                    !(
+                      (["hiRes", "editFriendly"].includes(k) && v === false) ||
+                      (k === "upscaler" && v === "lanczos")
+                    ),
                 ),
               ),
             ]),
@@ -662,15 +665,24 @@ function createService({
         path.basename(backup);
     }
   }
-  function run(exe, args, { timeout = 0, onData, encoding = false } = {}) {
+  function run(
+    exe,
+    args,
+    { timeout = 0, onData, encoding = false, stdin } = {},
+  ) {
     return new Promise((resolve, reject) => {
       if (disposed) return reject(Error("应用已关闭"));
       const child = spawn(exe, args, {
         windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: [stdin ? "pipe" : "ignore", "pipe", "pipe"],
         shell: false,
       });
       children.add(child);
+      if (stdin) {
+        // The reader may stop early (error, cancel); the writer then fails.
+        child.stdin.on("error", () => {});
+        stdin.pipe(child.stdin);
+      }
       if (encoding) active = child;
       let stdout = "",
         stderr = "",
@@ -714,6 +726,45 @@ function createService({
       child.on("close", (code) => done(null, code));
     });
   }
+  // A command fed by another program's output (FFmpeg -> NVEncC). Fails if
+  // either side fails: a writer that stops early would otherwise look like
+  // a short but complete video to the reader.
+  function runPiped(c, options) {
+    if (disposed) return Promise.reject(Error("应用已关闭"));
+    const writer = spawn(c.pipeFrom.exe, c.pipeFrom.args, {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: false,
+    });
+    children.add(writer);
+    let stderr = "",
+      failure = null;
+    writer.stderr.on("data", (b) => {
+      const s = b.toString();
+      stderr = (stderr + s).slice(-64 * 1024);
+      options.onData?.(s, "err");
+    });
+    writer.on("error", (e) => (failure = e));
+    const written = new Promise((resolve) =>
+      writer.on("close", (code) => {
+        children.delete(writer);
+        resolve(code);
+      }),
+    );
+    const read = run(c.exe, c.args, { ...options, stdin: writer.stdout });
+    read.catch(() => writer.kill());
+    return Promise.allSettled([read, written]).then(([r, code]) => {
+      if (r.status === "rejected") throw r.reason;
+      if (failure || code.value !== 0)
+        throw Error(
+          failure?.message ||
+            stderr.trim().slice(-3000) ||
+            "预处理退出：" + code.value,
+        );
+      return r.value;
+    });
+  }
+  run.piped = runPiped; // for callers that only get run (RTX check)
   async function locate() {
     if (locatePromise) return locatePromise;
     locatePromise = (async () => {
@@ -811,6 +862,45 @@ function createService({
       value = /--enable-libsoxr/.test(r.stdout + (r.stderr || ""));
     } catch {}
     soxrCache = { key, value };
+    return value;
+  }
+  // Whether FFmpeg can run libplacebo on a Vulkan GPU (ArtCNN upscaling):
+  // a tiny real run. Kept with the encoder detection (same FFmpeg, GPU and
+  // driver); "重新检测" (force) always runs it again.
+  let placeboCache = { key: "", value: false };
+  async function hasLibplacebo(force = false) {
+    const ff = state.engineInfo.ffmpeg;
+    let key = ff;
+    try {
+      const st = fs.statSync(ff);
+      key += "|" + st.size + "|" + st.mtimeMs;
+    } catch {}
+    if (!force && placeboCache.key === key) return placeboCache.value;
+    let value = false;
+    try {
+      await run(
+        ff,
+        [
+          "-hide_banner",
+          "-v",
+          "error",
+          "-init_hw_device",
+          "vulkan",
+          "-f",
+          "lavfi",
+          "-i",
+          "color=black:s=64x64:d=0.1",
+          "-vf",
+          "format=yuv444p16le,hwupload,libplacebo=w=128:h=128:format=yuv444p16le,hwdownload,format=yuv444p16le",
+          "-f",
+          "null",
+          "-",
+        ],
+        { timeout: 20000 },
+      );
+      value = true;
+    } catch {}
+    placeboCache = { key, value };
     return value;
   }
   // File parameters for the media queue, read like the video queue's. Audio-only
@@ -1028,6 +1118,7 @@ function createService({
             key,
             detectedAt: new Date().toISOString(),
             engines: state.engines,
+            libplacebo: !!state.engineInfo.libplacebo,
             log,
           },
           null,
@@ -1054,8 +1145,16 @@ function createService({
       state.engineInfo.soxr = await hasSoxr();
       const key = await detectionKey();
       const cached = !force && key && readDetectionCache(key);
+      // ArtCNN upscaling runs in FFmpeg through libplacebo on Vulkan.
+      state.engineInfo.libplacebo =
+        typeof cached?.libplacebo === "boolean"
+          ? cached.libplacebo
+          : await hasLibplacebo(force);
       if (cached) {
         state.engines = cached.engines;
+        // A cache from before the Vulkan check: add its result.
+        if (typeof cached.libplacebo !== "boolean")
+          writeDetectionCache(key, cached.log || "");
         state.detectionLog +=
           (cached.log || "") +
           "\n使用 " +
@@ -1459,7 +1558,7 @@ function createService({
       (!state.enhancements.verified ||
         state.enhancements.signature !== enhancementSignature(s))
     )
-      errors.push("RTX 设置尚未通过本机验证，请在 RTX 增强页验证所选设置");
+      errors.push("RTX 设置尚未通过本机验证，请在“超分补帧”页验证所选设置");
     if (!job.meta) errors.push("素材信息尚未读取成功");
     if (!state.engineInfo.ffmpeg) errors.push("未找到 FFmpeg");
     // Mask only encodes with FFmpeg's lossless x264 / VP9, not the chosen encoder.
@@ -1559,6 +1658,14 @@ function createService({
           state.enhancements.signature !== enhancementSignature(s))
       )
         errors.push("RTX 设置未通过本机验证");
+      // Selected but not applicable here (too small an enlargement, mask only):
+      // say so instead of silently scaling another way.
+      const skipped = core.artcnnSkipped(s, job.meta);
+      if (skipped) append(job, "ArtCNN：" + skipped + "\n");
+      if (core.usesArtcnn(s, job.meta) && !state.engineInfo.libplacebo)
+        errors.push(
+          "本机无法运行 ArtCNN 放大（FFmpeg 需要支持 Vulkan 的显卡和驱动），请改用 Lanczos",
+        );
       if (errors.length) throw Error(errors.join("；"));
       const engine = state.engines.find((e) => e.id === s.encoder);
       if (
@@ -1601,7 +1708,7 @@ function createService({
         append(job, "\n" + core.commandText([c]) + "\n");
         emit();
         let progressBuffer = "";
-        await run(c.exe, c.args, {
+        await (c.pipeFrom ? runPiped : (c, o) => run(c.exe, c.args, o))(c, {
           encoding: true,
           onData: (t, stream) => {
             append(job, t);
@@ -2465,7 +2572,7 @@ function createService({
         if (payload.software) {
           if (s.vsr || s.vfg)
             throw Error(
-              "RTX 增强不能软件回退；请修复本机 RTX 功能，或明确关闭增强后重试",
+              "RTX VSR / VFG 不能软件回退；请修复本机 RTX 功能，或在“超分补帧”里关闭后重试",
             );
           if (s.alphaMode === "preserve" && s.encoder === "nvencc:hevc")
             throw Error(

@@ -1096,7 +1096,7 @@ export default function App() {
                   { id: "encoding", name: "画质" },
                   { id: "audio", name: "音频" },
                   { id: "alpha", name: "透明通道" },
-                  { id: "rtx", name: "RTX 增强" },
+                  { id: "rtx", name: "超分补帧" },
                   { id: "output", name: "输出" },
                   { id: "advanced", name: "高级" },
                 ].map((t) => (
@@ -1526,7 +1526,13 @@ export default function App() {
                   </>
                 )}
                 {tab === "rtx" && (
-                  <RtxSettings s={s} state={state} set={set} call={call} />
+                  <RtxSettings
+                    s={s}
+                    state={state}
+                    set={set}
+                    patch={(p) => changed({ ...s, ...p })}
+                    call={call}
+                  />
                 )}
                 {tab === "alpha" && (
                   <>

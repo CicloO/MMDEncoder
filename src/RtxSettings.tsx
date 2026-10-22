@@ -4,13 +4,17 @@ export function RtxSettings({
   s,
   state,
   set,
+  patch,
   call,
 }: {
   s: Settings;
   state: State;
   set: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+  patch: (p: Partial<Settings>) => void;
   call: (action: string, payload?: unknown) => Promise<any>;
 }) {
+  const upscaler = s.vsr ? "vsr" : s.upscaler || "lanczos";
+  const placebo = state.engineInfo.libplacebo !== false;
   const number = (
     key: "vsrScale" | "vsrStrength",
     label: string,
@@ -31,19 +35,58 @@ export function RtxSettings({
   );
   return (
     <>
-      <p className="hint">
-        仅 NVEncC；验证所选配置后可编码。需要兼容驱动与 NVIDIA VFX SDK 运行库 /
-        模型；不会自动替换为普通缩放或重复帧。
-      </p>
-      <label className="checkbox-row">
-        <input
-          id="vsr"
-          type="checkbox"
-          checked={s.vsr}
-          onChange={(e) => set("vsr", e.target.checked)}
-        />
-        启用 RTX VSR
-      </label>
+      <Select
+        id="upscaler"
+        label="放大算法"
+        value={upscaler}
+        options={[
+          { value: "lanczos", label: "Lanczos · 标准缩放" },
+          {
+            value: "artcnn",
+            label: "ArtCNN · AI 放大（推荐）",
+            disabled: !placebo && upscaler !== "artcnn",
+          },
+          { value: "vsr", label: "RTX VSR · NVIDIA 超分" },
+        ]}
+        onChange={(v) =>
+          patch(
+            v === "vsr"
+              ? // VSR sets the size itself (VSR 倍率).
+                { vsr: true, resizeMode: "source" }
+              : { vsr: false, upscaler: v as Settings["upscaler"] },
+          )
+        }
+      />
+      {upscaler !== "vsr" && (
+        <p className="hint">
+          {upscaler === "artcnn"
+            ? "线条更清晰，保留原有颗粒质感；在 GPU 上运行，任何支持 Vulkan 的显卡都可以，不需要 NVEncC。ArtCNN 是 2 倍放大模型，1080p → 4K 效果最好；其他尺寸先放大 2 倍再缩放到目标。宽、高都要放大超过 1.3 倍才会用到 AI，否则自动改用 Lanczos（任务日志里会注明）。不建议用于带透明通道的素材。"
+            : "FFmpeg 的 Lanczos 缩放，速度快，画面偏软。"}
+          目标尺寸在“画质”里的“输出分辨率”设置。
+        </p>
+      )}
+      {upscaler === "artcnn" && s.alphaMode === "preserve" && (
+        <p className="inline-error">
+          当前“保留 Alpha”：不建议使用 ArtCNN。速度只有 Lanczos
+          的三分之一左右，透明通道本身仍用 Lanczos 放大。
+        </p>
+      )}
+      {upscaler === "artcnn" && s.resizeMode === "source" && (
+        <p className="inline-error">
+          当前为“保持源分辨率”，不会放大。请在“画质”里设置更大的输出分辨率。
+        </p>
+      )}
+      {!placebo && (
+        <p className="inline-error">
+          本机未检测到可用的 Vulkan，ArtCNN 无法运行；请更新显卡驱动后重新检测。
+        </p>
+      )}
+      {(s.vsr || s.vfg) && (
+        <p className="hint">
+          RTX VSR / VFG 仅 NVEncC；验证所选配置后可编码。需要兼容驱动与 NVIDIA
+          VFX SDK 运行库 / 模型；不会自动替换为普通缩放或重复帧。
+        </p>
+      )}
       {s.vsr && (
         <>
           <div className="form-row">
@@ -69,6 +112,7 @@ export function RtxSettings({
           </p>
         </>
       )}
+      <div className="divider" />
       <label className="checkbox-row">
         <input
           id="vfg"
@@ -126,21 +170,26 @@ export function RtxSettings({
           </p>
         </>
       )}
-      <Button
-        disabled={
-          state.running ||
-          state.detecting ||
-          !!state.tools?.busy ||
-          state.enhancements.busy ||
-          (!s.vsr && !s.vfg)
-        }
-        onClick={() =>
-          call("testEnhancements", { settings: s }).catch(() => {})
-        }
-      >
-        {state.enhancements.busy ? "正在验证 RTX…" : "验证本机 RTX 设置"}
-      </Button>
-      <p role="status">{state.enhancements.message}</p>
+      {(s.vsr || s.vfg) && (
+        <div className="rtx-verify">
+          <Button
+            disabled={
+              state.running ||
+              state.detecting ||
+              !!state.tools?.busy ||
+              state.enhancements.busy
+            }
+            onClick={() =>
+              call("testEnhancements", { settings: s }).catch(() => {})
+            }
+          >
+            {state.enhancements.busy ? "正在验证 RTX…" : "验证本机 RTX 设置"}
+          </Button>
+          <p className="hint" role="status">
+            {state.enhancements.message}
+          </p>
+        </div>
+      )}
     </>
   );
 }

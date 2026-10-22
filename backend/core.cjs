@@ -35,6 +35,9 @@ const DEFAULTS = {
   bframes: -1,
   lookahead: 0,
   lookaheadLevel: 0,
+  // Enlarging: "lanczos" (FFmpeg) or "artcnn" (ArtCNN shader on the GPU
+  // through libplacebo / Vulkan). RTX VSR is the separate vsr switch.
+  upscaler: "lanczos",
   vsr: false,
   vsrScale: 2,
   vsrQuality: 4,
@@ -269,7 +272,7 @@ function validate(s, meta) {
   if (s.alphaMode === "mask") {
     const e = validate({ ...maskSettings(s), vsr: false, vfg: false }, meta);
     if (s.vsr || s.vfg)
-      e.push("RTX 增强暂不能与保留 Alpha 或独立 Alpha 遮罩组合");
+      e.push("RTX VSR / VFG 暂不能与保留 Alpha 或独立 Alpha 遮罩组合");
     if (meta && !meta.hasAlpha) e.push("源视频没有可读 Alpha，不能生成遮罩");
     return [...new Set(e)];
   }
@@ -279,13 +282,20 @@ function validate(s, meta) {
   };
   const eng = ENGINES.find((x) => x.id === s.encoder);
   if (s.vsr || s.vfg) {
-    check(eng?.backend === "nvencc", "RTX 增强需要 NVEncC 编码器");
+    check(eng?.backend === "nvencc", "RTX VSR / VFG 需要 NVEncC 编码器");
     check(
       s.alphaMode !== "preserve" && !s.alphaMask,
-      "RTX 增强暂不能与保留 Alpha 或独立 Alpha 遮罩组合",
+      "RTX VSR / VFG 暂不能与保留 Alpha 或独立 Alpha 遮罩组合",
     );
-    check(s.bitDepth === 8 && s.chroma === "420", "RTX 增强使用 8-bit 4:2:0");
+    check(
+      s.bitDepth === 8 && s.chroma === "420",
+      "RTX VSR / VFG 使用 8-bit 4:2:0",
+    );
   }
+  check(
+    ["lanczos", "artcnn"].includes(s.upscaler ?? "lanczos"),
+    "放大算法无效",
+  );
   if (s.vsr) {
     check(
       Number.isFinite(s.vsrScale) && s.vsrScale >= 1 && s.vsrScale <= 4,
@@ -585,8 +595,36 @@ function commandText(commands, { prepare = false } = {}) {
     for (const dir of new Set(files.map((file) => path.dirname(file))))
       lines.push(`[void][System.IO.Directory]::CreateDirectory(${quote(dir)})`);
   }
+  // FFmpeg -> NVEncC: a PowerShell pipe would turn the video into text in
+  // Windows PowerShell 5.1 and only reports the last program's exit code,
+  // so the script copies the bytes itself and checks both programs.
+  const piped = commands.some((c) => c.pipeFrom);
+  if (prepare && piped)
+    lines.push(
+      'if ($PSVersionTable.PSVersion.Major -lt 7) { throw "请用 PowerShell 7（pwsh）运行这段命令" }',
+      "function Invoke-Piped([string]$Writer, [string[]]$WriterArgs, [string]$Reader, [string[]]$ReaderArgs) {",
+      "  $w = [Diagnostics.ProcessStartInfo]::new($Writer); foreach ($a in $WriterArgs) { $w.ArgumentList.Add($a) }",
+      "  $w.UseShellExecute = $false; $w.RedirectStandardOutput = $true",
+      "  $r = [Diagnostics.ProcessStartInfo]::new($Reader); foreach ($a in $ReaderArgs) { $r.ArgumentList.Add($a) }",
+      "  $r.UseShellExecute = $false; $r.RedirectStandardInput = $true",
+      "  $wp = [Diagnostics.Process]::Start($w); $rp = [Diagnostics.Process]::Start($r)",
+      "  try { $wp.StandardOutput.BaseStream.CopyTo($rp.StandardInput.BaseStream) } catch { } finally { $rp.StandardInput.Close() }",
+      "  $wp.WaitForExit(); $rp.WaitForExit()",
+      '  if ($wp.ExitCode -ne 0) { throw "预处理失败（退出码 $($wp.ExitCode)）" }',
+      '  if ($rp.ExitCode -ne 0) { throw "编码失败（退出码 $($rp.ExitCode)）" }',
+      "}",
+    );
+  const list = (args) => "@(" + args.map(quote).join(", ") + ")";
   for (const c of commands) {
-    lines.push("& " + [c.exe, ...c.args].map(quote).join(" "));
+    const call = (x) => "& " + [x.exe, ...x.args].map(quote).join(" ");
+    if (c.pipeFrom && prepare) {
+      lines.push(
+        `Invoke-Piped ${quote(c.pipeFrom.exe)} ${list(c.pipeFrom.args)} ${quote(c.exe)} ${list(c.args)}`,
+      );
+      continue;
+    }
+    // In the job log: what ran, the two programs joined by a pipe.
+    lines.push((c.pipeFrom ? call(c.pipeFrom) + " | " : "") + call(c));
     lines.push('if ($LASTEXITCODE -ne 0) { throw "编码失败" }');
   }
   if (prepare)
@@ -809,8 +847,53 @@ const BACKGROUNDS = {
   black: [0, 0, 0],
   white: [255, 255, 255],
 };
+const ARTCNN = path.join(
+  __dirname,
+  "..",
+  "assets",
+  "shaders",
+  "ArtCNN_C4F16.glsl",
+);
+// ArtCNN only enlarges; shrinking (or keeping the size) stays with Lanczos.
+// ArtCNN is a 2x model: its shader only runs when both sides grow by more
+// than 1.3x (its own //!WHEN), and libplacebo scales the 2x result to the
+// target. Below that the shader would silently do nothing, so Lanczos is
+// used instead. The mask is always Lanczos.
+const ARTCNN_MIN = 1.3;
+function usesArtcnn(s, meta) {
+  return s.upscaler === "artcnn" && !s.vsr && !artcnnSkipped(s, meta);
+}
+// Why ArtCNN, though selected, is not used for this source ("" = it is used,
+// or it is not selected at all).
+function artcnnSkipped(s, meta) {
+  if (s.upscaler !== "artcnn" || s.vsr) return "";
+  if (s.alphaMode === "mask") return "只导出遮罩，遮罩用 Lanczos 放大";
+  if (s.resizeMode === "source") return "保持源分辨率，没有放大";
+  const size = dimensions(s, meta);
+  const sx = size.width / (meta.width || size.width),
+    sy = size.height / (meta.height || size.height);
+  if (!(sx > ARTCNN_MIN && sy > ARTCNN_MIN))
+    return `宽高都要放大超过 ${ARTCNN_MIN} 倍才会用 ArtCNN（这里是 ${sx.toFixed(2)} × ${sy.toFixed(2)} 倍），改用 Lanczos`;
+  return "";
+}
+// A file path as a filter option value, escaped for both levels FFmpeg
+// parses: the option value (\ ' :) and then the filter graph (\ ' [ ] , ;).
+const filterPath = (p) =>
+  p
+    .replace(/\\/g, "/")
+    .replace(/[\\':]/g, (c) => "\\" + c)
+    .replace(/[\\'[\],;]/g, (c) => "\\" + c);
 function filter(s, meta, mask) {
   const f = [];
+  // YUV sources without a colour matrix tag are read as BT.709: FFmpeg would
+  // assume BT.601 and shift the colours of most HD videos. Tagging the
+  // frames first makes every conversion below agree.
+  if (
+    !mask &&
+    [undefined, "", "unknown", "unspecified"].includes(meta.colorSpace) &&
+    /^(?:yuv|yuva|nv12|nv21|p0|p2|p4)/.test(meta.pixFmt || "")
+  )
+    f.push("setparams=colorspace=bt709");
   if (mask) f.push("alphaextract");
   else if (meta.hasAlpha && BACKGROUNDS[s.alphaMode]) {
     const [r, g, b] = BACKGROUNDS[s.alphaMode];
@@ -823,14 +906,65 @@ function filter(s, meta, mask) {
   const fps = parseFps(s.fps);
   if (fps) f.push("fps=" + fps.text);
   const size = dimensions(s, meta);
-  const resize =
-    s.resizeMode !== "source"
-      ? `w=${size.width}:h=${size.height}:flags=lanczos:`
-      : "";
-  f.push(
-    `scale=${resize}in_range=${mask ? "pc" : meta.colorRange === "pc" ? "pc" : meta.colorRange === "tv" ? "tv" : "auto"}:out_range=${s.colorRange}:out_color_matrix=${s.colorSpace}`,
-    `format=${pix(s)}`,
-  );
+  const shader = !mask && usesArtcnn(s, meta);
+  const range = (r) => (r === "pc" ? "pc" : "tv");
+  const matrix = (m) =>
+    m === "bt601" ? "smpte170m" : m === "bt2020" ? "bt2020nc" : m;
+  if (shader) {
+    // ArtCNN works on the luma plane: YUV frames go to the GPU as they are,
+    // anything else (RGB, a colour background composited above) becomes
+    // YUV first (in the output's matrix and range), or the shader silently
+    // does nothing. libplacebo then also converts matrix and range and hands
+    // back the output pixel format, so no 4K frame is converted on the CPU
+    // (a 16-bit 4:4:4 copy back was a third of the speed). Its conversion
+    // matches zimg; untagged sources count as BT.709, as in the scale below.
+    // libplacebo blends colour with alpha (dark where transparent), so the
+    // colour goes up without alpha, and kept alpha is enlarged with Lanczos
+    // beside it and merged back.
+    const keepAlpha = meta.hasAlpha && s.alphaMode === "preserve";
+    const yuv =
+      !(meta.hasAlpha && BACKGROUNDS[s.alphaMode]) &&
+      /^(?:yuv|yuva|nv12|nv21|p0|p2|p4|gray)/.test(meta.pixFmt || "");
+    const colour = [];
+    if (!yuv)
+      colour.push(
+        `scale=out_range=${s.colorRange}:out_color_matrix=${s.colorSpace}`,
+        "format=yuv444p" + ((meta.bitDepth || 8) > 8 ? "16le" : ""),
+      );
+    else if (/^yuva/.test(meta.pixFmt))
+      // (scale converts here, so the split above still carries alpha)
+      colour.push("scale", "format=" + meta.pixFmt.replace(/^yuva/, "yuv"));
+    const known = (v) => v && v !== "unknown" && v !== "unspecified";
+    const out = pix(s).replace(/^yuva/, "yuv");
+    colour.push(
+      `setparams=colorspace=${
+        yuv
+          ? known(meta.colorSpace)
+            ? meta.colorSpace
+            : "bt709"
+          : matrix(s.colorSpace)
+      }:range=${yuv ? range(meta.colorRange) : range(s.colorRange)}`,
+      "hwupload",
+      `libplacebo=w=${size.width}:h=${size.height}:custom_shader_path=${filterPath(ARTCNN)}:colorspace=${matrix(s.colorSpace)}:range=${range(s.colorRange)}:format=${out}`,
+      "hwdownload",
+      `format=${out}`,
+    );
+    if (keepAlpha)
+      f.push(
+        `split[c][a];[c]${colour.join(",")}[cc];[a]alphaextract,scale=${size.width}:${size.height}:flags=lanczos[aa];[cc][aa]alphamerge`,
+        `format=${pix(s)}`,
+      );
+    else f.push(...colour);
+  } else {
+    const resize =
+      s.resizeMode !== "source"
+        ? `w=${size.width}:h=${size.height}:flags=lanczos:`
+        : "";
+    f.push(
+      `scale=${resize}in_range=${mask ? "pc" : meta.colorRange === "pc" ? "pc" : meta.colorRange === "tv" ? "tv" : "auto"}:out_range=${s.colorRange}:out_color_matrix=${s.colorSpace}`,
+      `format=${pix(s)}`,
+    );
+  }
   if (s.resizeMode !== "source") f.push("setsar=1");
   return f.join(",");
 }
@@ -907,6 +1041,11 @@ function buildCommands(job, s, engines, paths) {
   const errors = validate(s, job.meta);
   if (errors.length) throw Error(errors.join("；"));
   const base = ["-hide_banner", "-nostdin", "-n"];
+  // libplacebo's Vulkan device, only where the filter runs the shader.
+  const baseFor = (mask) =>
+    !mask && usesArtcnn(s, job.meta || {})
+      ? [...base.slice(0, 3), "-init_hw_device", "vulkan", ...base.slice(3)]
+      : base;
   if (job.meta?.hasAlpha && ["vp8", "vp9"].includes(job.meta.codec))
     base.push("-c:v", job.meta.codec === "vp9" ? "libvpx-vp9" : "libvpx");
   base.push(...inputArgs(job));
@@ -953,12 +1092,15 @@ function buildCommands(job, s, engines, paths) {
     : [false, ...(s.alphaMask ? [true] : [])]) {
     const output = mask && !maskOnly ? paths.maskOutput : paths.output;
     if (s.encoder.startsWith("nvencc:") && !mask) {
-      const prep = output + ".prepare.mkv",
-        encoded = output + ".nvenc.mkv";
-      result.push({
+      // FFmpeg applies the filters and hands NVEncC raw frames through a
+      // pipe (NUT keeps each frame's time and the alpha plane), so no
+      // intermediate file is written. Audio is taken from the source when
+      // the result is packaged.
+      const encoded = output + ".nvenc.mkv";
+      const prepare = {
         exe: engines.ffmpeg,
         args: [
-          ...base,
+          ...baseFor(mask),
           "-map",
           "0:v:0",
           "-vf",
@@ -968,28 +1110,28 @@ function buildCommands(job, s, engines, paths) {
             false,
           ),
           "-c:v",
-          "ffv1",
-          "-level",
-          "3",
+          "rawvideo",
           "-pix_fmt",
           s.alphaMode === "preserve" ? "yuva444p" : pix(s),
-          ...audio,
+          "-an",
           ...colors,
           "-fps_mode",
           "passthrough",
+          // stdout carries the frames; progress goes with the log.
           "-progress",
-          "pipe:1",
+          "pipe:2",
+          "-nostats",
           "-f",
-          "matroska",
-          prep,
+          "nut",
+          "-",
         ],
-        stage: "预处理",
-        temporary: prep,
-      });
+      };
       const a = [
         "--avsw",
+        "--input-format",
+        "nut",
         "-i",
-        prep,
+        "-",
         "-o",
         encoded,
         "--codec",
@@ -1048,6 +1190,7 @@ function buildCommands(job, s, engines, paths) {
       result.push({
         exe: engines.nvencc,
         args: a,
+        pipeFrom: prepare,
         stage: "NVEncC 编码",
         temporary: encoded,
       });
@@ -1059,13 +1202,13 @@ function buildCommands(job, s, engines, paths) {
           "-n",
           "-i",
           encoded,
-          "-i",
-          prep,
+          ...inputArgs(job),
           "-map",
           "0:v:0",
-          ...(job.meta?.audio && s.audio !== "none" ? ["-map", "1:a:0?"] : []),
-          "-c",
+          "-c:v",
           "copy",
+          // The source's audio, encoded as set (input 1 here, not 0).
+          ...audio.map((x) => (x === "0:a:0?" ? "1:a:0?" : x)),
           ...colors,
           "-metadata",
           "comment=" + encodeTag(s, paths.tag),
@@ -1081,7 +1224,7 @@ function buildCommands(job, s, engines, paths) {
       result.push({
         exe: engines.ffmpeg,
         args: [
-          ...base,
+          ...baseFor(mask),
           "-map",
           "0:v:0",
           "-vf",
@@ -1131,7 +1274,7 @@ function compatibility(s, engines = ENGINES) {
   ) {
     const engine = engines.find((e) => e.backend === "nvencc");
     if (engine)
-      add("rtx-compatible", "保留 RTX 增强并修正关联设置", {
+      add("rtx-compatible", "保留 RTX VSR / VFG 并修正关联设置", {
         encoder: engine.id,
         preset: "p4",
         bitDepth: 8,
@@ -1267,4 +1410,6 @@ module.exports = {
   commandText,
   metadata,
   buildCommands,
+  usesArtcnn,
+  artcnnSkipped,
 };
