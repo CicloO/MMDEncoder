@@ -193,3 +193,136 @@ test("a tampered download is rejected and leaves the program untouched", async (
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test(
+  "a kept recovery copy (.update/old) survives cleanup, failed and successful downloads and the next install",
+  { skip: process.platform !== "win32", timeout: 120000 },
+  async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-selfupdate-"));
+    try {
+      const appDir = path.join(root, "app");
+      portable(appDir, "1.0.0");
+      const preserved = path.join(appDir, ".update", "old", "preserved.txt");
+      fs.mkdirSync(path.dirname(preserved), { recursive: true });
+      fs.writeFileSync(preserved, "earlier program files");
+      const kept = () =>
+        assert.equal(
+          fs.readFileSync(preserved, "utf8"),
+          "earlier program files",
+        );
+      const logDir = path.join(root, "logs");
+      const make = (fetchImpl) =>
+        createUpdater({
+          appDir,
+          version: "1.0.0",
+          extractor,
+          logDir,
+          fetchImpl,
+        });
+
+      make().cleanup();
+      kept();
+      // Network error, then a checksum mismatch.
+      const offline = make(async () => {
+        throw Error("offline");
+      });
+      const { info } = release(root, "1.0.1");
+      await assert.rejects(offline.download(info), /offline/);
+      kept();
+      const bad = release(path.join(root, "bad"), "1.0.1", { tamper: true });
+      fs.mkdirSync(path.join(root, "bad"), { recursive: true });
+      await assert.rejects(make(bad.fetchImpl).download(bad.info), /SHA-256/);
+      kept();
+      // A good download and install: the swap uses its own backup folder.
+      const good = release(path.join(root, "good"), "1.0.1");
+      const updater = make(good.fetchImpl);
+      await updater.download(good.info);
+      kept();
+      updater.install(2 ** 30, {
+        relaunch: false,
+        runner: process.execPath,
+        helper: path.resolve(__dirname, "../backend/install-update.cjs"),
+      });
+      const log = path.join(logDir, "update.log");
+      for (let i = 0; i < 200; i++) {
+        if (
+          fs.existsSync(log) &&
+          /更新完成|更新失败/.test(fs.readFileSync(log, "utf8")) &&
+          !fs.existsSync(path.join(appDir, ".update", "old-2"))
+        )
+          break;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      assert.match(fs.readFileSync(log, "utf8"), /更新完成/);
+      assert.equal(
+        fs.readFileSync(path.join(appDir, "MMDEncoder.exe"), "utf8"),
+        "exe 1.0.1",
+      );
+      kept();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "after updating, the app is relaunched as an app, not in the helper's Node mode",
+  { skip: process.platform !== "win32", timeout: 60000 },
+  async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-relaunch-"));
+    try {
+      const appDir = path.join(root, "app");
+      const newDir = path.join(root, "new");
+      fs.mkdirSync(appDir);
+      fs.mkdirSync(newDir);
+      // The "new version" is Node itself named MMDEncoder.exe; a preload hook
+      // records the environment it was started with.
+      fs.copyFileSync(process.execPath, path.join(newDir, "MMDEncoder.exe"));
+      const seen = path.join(root, "seen.json");
+      const hook = path.join(root, "hook.cjs");
+      fs.writeFileSync(
+        hook,
+        `if (require("path").basename(process.execPath) === "MMDEncoder.exe") {
+  require("fs").writeFileSync(${JSON.stringify(seen)}, JSON.stringify({
+    runAsNode: process.env.ELECTRON_RUN_AS_NODE ?? null,
+    job: process.env.MMD_UPDATE_JOB ?? null,
+  }));
+  process.exit(0);
+}`,
+      );
+      const log = path.join(root, "update.log");
+      const { spawn } = require("node:child_process");
+      const helper = spawn(
+        process.execPath,
+        [path.resolve(__dirname, "../backend/install-update.cjs")],
+        {
+          stdio: "ignore",
+          env: {
+            ...process.env,
+            NODE_OPTIONS: "--require " + JSON.stringify(hook),
+            ELECTRON_RUN_AS_NODE: "1",
+            MMD_UPDATE_JOB: JSON.stringify({
+              appDir,
+              newDir,
+              backup: path.join(root, "old"),
+              pid: 0,
+              log,
+              keep: [],
+              relaunch: true,
+            }),
+          },
+        },
+      );
+      await new Promise((r) => helper.on("close", r));
+      for (let i = 0; i < 100 && !fs.existsSync(seen); i++)
+        await new Promise((r) => setTimeout(r, 100));
+      assert.match(fs.readFileSync(log, "utf8"), /更新完成/);
+      assert.deepEqual(JSON.parse(fs.readFileSync(seen, "utf8")), {
+        runAsNode: null,
+        job: null,
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);

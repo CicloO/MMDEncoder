@@ -17,6 +17,8 @@ export type Settings = {
   audio: string;
   audioBitrate: number;
   alphaMask: boolean;
+  // Hi-Res audio (FLAC / PCM): 24-bit, twice the rate below 48 kHz.
+  hiRes: boolean;
   alphaMode: string;
   outputMode: string;
   outputDir: string;
@@ -58,6 +60,9 @@ export type Meta = {
     channelLayout: string;
     profile?: string;
     bitRate?: number;
+    // Effective bits per sample (0 = unknown) and floating-point samples.
+    bits?: number;
+    float?: boolean;
   };
 };
 export type Job = {
@@ -100,6 +105,8 @@ export type MediaJob = {
   size: number;
   status: string;
   audioPath?: string;
+  // The replacement audio's parameters, read when it is chosen.
+  audioMeta?: Meta["audio"];
   output?: string;
   error?: string;
   log?: string;

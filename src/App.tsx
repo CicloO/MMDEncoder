@@ -1447,6 +1447,41 @@ export default function App() {
                             : "目标码率；实际码率会随编码器和声音内容变化。"
                       }
                     />
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={!!s.hiRes}
+                        disabled={!["flac", "pcm_s16le"].includes(s.audio)}
+                        onChange={(e) =>
+                          // FLAC / PCM do not fit MP4: switch to MKV with it.
+                          changed({
+                            ...s,
+                            hiRes: e.target.checked,
+                            ...(e.target.checked && s.container === "mp4"
+                              ? { container: "mkv" }
+                              : {}),
+                          })
+                        }
+                      />
+                      <span>
+                        Hi-Res 音频（24-bit，低于 48 kHz 时升到 2 倍采样率）
+                        <small className="hint hires-hint">
+                          {!["flac", "pcm_s16le"].includes(s.audio)
+                            ? "选择 FLAC 或 PCM 音频后可用。"
+                            : (() => {
+                                const a = job?.meta?.audio;
+                                if (!a?.sampleRate)
+                                  return "按每个视频自己的音轨计算。";
+                                const rate =
+                                  a.sampleRate < 48000
+                                    ? a.sampleRate * 2
+                                    : a.sampleRate;
+                                return `当前素材：${a.sampleRate / 1000} kHz / ${a.float ? "浮点" : a.bits ? a.bits + "-bit" : "位深未知"} → ${rate / 1000} kHz / 24-bit。`;
+                              })() +
+                              "升采样不会提高音质，只是满足平台的 Hi-Res 判定（尚未实际上传验证）。"}
+                        </small>
+                      </span>
+                    </label>
                     <div className="help-box">
                       <Info size={17} />
                       <p>
@@ -1743,6 +1778,9 @@ export default function App() {
                   ["aac", "libopus"].includes(s.audio) &&
                   s.audioBitrate > 0
                     ? ` · ${s.audioBitrate} kbps`
+                    : ""}
+                  {(!job?.meta || job.meta.audio) && s.hiRes
+                    ? " · Hi-Res 24-bit"
                     : ""}{" "}
                   {s.alphaMode === "preserve" && " · 保留 Alpha"}
                   <i /> 输出 → {s.container.toUpperCase()}{" "}

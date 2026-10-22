@@ -67,7 +67,7 @@ function createUpdater({
     });
     prepared = null;
     try {
-      fs.rmSync(work, { recursive: true, force: true });
+      clearWork();
       fs.mkdirSync(work, { recursive: true });
       const zip = path.join(work, info.assets.zipName);
       const headers = { "User-Agent": "MMDEncoder/" + version };
@@ -129,7 +129,7 @@ function createUpdater({
       state.phase = "ready";
     } catch (e) {
       Object.assign(state, { phase: "failed", error: e.message });
-      fs.rmSync(work, { recursive: true, force: true });
+      clearWork();
       throw e;
     }
   }
@@ -157,7 +157,7 @@ function createUpdater({
           MMD_UPDATE_JOB: JSON.stringify({
             appDir,
             newDir: prepared.newDir,
-            backup: path.join(work, "old"),
+            backup: freshBackup(),
             pid,
             log: path.join(logDir, "update.log"),
             keep: KEEP,
@@ -170,15 +170,39 @@ function createUpdater({
     state.phase = "installing";
   }
 
-  // Remove leftovers of an earlier download. A folder "old" means a swap could
-  // not be restored; it holds the previous program files, so it is kept.
-  function cleanup() {
-    if (fs.existsSync(path.join(work, "old"))) return;
+  // A folder "old" (or "old-2", …) means a swap could not be restored: it
+  // holds earlier program files the user may still need, so nothing here ever
+  // deletes it — not a new download, not a failed one, not the next install.
+  const isRecovery = (name) => /^old(-d+)?$/.test(name);
+  // Remove what downloads left behind (zip, unpacked "new"), keeping "old*".
+  function clearWork() {
+    let names = [];
     try {
-      fs.rmSync(work, { recursive: true, force: true });
+      names = fs.readdirSync(work);
     } catch {
-      // The helper may still be exiting from .update/new; next start retries.
+      return;
     }
+    for (const name of names)
+      if (!isRecovery(name))
+        try {
+          fs.rmSync(path.join(work, name), { recursive: true, force: true });
+        } catch {
+          // The helper may still be exiting from .update/new; next start retries.
+        }
+    try {
+      if (!fs.readdirSync(work).length) fs.rmdirSync(work);
+    } catch {}
+  }
+  // The install helper deletes its backup folder after a good swap, so it
+  // gets one that holds nothing else.
+  function freshBackup() {
+    for (let n = 1; ; n++) {
+      const dir = path.join(work, n === 1 ? "old" : "old-" + n);
+      if (!fs.existsSync(dir)) return dir;
+    }
+  }
+  function cleanup() {
+    clearWork();
   }
 
   return { state, supported, download, install, cleanup };

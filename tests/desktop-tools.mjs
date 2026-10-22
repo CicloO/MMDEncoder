@@ -145,9 +145,7 @@ try {
     (p) => window.encoder.invoke("add", { paths: [p] }),
     fixture,
   );
-  await page
-    .getByRole("button", { name: "文件详情", exact: true })
-    .click();
+  await page.getByRole("button", { name: "文件详情", exact: true }).click();
   await expect(
     page.getByRole("dialog").getByText("尚未生成文件", { exact: true }).first(),
   ).toBeVisible();

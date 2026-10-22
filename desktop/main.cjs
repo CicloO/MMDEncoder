@@ -335,6 +335,7 @@ else {
           "mediaSuggest",
           "mediaAdd",
           "mediaSetAudio",
+          "mediaLog",
           "mediaRemove",
           "mediaClearCompleted",
           "mediaRequeue",

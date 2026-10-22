@@ -14,6 +14,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
 const core = require("./core.cjs");
+const media = require("./media.cjs");
 
 const baseDir = () =>
   path.join(
@@ -123,7 +124,11 @@ function writeConfig({
       settings: { ...p.settings, presetName: p.name },
       unsupported: unsupported(p.settings),
     })),
-    engines: { ffmpeg: engines.ffmpeg, ffprobe: engines.ffprobe },
+    engines: {
+      ffmpeg: engines.ffmpeg,
+      ffprobe: engines.ffprobe,
+      soxr: !!engines.soxr,
+    },
     appExe,
     helper,
     writtenAt: new Date().toISOString(),
@@ -305,7 +310,7 @@ function plan(runtime, config = readConfig()) {
   const job = { path: "pipe:0", meta: { ...meta, audio: undefined } };
   const commands = core.buildCommands(
     job,
-    { ...out, audio: "none" },
+    { ...out, audio: "none", hiRes: false },
     config.engines,
     { output: temp, maskOutput: mask ? maskTemp(temp) : undefined },
   );
@@ -390,6 +395,23 @@ function run(exe, args, timeout = 0) {
   );
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Video frames (packets) in a file, without decoding.
+async function countFrames(config, file) {
+  const { stdout } = await run(config.engines.ffprobe, [
+    "-v",
+    "error",
+    "-select_streams",
+    "v:0",
+    "-count_packets",
+    "-show_entries",
+    "stream=nb_read_packets",
+    "-of",
+    "csv=p=0",
+    file,
+  ]);
+  return parseInt(stdout, 10) || 0;
+}
 
 async function probe(config, file) {
   const { stdout } = await run(config.engines.ffprobe, [
@@ -510,8 +532,10 @@ async function finish(
     (x) => x.codec_type === "video" && x.codec_tag_string === PLACEHOLDER_TAG,
   );
   const aviAudio = !!aviInfo?.streams?.some((x) => x.codec_type === "audio");
-  const audio = audioArgs(s);
+  let audio = audioArgs(s);
   let source = "none";
+  // The source audio stream, for Hi-Res.
+  let stream = aviInfo?.streams?.find((x) => x.codec_type === "audio");
   let input = [];
   let trim = "";
   if (audio && aviAudio) {
@@ -521,13 +545,15 @@ async function finish(
     const wav = projectWav(job.pmm);
     if (wav && job.startFrame >= 0) {
       const info = await probe(config, wav);
-      const sr = Number(
-        info.streams?.find((x) => x.codec_type === "audio")?.sample_rate,
-      );
-      if (sr) {
+      stream = info.streams?.find((x) => x.codec_type === "audio");
+      const sr = Number(stream?.sample_rate);
+      const first = Math.round((job.startFrame * sr) / TIMELINE_FPS);
+      const total = Math.round(Number(info.format?.duration) * sr) || Infinity;
+      if (sr && first >= total)
+        log("导出起点已超过工程 WAV 的结尾，成片没有音频");
+      else if (sr) {
         // Sample-exact: start = start frame on the 30 fps timeline, length =
         // frames actually received at the export frame rate.
-        const first = Math.round((job.startFrame * sr) / TIMELINE_FPS);
         const count = Math.round((job.frames * sr * rate.den) / rate.num);
         trim = `atrim=start_sample=${first}:end_sample=${first + count},asetpts=PTS-STARTPTS`;
         source = "wav";
@@ -541,13 +567,28 @@ async function finish(
   // Optional fade in / out over the clip's audio, at most half its length each.
   const length = (job.frames * rate.den) / rate.num;
   const fade = Math.min(Number(config.audioFade) || 0, length / 2);
-  const filters = [trim];
+  // The rendered video sets the length: audio that runs out is padded with
+  // silence, longer audio is cut (-t below). Never end at the shorter stream,
+  // which would drop rendered frames.
+  const filters = [trim, source !== "none" ? "apad" : ""];
   if (source !== "none" && fade > 0) {
     filters.push(
       `afade=t=in:st=0:d=${fade}`,
       `afade=t=out:st=${(length - fade).toFixed(6)}:d=${fade}`,
     );
     log(`音频淡入淡出 ${fade} 秒`);
+  }
+  // Hi-Res: the audio is filtered here anyway (trim, pad), so it is always
+  // re-encoded, never copied.
+  if (source !== "none" && s.hiRes) {
+    const plan = media.hiResPlan(
+      s.audio === "flac" ? "flac" : "wav",
+      core.audioInfo(stream || {}),
+    );
+    if (plan.action === "copy") plan.action = "encode";
+    filters.push(media.hiResFilter(plan, config.engines.soxr));
+    audio = media.hiResCodec(plan);
+    log(`Hi-Res：${plan.from} → ${plan.to}`);
   }
   const af = filters.filter(Boolean).join(",");
   if (source === "none") {
@@ -568,12 +609,24 @@ async function finish(
       "copy",
       ...(af ? ["-af", af] : []),
       ...audio,
-      "-shortest",
+      "-t",
+      length.toFixed(6),
       ...(["mp4", "mov"].includes(s.container)
         ? ["-movflags", "+faststart"]
         : []),
       job.output,
     ]);
+    // Only drop the rendered video once the result holds all of its frames.
+    const [have, want] = await Promise.all([
+      countFrames(config, job.output),
+      countFrames(config, job.temp),
+    ]);
+    if (have < want) {
+      fs.rmSync(job.output, { force: true });
+      throw Error(
+        `合成音频后只剩 ${have} / ${want} 帧，已保留未合成的视频：${job.temp}`,
+      );
+    }
     fs.rmSync(job.temp, { force: true });
   }
   const result = await probe(config, job.output);
@@ -667,19 +720,7 @@ function snapshotById(id) {
 // Finish an interrupted export with the frames that were written.
 async function recover(id, log = () => {}) {
   const snap = snapshotById(id);
-  const { stdout } = await run(snap.engines.ffprobe, [
-    "-v",
-    "error",
-    "-select_streams",
-    "v:0",
-    "-count_packets",
-    "-show_entries",
-    "stream=nb_read_packets",
-    "-of",
-    "csv=p=0",
-    snap.temp,
-  ]);
-  const frames = parseInt(stdout, 10);
+  const frames = await countFrames(snap, snap.temp);
   if (!frames) throw Error("中断的导出里没有可用画面：" + snap.temp);
   log(`恢复中断的导出：${frames} 帧`);
   const job = {

@@ -625,18 +625,36 @@ static bool runHelper(const std::wstring& exe, const std::wstring& helper, const
     CloseHandle(readPipe);
     return false;
   }
+  // Read only what is already in the pipe, so a helper that hangs without
+  // writing or exiting cannot block past the deadline (a plain ReadFile on an
+  // anonymous pipe would wait forever). The pipe breaks once the helper has
+  // exited and everything it wrote has been read.
   char buf[4096];
-  DWORD n = 0;
-  ULONGLONG deadline = GetTickCount64() + timeoutMs;
-  while (ReadFile(readPipe, buf, sizeof(buf), &n, nullptr) && n) {
-    out.append(buf, n);
-    if (GetTickCount64() > deadline) break;
+  const ULONGLONG deadline = GetTickCount64() + timeoutMs;
+  bool timedOut = false;
+  for (;;) {
+    DWORD avail = 0, n = 0;
+    if (!PeekNamedPipe(readPipe, nullptr, 0, nullptr, &avail, nullptr)) break;
+    if (avail) {
+      if (!ReadFile(readPipe, buf, (std::min)(avail, (DWORD)sizeof(buf)), &n, nullptr) || !n) break;
+      out.append(buf, n);
+      continue;
+    }
+    if (GetTickCount64() > deadline) {
+      timedOut = true;
+      break;
+    }
+    WaitForSingleObject(pi.hProcess, 20);
   }
   CloseHandle(readPipe);
-  if (WaitForSingleObject(pi.hProcess, timeoutMs) == WAIT_TIMEOUT) TerminateProcess(pi.hProcess, 1);
+  if (timedOut) {
+    plog(L"helper %s gave no answer within %lu ms; stopped", mode.c_str(), timeoutMs);
+    TerminateProcess(pi.hProcess, 1);
+  }
+  WaitForSingleObject(pi.hProcess, 5000);
   CloseHandle(pi.hThread);
   CloseHandle(pi.hProcess);
-  return true;
+  return !timedOut;
 }
 
 // Start the finish step in the background; it must outlive nothing but runs

@@ -1,5 +1,6 @@
 "use strict";
 const path = require("node:path");
+const media = require("./media.cjs");
 const DEFAULTS = {
   container: "mp4",
   encoder: "libx264",
@@ -18,6 +19,8 @@ const DEFAULTS = {
   resizeAxis: "width",
   audio: "aac",
   audioBitrate: 0,
+  // Hi-Res audio (FLAC / PCM): 24-bit, twice the rate below 48 kHz.
+  hiRes: false,
   alphaMask: false,
   alphaMode: "discard",
   outputMode: "encoded",
@@ -380,6 +383,12 @@ function validate(s, meta) {
     "音频码率无效，请选择列表中的码率",
   );
   check(typeof s.alphaMask === "boolean", "透明遮罩开关无效");
+  check(typeof s.hiRes === "boolean", "Hi-Res 开关无效");
+  if (s.hiRes)
+    check(
+      ["flac", "pcm_s16le"].includes(s.audio),
+      "Hi-Res 音频请选择 FLAC 或 PCM",
+    );
   check(
     typeof s.preset === "string" && /^[a-zA-Z0-9_-]{1,24}$/.test(s.preset),
     "速度预设无效",
@@ -591,6 +600,14 @@ function audioInfo(a) {
     channels: a.channels,
     channelLayout: a.channel_layout,
     bitRate: Number(a.bit_rate || a.tags?.BPS || a.tags?.["BPS-eng"]) || 0,
+    // Effective bits per sample (0 = unknown). s32 storage alone does not
+    // say 32 bits: FLAC stores 24-bit audio as s32 with bits_per_raw_sample 24.
+    bits:
+      Number(a.bits_per_raw_sample) ||
+      Number(a.bits_per_sample) ||
+      { u8: 8, u8p: 8, s16: 16, s16p: 16 }[a.sample_fmt] ||
+      0,
+    float: /^(flt|dbl)/.test(a.sample_fmt || ""),
   };
 }
 function metadata(data) {
@@ -849,13 +866,24 @@ function buildCommands(job, s, engines, paths) {
       ? [
           "-map",
           "0:a:0?",
-          "-c:a",
-          s.audio,
-          ...(["aac", "libopus"].includes(s.audio) && s.audioBitrate
-            ? ["-b:a", s.audioBitrate + "k"]
-            : s.audio === "aac"
-              ? ["-b:a", "192k"]
-              : []),
+          ...(s.hiRes
+            ? // PCM becomes 24-bit PCM; see media.hiResPlan for the rules.
+              media.hiResArgs(
+                media.hiResPlan(
+                  s.audio === "flac" ? "flac" : "wav",
+                  job.meta.audio,
+                ),
+                engines?.soxr,
+              )
+            : [
+                "-c:a",
+                s.audio,
+                ...(["aac", "libopus"].includes(s.audio) && s.audioBitrate
+                  ? ["-b:a", s.audioBitrate + "k"]
+                  : s.audio === "aac"
+                    ? ["-b:a", "192k"]
+                    : []),
+              ]),
         ]
       : ["-an"];
   const result = [];

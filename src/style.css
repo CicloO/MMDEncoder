@@ -1292,3 +1292,10 @@ html[data-theme="light"] {
   max-width: 240px;
   margin-top: 14px;
 }
+.checkbox-row .hires-hint {
+  display: block;
+  margin-top: 4px;
+}
+.checkbox-row:has(.hires-hint) {
+  align-items: flex-start;
+}

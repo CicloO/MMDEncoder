@@ -72,6 +72,8 @@ type Options = {
   audioBitrate: number;
   container: string;
   shortest: boolean;
+  // 24-bit, and twice the sample rate below 48 kHz (WAV / FLAC only).
+  hiRes: boolean;
   location: string;
   outputDir: string;
 };
@@ -81,6 +83,7 @@ const DEFAULT_OPTIONS: Options = {
   audioBitrate: 0,
   container: "mp4",
   shortest: true,
+  hiRes: false,
   location: "source",
   outputDir: "",
 };
@@ -95,6 +98,15 @@ function loadOptions(): Options {
   }
 }
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
+
+// Hi-Res result for a source, as backend/media.cjs hiResPlan decides it.
+const HIRES_FORMATS = ["wav", "flac"];
+function hiResText(a?: { sampleRate: number; bits?: number; float?: boolean }) {
+  if (!a?.sampleRate) return "";
+  const rate = a.sampleRate < 48000 ? a.sampleRate * 2 : a.sampleRate;
+  const depth = a.float ? "浮点" : a.bits ? a.bits + "-bit" : "位深未知";
+  return `${a.sampleRate / 1000} kHz / ${depth} → ${rate / 1000} kHz / 24-bit`;
+}
 
 export function MediaTools({
   state,
@@ -126,6 +138,9 @@ export function MediaTools({
     (ids) => void call("mediaReorder", { ids }).catch(() => {}),
   );
   const selected = jobs.find((j) => j.id === selectedId) || jobs[0];
+  const [fullLog, setFullLog] = useState<{ id: string; log: string } | null>(
+    null,
+  );
   const locked =
     state.running ||
     state.detecting ||
@@ -136,6 +151,9 @@ export function MediaTools({
   const clearable = jobs.some((j) => ["done", "cancelled"].includes(j.status));
   // A remembered bitrate above the chosen format's limit (e.g. 512k → MP3) is capped.
   const bitrate = Math.min(o.audioBitrate, MAX_BITRATE[o.audioFormat] || 512);
+  // Hi-Res applies to lossless audio output only.
+  const hiRes =
+    o.hiRes && o.operation !== "video" && HIRES_FORMATS.includes(o.audioFormat);
   const missingAudio =
     o.operation === "merge" && readyJobs.some((j) => !j.audioPath);
 
@@ -202,6 +220,7 @@ export function MediaTools({
       audioInput: previewJob.audioPath,
       audioFormat: o.audioFormat,
       container: o.container,
+      hiRes,
       location: o.location,
       outputDir: o.outputDir,
     })
@@ -218,6 +237,7 @@ export function MediaTools({
     o.operation,
     o.audioFormat,
     o.container,
+    hiRes,
     o.location,
     o.outputDir,
   ]);
@@ -457,10 +477,24 @@ export function MediaTools({
                 </p>
               )}
               {selected.log && (
-                <details>
+                <details
+                  onToggle={(e) => {
+                    // Updates carry only the log's tail; load the whole log.
+                    if ((e.currentTarget as HTMLDetailsElement).open)
+                      void window.encoder
+                        .invoke("mediaLog", { id: selected.id })
+                        .then((log) =>
+                          setFullLog({ id: selected.id, log: log as string }),
+                        )
+                        .catch(() => {});
+                  }}
+                >
                   <summary>实际命令与日志</summary>
                   <pre className="media-log" tabIndex={0}>
-                    {selected.log}
+                    {fullLog?.id === selected.id &&
+                    fullLog.log.length >= selected.log.length
+                      ? fullLog.log
+                      : selected.log}
                   </pre>
                 </details>
               )}
@@ -504,6 +538,35 @@ export function MediaTools({
                   }))}
                   onChange={(v) => set("audioFormat", v)}
                 />
+              )}
+              {o.operation !== "video" && (
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    disabled={locked || !HIRES_FORMATS.includes(o.audioFormat)}
+                    checked={hiRes}
+                    onChange={(e) => set("hiRes", e.target.checked)}
+                  />
+                  <span>
+                    Hi-Res 音频（24-bit，低于 48 kHz 时升到 2 倍采样率）
+                    <small className="hint hires-hint">
+                      {!HIRES_FORMATS.includes(o.audioFormat)
+                        ? "只有 WAV / FLAC 可以输出 Hi-Res，有损格式不行。"
+                        : (hiResText(
+                            o.operation === "merge"
+                              ? selected?.audioMeta
+                              : selected?.meta?.audio,
+                          ) ||
+                            (o.operation === "merge"
+                              ? "选择替换音频后显示转换结果"
+                              : "读取文件信息后显示转换结果")) +
+                          (o.operation === "merge"
+                            ? "；合并时输出 MKV。"
+                            : "。") +
+                          "升采样不会提高音质，只是满足平台的 Hi-Res 判定（尚未实际上传验证）。"}
+                    </small>
+                  </span>
+                </label>
               )}
               {o.operation !== "video" && LOSSY.includes(o.audioFormat) && (
                 <Select
@@ -605,6 +668,7 @@ export function MediaTools({
             {o.operation !== "video" ? (
               <>
                 音频 → {FORMATS[o.audioFormat]}
+                {hiRes && " · Hi-Res 24-bit"}
                 {LOSSY.includes(o.audioFormat) &&
                   ` · ${bitrate ? bitrate + " kbps" : "跟随源码率"}`}
               </>
@@ -646,6 +710,7 @@ export function MediaTools({
                   audioFormat: o.audioFormat,
                   audioBitrate: bitrate,
                   container: o.container,
+                  hiRes,
                   shortest: o.shortest,
                   location: o.location,
                   outputDir: o.outputDir,

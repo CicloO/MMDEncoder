@@ -141,6 +141,10 @@ function createService({
     const s = clone({
       ...state,
       jobs: state.jobs.map(({ log, ...j }) => j),
+      // Media logs: only the tail; the window asks for the whole one.
+      mediaJobs: state.mediaJobs.map((j) =>
+        j.log?.length > 8000 ? { ...j, log: "…" + j.log.slice(-8000) } : j,
+      ),
     });
     onUpdate(s);
   }
@@ -197,7 +201,18 @@ function createService({
     return shipped
       ? crypto
           .createHash("sha256")
-          .update(JSON.stringify([shipped.name, shipped.settings]))
+          // Settings added later with their off value (hiRes: false) are left
+          // out, so adding a setting does not count as changing every preset.
+          .update(
+            JSON.stringify([
+              shipped.name,
+              Object.fromEntries(
+                Object.entries(shipped.settings).filter(
+                  ([k, v]) => !(k === "hiRes" && v === false),
+                ),
+              ),
+            ]),
+          )
           .digest("hex")
           .slice(0, 16)
       : "";
@@ -750,6 +765,7 @@ function createService({
       return {
         videoCodec: v?.codec_name,
         audioCodec: a?.codec_name,
+        audio: a ? core.audioInfo(a) : undefined,
         // Some containers only report the overall rate; use it for audio-only files.
         audioBitRate:
           a?.bit_rate || (!v && a ? data.format?.bit_rate : undefined),
@@ -757,6 +773,27 @@ function createService({
     } catch {
       return {};
     }
+  }
+  // Whether the installed FFmpeg has the soxr resampler; checked again when
+  // FFmpeg changes (path, size or date).
+  let soxrCache = { key: "", value: false };
+  async function hasSoxr() {
+    const ff = state.engineInfo.ffmpeg;
+    let key = ff;
+    try {
+      const st = fs.statSync(ff);
+      key += "|" + st.size + "|" + st.mtimeMs;
+    } catch {}
+    if (soxrCache.key === key) return soxrCache.value;
+    let value = false;
+    try {
+      const r = await run(ff, ["-hide_banner", "-buildconf"], {
+        timeout: 15000,
+      });
+      value = /--enable-libsoxr/.test(r.stdout + (r.stderr || ""));
+    } catch {}
+    soxrCache = { key, value };
+    return value;
   }
   // File parameters for the media queue, read like the video queue's. Audio-only
   // files get an audio summary; a failed read leaves the file usable.
@@ -813,11 +850,18 @@ function createService({
     try {
       if (o.operation === "merge" && !job.audioPath)
         throw Error("缺少要合并的音频文件");
+      if (
+        o.hiRes &&
+        o.operation !== "video" &&
+        !["wav", "flac"].includes(o.audioFormat)
+      )
+        throw Error("Hi-Res 只支持 WAV / FLAC 输出");
       const p = {
         operation: o.operation,
         input: job.path,
         audioInput: job.audioPath,
         audioFormat: o.audioFormat,
+        hiRes: !!o.hiRes && o.operation !== "video",
         audioBitrate: Number(o.audioBitrate) || 0,
         shortest: o.shortest !== false,
         container: o.container === "mkv" ? "mkv" : "mp4",
@@ -828,8 +872,18 @@ function createService({
       p.sourceAudio = {
         codec: audioSource.audioCodec,
         bitRate: audioSource.audioBitRate,
+        sampleRate: audioSource.audio?.sampleRate,
+        bits: audioSource.audio?.bits,
+        float: audioSource.audio?.float,
       };
-      let note = "";
+      let hiResNote = "";
+      if (p.hiRes) {
+        p.soxr = await hasSoxr();
+        const plan = media.hiResPlan(p.audioFormat, p.sourceAudio);
+        hiResNote = `# Hi-Res：${plan.from} → ${plan.to}，${plan.reason}${plan.action === "resample" ? (p.soxr ? "（soxr 重采样）" : "（当前 FFmpeg 没有 soxr，用内置重采样）") : ""}
+`;
+      }
+      let note = hiResNote;
       if (o.operation !== "audio") {
         const container = media.mergeContainer(p, {
           videoCodec: source.videoCodec,
@@ -978,6 +1032,8 @@ function createService({
         state.notice = "未找到可运行的 FFmpeg，请检查引擎目录";
         return;
       }
+      // Hi-Res resampling uses soxr when this FFmpeg has it.
+      state.engineInfo.soxr = await hasSoxr();
       const key = await detectionKey();
       const cached = !force && key && readDetectionCache(key);
       if (cached) {
@@ -1598,6 +1654,7 @@ function createService({
     emit();
     (async () => {
       await detectPromise;
+      state.engineInfo.soxr = await hasSoxr();
       // Take jobs in the queue's current order so drag-sorting during a run applies.
       const pending = new Set(jobs);
       while (pending.size) {
@@ -1605,6 +1662,8 @@ function createService({
           state.jobs.find((j) => pending.has(j)) ||
           pending.values().next().value;
         pending.delete(job);
+        // Removed from the queue while waiting: withdrawn, not run.
+        if (!state.jobs.includes(job)) continue;
         if (stopped) {
           if (job.status !== "partial") job.status = "cancelled";
           continue;
@@ -1681,7 +1740,13 @@ function createService({
       }
       case "mediaSuggest":
         return media.suggestOutput(
-          payload || {},
+          {
+            ...(payload || {}),
+            // Hi-Res merges go to MKV (see media.mergeContainer).
+            ...(payload?.hiRes && payload.operation === "merge"
+              ? { container: "mkv" }
+              : {}),
+          },
           mediaLocation(payload || {}),
           fs.existsSync,
         );
@@ -1725,8 +1790,17 @@ function createService({
           throw Error("请选择有效的音频文件");
         if (file) job.audioPath = file;
         else delete job.audioPath;
+        delete job.audioMeta;
+        // The replacement audio's own parameters (Hi-Res preview, checks).
+        if (file) {
+          await locate();
+          const info = await probeMedia(file);
+          if (job.audioPath === file && info.audio) job.audioMeta = info.audio;
+        }
         break;
       }
+      case "mediaLog":
+        return requireMediaJob(payload?.id).log || "";
       case "mediaRemove": {
         const job = requireMediaJob(payload?.id);
         if (job.status === "running") throw Error("处理中的文件不能移除");
@@ -1786,6 +1860,8 @@ function createService({
               state.mediaJobs.find((j) => pending.has(j)) ||
               pending.values().next().value;
             pending.delete(job);
+            // Removed from the queue while waiting: withdrawn, not run.
+            if (!state.mediaJobs.includes(job)) continue;
             if (stopped) {
               job.status = "cancelled";
               continue;

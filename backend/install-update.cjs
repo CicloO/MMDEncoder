@@ -51,7 +51,19 @@ function start() {
   if (!relaunch) return;
   try {
     const exe = exeOf();
-    spawn(exe, [], { cwd: appDir, detached: true, stdio: "ignore" }).unref();
+    // This helper runs in Node mode; the app must not inherit that, or it
+    // would start as Node instead of opening its window.
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    delete env.MMD_UPDATE_JOB;
+    const child = spawn(exe, [], {
+      cwd: appDir,
+      detached: true,
+      stdio: "ignore",
+      env,
+    });
+    child.on("error", (e) => write("无法自动重新打开软件：" + e.message));
+    child.unref();
   } catch (e) {
     write("无法自动重新打开软件：" + e.message);
   }

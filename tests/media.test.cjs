@@ -390,3 +390,270 @@ test("audio info reads codec, profile and bitrate, falling back to the MKV BPS t
     undefined,
   );
 });
+
+test(
+  "a waiting file removed from the media queue during a run is not processed",
+  { skip: !fs.existsSync(ff), timeout: 120000 },
+  async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "media-remove-"));
+    const until = async (f) => {
+      for (let i = 0; i < 600 && !f(); i++)
+        await new Promise((r) => setTimeout(r, 50));
+    };
+    const service = createService({
+      engineDir,
+      dataDir: path.join(root, "data"),
+    });
+    try {
+      // A long first file keeps the run busy while the second is removed.
+      const [a, b] = ["a.wav", "b.wav"].map((n) => path.join(root, n));
+      execFileSync(ff, [
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=duration=600",
+        a,
+      ]);
+      execFileSync(ff, [
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=duration=1",
+        b,
+      ]);
+      await until(
+        () => service.getState().located && !service.getState().detecting,
+      );
+      await service.invoke("mediaAdd", { paths: [a, b] });
+      await service.invoke("mediaStart", {
+        operation: "audio",
+        audioFormat: "flac",
+      });
+      await until(() => service.getState().mediaJobs[0].status === "running");
+      const second = service.getState().mediaJobs[1];
+      await service.invoke("mediaRemove", { id: second.id });
+      await until(() => !service.getState().running);
+      assert.deepEqual(
+        service.getState().mediaJobs.map((j) => path.basename(j.path)),
+        ["a.wav"],
+      );
+      assert.ok(fs.existsSync(path.join(root, "a.flac")));
+      assert.equal(fs.existsSync(path.join(root, "b.flac")), false);
+    } finally {
+      service.dispose();
+      await new Promise((r) => setTimeout(r, 200));
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test("Hi-Res plan: copy, lossless re-encode or resample, with reasons", () => {
+  const { hiResPlan } = require("../backend/media.cjs");
+  const plan = (f, s) => {
+    const p = hiResPlan(f, s);
+    return [p.action, p.codec, p.rate, !!p.dither];
+  };
+  assert.deepEqual(
+    plan("flac", { codec: "pcm_s16le", sampleRate: 44100, bits: 16 }),
+    ["resample", "flac", 88200, false],
+  );
+  assert.deepEqual(
+    plan("wav", { codec: "pcm_s16le", sampleRate: 32000, bits: 16 }),
+    ["resample", "pcm_s24le", 64000, false],
+  );
+  // 48 kHz / 24-bit: same codec copies, another lossless codec re-encodes.
+  assert.deepEqual(
+    plan("wav", { codec: "pcm_s24le", sampleRate: 48000, bits: 24 }),
+    ["copy", "pcm_s24le", 48000, false],
+  );
+  assert.deepEqual(
+    plan("flac", { codec: "pcm_s24le", sampleRate: 48000, bits: 24 }),
+    ["encode", "flac", 48000, false],
+  );
+  assert.deepEqual(
+    plan("flac", { codec: "flac", sampleRate: 96000, bits: 24 }),
+    ["copy", "flac", 96000, false],
+  );
+  // 32-bit integer and float are reduced to 24-bit with dither.
+  assert.deepEqual(
+    plan("wav", { codec: "pcm_s32le", sampleRate: 96000, bits: 32 }),
+    ["encode", "pcm_s24le", 96000, true],
+  );
+  assert.deepEqual(
+    plan("flac", {
+      codec: "pcm_f32le",
+      sampleRate: 48000,
+      bits: 32,
+      float: true,
+    }),
+    ["encode", "flac", 48000, true],
+  );
+  assert.throws(() => hiResPlan("aac", { sampleRate: 48000 }), /WAV \/ FLAC/);
+  assert.throws(() => hiResPlan("wav", {}), /采样率/);
+  // Lossy output with Hi-Res is refused by the command too.
+  const dir = os.tmpdir();
+  assert.throws(
+    () =>
+      command(
+        {
+          operation: "audio",
+          input: path.join(dir, "a.wav"),
+          output: path.join(dir, "a.m4a"),
+          audioFormat: "aac",
+          hiRes: true,
+          sourceAudio: { sampleRate: 44100 },
+        },
+        { ffmpeg: "ffmpeg" },
+        path.join(dir, "a.m4a"),
+      ),
+    /WAV \/ FLAC/,
+  );
+  // Without soxr in the installed FFmpeg: its own resampler at high quality.
+  const args = (soxr) =>
+    command(
+      {
+        operation: "audio",
+        input: path.join(dir, "a.wav"),
+        output: path.join(dir, "a.flac"),
+        audioFormat: "flac",
+        hiRes: true,
+        soxr,
+        sourceAudio: { codec: "pcm_s16le", sampleRate: 44100, bits: 16 },
+      },
+      { ffmpeg: "ffmpeg" },
+      path.join(dir, "a.flac"),
+    ).args.join(" ");
+  assert.match(args(true), /aresample=88200:resampler=soxr/);
+  assert.match(args(false), /aresample=88200:filter_size=128/);
+  assert.match(args(false), /-bits_per_raw_sample 24 -ar 88200/);
+});
+
+test(
+  "Hi-Res output: 44.1 kHz doubles, 48 kHz stays, float becomes 24-bit, merges go to MKV",
+  { skip: !fs.existsSync(ff), timeout: 120000 },
+  async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "media-hires-"));
+    const until = async (f) => {
+      for (let i = 0; i < 600 && !f(); i++)
+        await new Promise((r) => setTimeout(r, 50));
+    };
+    const service = createService({
+      engineDir,
+      dataDir: path.join(root, "data"),
+    });
+    const audioOf = (file) =>
+      JSON.parse(
+        execFileSync(
+          fp,
+          [
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_streams",
+            "-show_format",
+            "-of",
+            "json",
+            file,
+          ],
+          { encoding: "utf8" },
+        ),
+      );
+    try {
+      const make = (name, rate, codec) => {
+        const file = path.join(root, name);
+        execFileSync(ff, [
+          "-v",
+          "error",
+          "-f",
+          "lavfi",
+          "-i",
+          `sine=frequency=1000:sample_rate=${rate}:duration=2`,
+          "-c:a",
+          codec,
+          file,
+        ]);
+        return file;
+      };
+      const cd = make("cd.wav", 44100, "pcm_s16le");
+      const dvd = make("dvd.wav", 48000, "pcm_s16le");
+      const float = make("float.wav", 48000, "pcm_f32le");
+      await until(
+        () => service.getState().located && !service.getState().detecting,
+      );
+      await service.invoke("mediaAdd", { paths: [cd, dvd, float] });
+      await until(() => service.getState().mediaJobs.every((j) => j.meta));
+      assert.equal(service.getState().mediaJobs[0].meta.audio.bits, 16);
+      await service.invoke("mediaStart", {
+        operation: "audio",
+        audioFormat: "flac",
+        hiRes: true,
+      });
+      await until(() => !service.getState().running);
+      const jobs = service.getState().mediaJobs;
+      assert.ok(
+        jobs.every((j) => j.status === "done"),
+        jobs.map((j) => j.error).join(" | "),
+      );
+      const result = (job) => {
+        const s = audioOf(job.output).streams[0];
+        return [
+          Number(s.sample_rate),
+          Number(s.bits_per_raw_sample),
+          s.codec_name,
+        ];
+      };
+      assert.deepEqual(result(jobs[0]), [88200, 24, "flac"]);
+      assert.deepEqual(result(jobs[1]), [48000, 24, "flac"]);
+      assert.deepEqual(result(jobs[2]), [48000, 24, "flac"]);
+      assert.match(jobs[0].log, /44\.1 kHz \/ 16-bit → 88\.2 kHz \/ 24-bit/);
+      // Length is unchanged by resampling.
+      assert.ok(
+        Math.abs(Number(audioOf(jobs[0].output).format.duration) - 2) < 0.01,
+      );
+
+      // Merge: the replacement audio's own parameters decide; output is MKV.
+      const video = path.join(root, "clip.mp4");
+      execFileSync(ff, [
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=s=160x90:r=30:d=2",
+        "-c:v",
+        "libx264",
+        video,
+      ]);
+      await service.invoke("mediaClearCompleted");
+      await service.invoke("mediaAdd", { paths: [video] });
+      await until(() => service.getState().mediaJobs[0]?.meta);
+      const id = service.getState().mediaJobs[0].id;
+      await service.invoke("mediaSetAudio", { id, path: cd });
+      assert.equal(service.getState().mediaJobs[0].audioMeta.sampleRate, 44100);
+      await service.invoke("mediaStart", {
+        operation: "merge",
+        audioFormat: "wav",
+        hiRes: true,
+        container: "mp4",
+      });
+      await until(() => !service.getState().running);
+      const merged = service.getState().mediaJobs[0];
+      assert.equal(merged.status, "done", merged.error);
+      assert.equal(path.extname(merged.output), ".mkv");
+      const a = audioOf(merged.output).streams[0];
+      assert.deepEqual(
+        [a.codec_name, Number(a.sample_rate)],
+        ["pcm_s24le", 88200],
+      );
+    } finally {
+      service.dispose();
+      await new Promise((r) => setTimeout(r, 200));
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);

@@ -321,6 +321,38 @@ function createTools({
       state.installed = {};
     }
   }
+  // Every tool folder the manifest in dir names exists.
+  function complete(dir) {
+    try {
+      const active = JSON.parse(
+        fs.readFileSync(path.join(dir, "active.json"), "utf8"),
+      );
+      const entries = Object.values(active);
+      return (
+        entries.length > 0 &&
+        entries.every(
+          (e) => e?.directory && fs.existsSync(path.join(dir, e.directory)),
+        )
+      );
+    } catch {
+      return false;
+    }
+  }
+  // Rename, or copy then delete across drives; a failed copy leaves nothing.
+  function move(from, to) {
+    try {
+      fs.renameSync(from, to);
+    } catch (e) {
+      if (e.code !== "EXDEV") throw e;
+      try {
+        fs.cpSync(from, to, { recursive: true, errorOnExist: true });
+      } catch (c) {
+        fs.rmSync(to, { recursive: true, force: true });
+        throw c;
+      }
+      fs.rmSync(from, { recursive: true, force: true });
+    }
+  }
   // Switch the install folder. Installed tools are moved along (a folder that
   // already holds an installation is reused instead); an empty target is fine.
   function relocate(target) {
@@ -336,7 +368,11 @@ function createTools({
       throw Error("新位置不能在当前安装位置之内或之上");
     busy = true;
     try {
-      const existing = fs.existsSync(path.join(target, "active.json"));
+      // A folder counts as an installation only when every tool its manifest
+      // names is really there; a half-moved one does not.
+      const existing = complete(target);
+      if (!existing && fs.existsSync(path.join(target, "active.json")))
+        throw Error("新位置里的编码工具不完整，请换一个空文件夹");
       fs.mkdirSync(target, { recursive: true });
       const probe = path.join(target, ".write-test");
       fs.writeFileSync(probe, "");
@@ -345,16 +381,23 @@ function createTools({
       if (installed && !existing) {
         if (fs.readdirSync(target).length)
           throw Error("新位置需要是空文件夹，或已有本软件安装的编码工具");
-        for (const name of fs.readdirSync(root)) {
-          const from = path.join(root, name),
-            to = path.join(target, name);
-          try {
-            fs.renameSync(from, to);
-          } catch (e) {
-            if (e.code !== "EXDEV") throw e;
-            fs.cpSync(from, to, { recursive: true, errorOnExist: true });
-            fs.rmSync(from, { recursive: true, force: true });
+        // Tools first, the manifest last: until it moves, the old place is
+        // still a working installation. Any failure moves everything back.
+        const names = fs
+          .readdirSync(root)
+          .sort((x, y) => (x === "active.json") - (y === "active.json"));
+        const moved = [];
+        try {
+          for (const name of names) {
+            move(path.join(root, name), path.join(target, name));
+            moved.push(name);
           }
+        } catch (e) {
+          for (const name of moved.reverse())
+            try {
+              move(path.join(target, name), path.join(root, name));
+            } catch {}
+          throw Error("移动编码工具失败，已恢复原位置：" + e.message);
         }
       }
       root = target;

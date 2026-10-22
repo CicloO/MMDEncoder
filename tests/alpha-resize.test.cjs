@@ -138,17 +138,29 @@ test("mask only: one lossless _alpha file, no colour video or audio, any encoder
     const paths = c.outputPaths(input, { ...s, container });
     assert.equal(paths.output, path.join(dir, "input_alpha." + container));
     assert.equal(paths.maskOutput, undefined);
-    const cmds = c.buildCommands({ path: input, meta }, { ...s, container }, { ffmpeg: ff }, paths);
+    const cmds = c.buildCommands(
+      { path: input, meta },
+      { ...s, container },
+      { ffmpeg: ff },
+      paths,
+    );
     assert.equal(cmds.length, 1);
     assert.equal(cmds[0].output, paths.output);
     assert.equal(cmds[0].mask, false, "the mask is the main output");
     execFileSync(cmds[0].exe, cmds[0].args, { stdio: "pipe" });
     const streams = JSON.parse(
-      execFileSync(fp, ["-v", "error", "-show_streams", "-of", "json", paths.output], {
-        encoding: "utf8",
-      }),
+      execFileSync(
+        fp,
+        ["-v", "error", "-show_streams", "-of", "json", paths.output],
+        {
+          encoding: "utf8",
+        },
+      ),
     ).streams;
-    assert.deepEqual(streams.map((x) => x.codec_type), ["video"]);
+    assert.deepEqual(
+      streams.map((x) => x.codec_type),
+      ["video"],
+    );
     assert.equal(streams[0].codec_name, container === "webm" ? "vp9" : "h264");
     const gray = execFileSync(ff, [
       "-v",

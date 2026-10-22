@@ -8,6 +8,7 @@ const allowed = new Set([
   "mediaSuggest",
   "mediaAdd",
   "mediaSetAudio",
+  "mediaLog",
   "mediaRemove",
   "mediaClearCompleted",
   "mediaRequeue",

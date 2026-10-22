@@ -15,9 +15,85 @@ function audioBitrate(requested, encoder, source = {}) {
       : Math.round(Number(source.bitRate) / 1000) || 320;
   return Math.min(max, Math.max(32, kbps));
 }
+// Hi-Res output: 24-bit, and twice the sample rate when the source is below
+// 48 kHz (44.1 → 88.2 kHz, 32 → 64 kHz); 48 kHz and above keep their rate.
+// Upsampling adds no information; it only meets platforms' Hi-Res check.
+// source: { codec, sampleRate, bits (effective, 0 = unknown), float }.
+// Returns { action: "copy" | "encode" | "resample", codec, rate, from, reason }.
+const HIRES_FORMATS = { wav: "pcm_s24le", flac: "flac" };
+function hiResPlan(format, source = {}) {
+  const codec = HIRES_FORMATS[format];
+  if (!codec) throw Error("Hi-Res 只支持 WAV / FLAC 输出");
+  const sr = Number(source.sampleRate) || 0;
+  if (!sr) throw Error("读不到源音频的采样率，无法按 Hi-Res 输出");
+  const rate = sr < 48000 ? sr * 2 : sr;
+  const bits = Number(source.bits) || 0;
+  const from = `${sr / 1000} kHz / ${source.float ? "浮点" : bits ? bits + "-bit" : "位深未知"}`;
+  const to = `${rate / 1000} kHz / 24-bit`;
+  // Same 24-bit codec at the target rate: the samples go across untouched.
+  const same =
+    rate === sr &&
+    !source.float &&
+    bits === 24 &&
+    (source.codec === codec || (codec === "flac" && source.codec === "flac"));
+  if (same)
+    return {
+      action: "copy",
+      codec,
+      rate,
+      from,
+      to,
+      reason: "源音频已是 24-bit，直接复制",
+    };
+  const reduce = source.float || bits > 24;
+  return {
+    action: rate !== sr ? "resample" : "encode",
+    codec,
+    rate,
+    from,
+    to,
+    // 32-bit and floating-point sources are reduced to 24-bit with dither.
+    dither: reduce,
+    reason:
+      rate !== sr
+        ? `源低于 48 kHz，升到 ${rate / 1000} kHz`
+        : reduce
+          ? "降为 24-bit（加抖动）"
+          : "无损转为 24-bit",
+  };
+}
+// Audio options for a Hi-Res plan; soxr is FFmpeg's best resampler when the
+// installed build has it, otherwise its own resampler at high quality.
+function hiResArgs(plan, soxr) {
+  if (plan.action === "copy") return ["-c:a", "copy"];
+  const filter = hiResFilter(plan, soxr);
+  return [...(filter ? ["-af", filter] : []), ...hiResCodec(plan)];
+}
+// The resampling / dither filter, or "" when the samples need neither (a
+// same-rate, same-precision conversion).
+function hiResFilter(plan, soxr) {
+  if (plan.action !== "resample" && !plan.dither) return "";
+  const resampler = soxr
+    ? "resampler=soxr:precision=28"
+    : "filter_size=128:phase_shift=10:cutoff=0.97";
+  return `aresample=${plan.rate}:${resampler}${plan.dither ? ":dither_method=triangular" : ""}`;
+}
+function hiResCodec(plan) {
+  return [
+    "-c:a",
+    plan.codec,
+    ...(plan.codec === "flac"
+      ? ["-sample_fmt", "s32", "-bits_per_raw_sample", "24"]
+      : []),
+    "-ar",
+    String(plan.rate),
+  ];
+}
 // Pick MP4 only when the copied video and the output audio both fit in it.
 function mergeContainer(p, source = {}) {
   if (p.container !== "mp4") return "mkv";
+  // Hi-Res FLAC in MP4 is not known to pass platforms' checks: use MKV.
+  if (p.operation === "merge" && p.hiRes) return "mkv";
   if (source.videoCodec && !MP4_VIDEO.includes(source.videoCodec)) return "mkv";
   if (p.operation === "merge") {
     if (p.audioFormat === "wav") return "mkv";
@@ -67,19 +143,20 @@ function command(p, tools, output) {
     ![".mkv", ".mp4"].includes(ext)
   )
     throw Error("视频提取 / 合并使用 .mp4 或 .mkv 输出");
+  const hiRes = p.hiRes && p.operation !== "video";
+  const codecArgs = hiRes
+    ? hiResArgs(hiResPlan(p.audioFormat, p.sourceAudio), p.soxr)
+    : ["-c:a", audio[0]];
   const args = ["-hide_banner", "-nostdin", "-n", "-i", p.input];
   if (p.operation === "merge") args.push("-i", p.audioInput);
-  if (p.operation === "audio")
-    args.push("-map", "0:a:0", "-vn", "-c:a", audio[0]);
+  if (p.operation === "audio") args.push("-map", "0:a:0", "-vn", ...codecArgs);
   else
     args.push(
       "-map",
       "0:v:0",
       "-c:v",
       "copy",
-      ...(p.operation === "merge"
-        ? ["-map", "1:a:0", "-c:a", audio[0]]
-        : ["-an"]),
+      ...(p.operation === "merge" ? ["-map", "1:a:0", ...codecArgs] : ["-an"]),
     );
   if (
     ["aac", "libopus", "libmp3lame"].includes(audio[0]) &&
@@ -133,6 +210,10 @@ function suggestOutput(p, settings, exists) {
   throw Error("无法分配不重名的输出文件");
 }
 module.exports = {
+  hiResPlan,
+  hiResArgs,
+  hiResFilter,
+  hiResCodec,
   command,
   suggestOutput,
   audioBitrate,

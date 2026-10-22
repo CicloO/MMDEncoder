@@ -1,0 +1,12 @@
+# Local test media (kept out of git) can be several GB; never read it.
+tests/**/*.avi
+tests/**/*.mov
+tests/**/*.mp4
+tests/**/*.mkv
+tests/**/*.wav
+tests/**/*.pmm
+tests/**/*.emm
+tests/Encoded/
+release/
+verification/
+dist/

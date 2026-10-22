@@ -639,3 +639,107 @@ test(
     }
   },
 );
+
+test(
+  "the rendered video sets the length: short or missing WAV audio never drops frames",
+  { skip: !fs.existsSync(ff), timeout: 120000 },
+  async () => {
+    const { root, mx } = fresh();
+    try {
+      const wav = path.join(root, "music.wav");
+      execFileSync(ff, [
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:sample_rate=48000:duration=30",
+        wav,
+      ]);
+      const pmm = path.join(root, "scene.pmm");
+      fs.writeFileSync(
+        pmm,
+        Buffer.from("Polygon Movie maker 0002\0" + wav + "\0", "latin1"),
+      );
+      mx.writeConfig({
+        settings: {
+          ...preset("builtin-1080-sw").settings,
+          resizeMode: "source",
+        },
+        presetName: "x",
+        engines: { ffmpeg: ff, ffprobe: fp },
+        appExe: "",
+        helper: "",
+      });
+      const width = 160,
+        height = 120,
+        frames = 90; // 3 s at 30 fps
+      const exportAt = async (name, startFrame) => {
+        const avi = path.join(root, name + ".avi");
+        placeholderAvi(avi);
+        const p = mx.plan({
+          avi,
+          width,
+          height,
+          bits: 32,
+          bottomUp: true,
+          avgTimePerFrame: 333333,
+        });
+        await render(p, width, height, frames);
+        const notes = [];
+        const r = await mx.finish(
+          {
+            avi,
+            temp: p.temp,
+            output: p.output,
+            frames,
+            avgTimePerFrame: 333333,
+            startFrame,
+            pmm,
+          },
+          undefined,
+          (m) => notes.push(m),
+        );
+        const streams = JSON.parse(
+          execFileSync(
+            fp,
+            [
+              "-v",
+              "error",
+              "-count_packets",
+              "-show_streams",
+              "-of",
+              "json",
+              r.output,
+            ],
+            { encoding: "utf8" },
+          ),
+        ).streams;
+        return { r, notes, streams, temp: p.temp };
+      };
+      // 29 s into a 30 s song: 1 s of music, 3 s of video.
+      const short = await exportAt("short", 870);
+      const v = short.streams.find((s) => s.codec_type === "video");
+      const a = short.streams.find((s) => s.codec_type === "audio");
+      assert.equal(Number(v.nb_read_packets), frames, short.notes.join("\n"));
+      assert.equal(short.r.audio, "wav");
+      assert.ok(
+        Math.abs(Number(a.duration) - 3) < 0.05,
+        "audio padded to 3 s, got " + a.duration,
+      );
+      assert.ok(!fs.existsSync(short.temp));
+      // Starting after the song ends: no audio, every frame kept.
+      const past = await exportAt("past", 960);
+      assert.equal(past.r.audio, "none");
+      assert.match(past.notes.join("\n"), /超过工程 WAV 的结尾/);
+      assert.equal(
+        Number(
+          past.streams.find((s) => s.codec_type === "video").nb_read_packets,
+        ),
+        frames,
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);

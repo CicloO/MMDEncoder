@@ -163,3 +163,50 @@ test("install location can move installed tools, reuse an existing install and b
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test("a move that fails halfway puts everything back; a half-moved folder is not taken as an installation", () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-tools-fail-"));
+  const rename = fs.renameSync;
+  try {
+    const from = path.join(base, "a"),
+      to = path.join(base, "b");
+    fs.mkdirSync(path.join(from, "ffmpeg-1"), { recursive: true });
+    fs.writeFileSync(path.join(from, "ffmpeg-1", "ffmpeg.exe"), "");
+    fs.writeFileSync(path.join(from, "ffmpeg-1", "ffprobe.exe"), "");
+    fs.writeFileSync(
+      path.join(from, "active.json"),
+      JSON.stringify({ ffmpeg: { version: "1", directory: "ffmpeg-1" } }),
+    );
+    const tools = createTools({ root: from });
+    const before = tools.paths().ffmpeg;
+    assert.ok(before);
+    // The tool folder cannot be moved (in use, no permission, …).
+    fs.renameSync = (a, b) => {
+      if (String(a).includes("ffmpeg-1") && String(a).startsWith(from)) {
+        const e = Error("EACCES: permission denied");
+        e.code = "EACCES";
+        throw e;
+      }
+      return rename(a, b);
+    };
+    assert.throws(() => tools.relocate(to), /已恢复原位置/);
+    fs.renameSync = rename;
+    assert.equal(tools.state.root, from);
+    assert.equal(tools.paths().ffmpeg, before);
+    assert.ok(fs.existsSync(path.join(from, "active.json")));
+    assert.equal(fs.existsSync(path.join(to, "active.json")), false);
+
+    // A target holding only a manifest (what the old code left) is refused.
+    const half = path.join(base, "half");
+    fs.mkdirSync(half);
+    fs.copyFileSync(
+      path.join(from, "active.json"),
+      path.join(half, "active.json"),
+    );
+    assert.throws(() => tools.relocate(half), /不完整/);
+    assert.equal(tools.paths().ffmpeg, before);
+  } finally {
+    fs.renameSync = rename;
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
