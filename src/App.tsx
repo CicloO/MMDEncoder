@@ -43,6 +43,7 @@ import {
   PAGE_SIZE,
 } from "./components";
 import { MediaTools } from "./MediaTools";
+import { TrimTools } from "./TrimTools";
 import { MediaDetails } from "./MediaDetails";
 import { FileMeta, metaSummary } from "./FileMeta";
 import { RtxSettings } from "./RtxSettings";
@@ -120,6 +121,9 @@ export default function App() {
     [busy, setBusy] = useState(false),
     [drag, setDrag] = useState(false),
     [mediaDrop, setMediaDrop] = useState<{ paths: string[]; seq: number }>(),
+    [trimDrop, setTrimDrop] = useState<
+      { paths: string[]; seq: number } | undefined
+    >(),
     [presetId, setPresetId] = useState(""),
     [presetName, setPresetName] = useState(""),
     [log, setLog] = useState(""),
@@ -244,7 +248,8 @@ export default function App() {
     }
     const off = window.encoder.onUpdate(receive);
     const offClose = window.encoder.onCloseRequest(() => {
-      if (stateRef.current?.running) setModal("close");
+      if (stateRef.current?.running || stateRef.current?.trim?.running)
+        setModal("close");
       else void flushAndQuit();
     });
     window.encoder
@@ -624,6 +629,7 @@ export default function App() {
         const paths = window.encoder.getPaths(Array.from(e.dataTransfer.files));
         if (!paths.length) return;
         if (workspace === "media") setMediaDrop({ paths, seq: Date.now() });
+        else if (workspace === "trim") setTrimDrop({ paths, seq: Date.now() });
         else action("add", { paths });
       }}
     >
@@ -693,7 +699,26 @@ export default function App() {
         >
           音视频提取与合并
         </Button>
+        <Button
+          aria-pressed={workspace === "trim"}
+          onClick={() => {
+            setError("");
+            setWorkspace("trim");
+          }}
+        >
+          无损剪辑
+        </Button>
       </nav>
+      {workspace === "trim" && (
+        <div className="page">
+          <TrimTools
+            state={state}
+            call={call}
+            dropped={trimDrop}
+            onDropHandled={() => setTrimDrop(undefined)}
+          />
+        </div>
+      )}
       {workspace === "media" && (
         <div className="page">
           <MediaTools
@@ -1685,6 +1710,21 @@ export default function App() {
                       options={options(["bt709", "bt601", "bt2020"])}
                       onChange={(v) => set("colorSpace", v)}
                     />
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={!!s.editFriendly}
+                        onChange={(e) => set("editFriendly", e.target.checked)}
+                      />
+                      <span>
+                        剪辑友好：每秒一个关键帧
+                        <small className="hint hires-hint">
+                          {s.gop >= 0
+                            ? "已手动设置 GOP 间隔，此项不生效。"
+                            : "成片可以按约 1 秒的间隔无损裁切；同画质下文件约大 2%–5%（软件编码更多）。"}
+                        </small>
+                      </span>
+                    </label>
                     <div className="form-row">
                       {fieldNumber("gop", "GOP 间隔", -1, 10000, "-1 为自动")}
                       {fieldNumber("bframes", "B 帧", -1, 16, "-1 为自动")}
@@ -1879,7 +1919,9 @@ export default function App() {
           <h2>
             {workspace === "media"
               ? "松开以选择媒体文件"
-              : "松开以加入视频队列"}
+              : workspace === "trim"
+                ? "松开以加入剪辑片段"
+                : "松开以加入视频队列"}
           </h2>
         </div>
       )}
@@ -2203,6 +2245,24 @@ export default function App() {
               </small>
             </span>
           </label>
+          <label className="check-card">
+            <input
+              type="checkbox"
+              checked={state.mmd.rangeSuffix !== false}
+              disabled={mmdBusy}
+              onChange={(e) =>
+                mmdCall("mmdExportSet", { rangeSuffix: e.target.checked })
+              }
+            />
+            <span>
+              <strong>文件名加 MMD 帧范围</strong>
+              <small>
+                例如
+                场景_0400-0600f.mp4（按实际导出的帧计算）。起始帧也写进文件里，“无损剪辑”按
+                MMD 帧号定位时会用到。
+              </small>
+            </span>
+          </label>
           {/* Overrides the preset's own alpha setting; the same choice as
               in MMD's 詳細設定, where a change wins over this window. */}
           <Select
@@ -2431,7 +2491,10 @@ export default function App() {
                 />
                 <Button
                   disabled={
-                    state.tools.busy || state.running || state.detecting
+                    state.tools.busy ||
+                    state.running ||
+                    state.trim.running ||
+                    state.detecting
                   }
                   title="已安装的工具会一起移到新位置；选择已装有本软件工具的文件夹则直接使用"
                   onClick={async () => {
@@ -2453,7 +2516,10 @@ export default function App() {
                 </Button>
                 <Button
                   disabled={
-                    state.tools.busy || state.running || state.detecting
+                    state.tools.busy ||
+                    state.running ||
+                    state.trim.running ||
+                    state.detecting
                   }
                   onClick={() =>
                     action("setToolsRoot", { root: "" }, "已恢复默认安装位置")
@@ -2480,7 +2546,10 @@ export default function App() {
               <div className="row-actions">
                 <Button
                   disabled={
-                    state.tools.busy || state.running || state.detecting
+                    state.tools.busy ||
+                    state.running ||
+                    state.trim.running ||
+                    state.detecting
                   }
                   onClick={() => action("checkTools")}
                 >
@@ -2488,7 +2557,10 @@ export default function App() {
                 </Button>
                 <Button
                   disabled={
-                    state.tools.busy || state.running || state.detecting
+                    state.tools.busy ||
+                    state.running ||
+                    state.trim.running ||
+                    state.detecting
                   }
                   onClick={() => action("installTools")}
                 >
@@ -2500,7 +2572,9 @@ export default function App() {
                 </Button>
               </div>
             </div>
-            {state.running && <p>编码结束后可更新工具。</p>}
+            {(state.running || state.trim.running) && (
+              <p>编码或剪辑导出结束后可更新工具。</p>
+            )}
           </section>
         )}
         <div className="engine-list">
@@ -2684,7 +2758,7 @@ export default function App() {
         open={modal === "close"}
         onClose={() => setModal("")}
         title="退出 MMDEncoder"
-        description="队列仍在运行。退出将取消未完成任务，保留原视频和已完成输出。"
+        description="队列或剪辑导出仍在运行。退出将取消未完成任务，保留原视频和已完成输出。"
       >
         <div className="modal-actions">
           <Button autoFocus onClick={() => setModal("")}>

@@ -78,6 +78,7 @@ test(
         resizeMode: "source",
       };
       mx.writeConfig({
+        rangeSuffix: false,
         settings,
         presetName: "默认 1080p · CPU",
         engines: { ffmpeg: ff, ffprobe: fp },
@@ -189,6 +190,7 @@ test(
     const { root, mx } = fresh();
     try {
       mx.writeConfig({
+        rangeSuffix: false,
         settings: { ...preset("builtin-1080-sw").settings, audio: "none" },
         presetName: "x",
         engines: { ffmpeg: ff, ffprobe: fp },
@@ -262,6 +264,7 @@ test(
         Buffer.from("Polygon Movie maker 0002\0" + wav + "\0", "latin1"),
       );
       mx.writeConfig({
+        rangeSuffix: false,
         settings: { ...preset("builtin-1080-sw").settings, audio: "flac" },
         presetName: "x",
         audioFade: 0.5,
@@ -399,6 +402,7 @@ test(
         height = 240,
         frames = 30;
       mx.writeConfig({
+        rangeSuffix: false,
         settings: {
           ...preset("builtin-1080-sw").settings,
           resizeMode: "source",
@@ -505,6 +509,7 @@ test(
 
       // Mask-only preset: the output is the mask itself, named _alpha, no audio.
       mx.writeConfig({
+        rangeSuffix: false,
         settings: { ...preset("builtin-4k").settings, alphaMode: "mask" },
         presetName: "mask",
         engines: { ffmpeg: ff, ffprobe: fp },
@@ -551,6 +556,7 @@ test(
         height = 120,
         frames = 12;
       mx.writeConfig({
+        rangeSuffix: false,
         settings: {
           ...preset("builtin-1080-sw").settings,
           resizeMode: "source",
@@ -599,6 +605,7 @@ test(
 
       // MMD gone mid-render: the frames written so far can be finished later.
       mx.writeConfig({
+        rangeSuffix: false,
         settings: {
           ...preset("builtin-1080-sw").settings,
           resizeMode: "source",
@@ -662,6 +669,7 @@ test(
         Buffer.from("Polygon Movie maker 0002\0" + wav + "\0", "latin1"),
       );
       mx.writeConfig({
+        rangeSuffix: false,
         settings: {
           ...preset("builtin-1080-sw").settings,
           resizeMode: "source",
@@ -738,6 +746,77 @@ test(
         ),
         frames,
       );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "MMD frame range in the name (_0400-0444f) and in the file's tag, mask named alike",
+  { skip: !fs.existsSync(ff), timeout: 120000 },
+  async () => {
+    const { root, mx } = fresh();
+    try {
+      mx.writeConfig({
+        settings: {
+          ...preset("builtin-1080-sw").settings,
+          resizeMode: "source",
+          audio: "none",
+        },
+        presetName: "x",
+        maskMode: "with",
+        engines: { ffmpeg: ff, ffprobe: fp },
+        appExe: "",
+        helper: "",
+      });
+      const avi = path.join(root, "舞台.avi");
+      placeholderAvi(avi);
+      const runtime = {
+        avi,
+        width: 160,
+        height: 120,
+        bits: 32,
+        bottomUp: true,
+        avgTimePerFrame: 166667,
+        startFrame: 400,
+      };
+      const p = mx.plan(runtime);
+      await render(p, 160, 120, 90);
+      const r = await mx.finish(
+        {
+          avi,
+          temp: p.temp,
+          output: p.output,
+          frames: 90,
+          avgTimePerFrame: 166667,
+          startFrame: 400,
+          pmm: "",
+        },
+        undefined,
+      );
+      // 90 frames at 60 fps = 45 MMD frames: 400–444.
+      assert.equal(r.output, path.join(root, "舞台_0400-0444f.mp4"));
+      assert.equal(r.mask, path.join(root, "舞台_0400-0444f_alpha.mp4"));
+      const tags = JSON.parse(
+        execFileSync(
+          fp,
+          [
+            "-v",
+            "error",
+            "-show_entries",
+            "format_tags=comment",
+            "-of",
+            "json",
+            r.output,
+          ],
+          { encoding: "utf8" },
+        ),
+      ).format.tags;
+      const tag = require("../backend/core.cjs").readTag(tags.comment);
+      assert.equal(tag.mmd.start, 400);
+      assert.equal(tag.enc.encoder, "libx264");
+      assert.equal(tag.enc.quality, 21);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

@@ -85,8 +85,13 @@ else {
           throw new Error("不受信任的界面");
         if (action === "quit") {
           await service.invoke("cancel");
+          await service.invoke("trimCancel");
           const deadline = Date.now() + 5000;
-          while (service.getState().running && Date.now() < deadline)
+          const busy = () => {
+            const s = service.getState();
+            return s.running || s.trim?.running;
+          };
+          while (busy() && Date.now() < deadline)
             await new Promise((resolve) => setTimeout(resolve, 50));
           quitting = true;
           service.dispose();
@@ -297,8 +302,10 @@ else {
         }
         if (action === "installAppUpdate") {
           const s = service.getState();
-          if (s.running || s.detecting || s.tools?.busy)
-            throw new Error("请等待当前压制、检测或工具安装结束后再更新");
+          if (s.running || s.trim?.running || s.detecting || s.tools?.busy)
+            throw new Error(
+              "请等待当前压制、剪辑导出、检测或工具安装结束后再更新",
+            );
           updater.install();
           quitting = true;
           service.dispose();
@@ -335,6 +342,16 @@ else {
           "mediaSuggest",
           "mediaAdd",
           "mediaSetAudio",
+          "trimAdd",
+          "trimRemove",
+          "trimDuplicate",
+          "trimReorder",
+          "trimSet",
+          "trimFrame",
+          "trimExport",
+          "trimSmart",
+          "trimCancel",
+          "trimClear",
           "mediaLog",
           "mediaRemove",
           "mediaClearCompleted",

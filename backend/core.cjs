@@ -29,6 +29,9 @@ const DEFAULTS = {
   colorSpace: "bt709",
   colorRange: "tv",
   gop: -1,
+  // A keyframe every second of output (when gop is automatic), so the result
+  // can be cut losslessly (backend/trim.cjs) at short intervals.
+  editFriendly: false,
   bframes: -1,
   lookahead: 0,
   lookaheadLevel: 0,
@@ -384,6 +387,7 @@ function validate(s, meta) {
   );
   check(typeof s.alphaMask === "boolean", "透明遮罩开关无效");
   check(typeof s.hiRes === "boolean", "Hi-Res 开关无效");
+  check(typeof s.editFriendly === "boolean", "剪辑友好开关无效");
   if (s.hiRes)
     check(
       ["flac", "pcm_s16le"].includes(s.audio),
@@ -759,6 +763,9 @@ function videoOptions(s) {
         String(s.quality),
       );
   } else {
+    // Closed GOP: x265 defaults to open GOP, whose keyframes cannot start a
+    // lossless cut; closing it costs about 0.1–0.4% (docs/开发计划.md).
+    if (s.encoder === "libx265") a.push("-x265-params", "open-gop=0");
     if (["libx264", "libx265"].includes(s.encoder))
       a.push(
         "-preset",
@@ -844,7 +851,59 @@ function inputArgs(job) {
       ]
     : ["-i", job.path];
 }
+// Written into each output's "comment" tag: how it was encoded, so the
+// lossless trim page can re-encode cut edges with exactly these settings
+// (smart cut), and where an MMD export starts on MMD's timeline.
+const TAG = "MMDEncoder ";
+const TAG_KEYS = [
+  "encoder",
+  "preset",
+  "quality",
+  "rateControl",
+  "bitrate",
+  "bitDepth",
+  "chroma",
+  "gop",
+  "bframes",
+  "lookahead",
+  "lookaheadLevel",
+  "colorSpace",
+  "colorRange",
+];
+function encodeTag(s, extra = {}) {
+  return (
+    TAG +
+    JSON.stringify({
+      v: 1,
+      enc: Object.fromEntries(TAG_KEYS.map((k) => [k, s[k]])),
+      ...extra,
+    })
+  );
+}
+// The tag's content, or null when a file was not made by MMDEncoder.
+function readTag(comment) {
+  if (typeof comment !== "string" || !comment.startsWith(TAG)) return null;
+  try {
+    const v = JSON.parse(comment.slice(TAG.length));
+    return v && v.v === 1 ? v : null;
+  } catch {
+    return null;
+  }
+}
+// The keyframe interval "edit friendly" asks for: one per second of output.
+function keyframes(s, meta) {
+  if (!s.editFriendly || s.gop >= 0) return s;
+  let out = 0;
+  try {
+    out = parseFps(s.fps)?.value || 0;
+  } catch {} // reported by validate()
+  const fps =
+    (out || Number(meta?.fps) || 30) *
+    (s.vfg ? Number(s.vfgMultiplier) || 1 : 1);
+  return { ...s, gop: Math.max(1, Math.round(fps)) };
+}
 function buildCommands(job, s, engines, paths) {
+  s = keyframes(s, job.meta);
   const errors = validate(s, job.meta);
   if (errors.length) throw Error(errors.join("；"));
   const base = ["-hide_banner", "-nostdin", "-n"];
@@ -1008,6 +1067,8 @@ function buildCommands(job, s, engines, paths) {
           "-c",
           "copy",
           ...colors,
+          "-metadata",
+          "comment=" + encodeTag(s, paths.tag),
           "-progress",
           "pipe:1",
           output,
@@ -1028,6 +1089,8 @@ function buildCommands(job, s, engines, paths) {
           ...videoOptions(ms),
           ...(mask ? ["-an"] : audio),
           ...colors,
+          "-metadata",
+          "comment=" + encodeTag(ms, paths.tag),
           "-fps_mode",
           "passthrough",
           ...(["mp4", "mov"].includes(s.container)
@@ -1188,6 +1251,8 @@ function compatibility(s, engines = ENGINES) {
 }
 module.exports = {
   PRORES_QUALITY,
+  encodeTag,
+  readTag,
   inputArgs,
   audioInfo,
   compatibility,

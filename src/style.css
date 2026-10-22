@@ -1299,3 +1299,94 @@ html[data-theme="light"] {
 .checkbox-row:has(.hires-hint) {
   align-items: flex-start;
 }
+/* Lossless trim editor */
+.trim-editor:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.trim-preview {
+  display: grid;
+  place-items: center;
+  height: 280px;
+  margin: 12px 0;
+  border-radius: 8px;
+  background: #101318;
+  overflow: hidden;
+}
+.trim-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.trim-position {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.trim-position span {
+  color: var(--color-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+}
+.trim-position .cut-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
+  font-family: inherit;
+  font-size: 12px;
+}
+.trim-track {
+  position: relative;
+  height: 28px;
+  margin: 8px 0 4px;
+}
+.trim-track input[type="range"] {
+  position: relative;
+  width: 100%;
+  margin: 0;
+  height: 28px;
+  background: transparent;
+  accent-color: var(--color-primary);
+}
+.trim-range {
+  position: absolute;
+  top: 10px;
+  height: 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+.trim-tick {
+  position: absolute;
+  top: 4px;
+  width: 2px;
+  height: 20px;
+  margin-left: -1px;
+  background: var(--color-success);
+  opacity: 0.7;
+}
+.trim-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+.file-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.file-pick .path-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mmd-start {
+  margin: 4px 0 0;
+}
+.mmd-start input {
+  width: 90px;
+}

@@ -64,6 +64,8 @@ function readSelection() {
         : s.alphaMask === true
           ? "with"
           : "",
+      // Add the MMD frame range to the file name (_0400-0600f).
+      rangeSuffix: s.rangeSuffix !== false,
       savedAt: typeof s.savedAt === "string" ? s.savedAt : "",
     };
   } catch {
@@ -76,12 +78,14 @@ function writeSelection({
   followMmd = true,
   audioFade = 0,
   maskMode = "off",
+  rangeSuffix = true,
   savedAt,
 }) {
   const selection = {
     presetId,
     followMmd,
     audioFade,
+    rangeSuffix: rangeSuffix !== false,
     maskMode: MASK_MODES.includes(maskMode) ? maskMode : "off",
     // For MMDEncoder 1.4.1 and its plugin, which only know this switch.
     alphaMask: maskMode === "with",
@@ -102,6 +106,7 @@ function writeConfig({
   followMmd = true,
   audioFade = 0,
   maskMode = "",
+  rangeSuffix = true,
   engines,
   appExe,
   helper,
@@ -110,6 +115,7 @@ function writeConfig({
     const id = presetId || "export";
     presets = [{ id, name: presetName, settings }];
     writeSelection({
+      rangeSuffix,
       presetId: id,
       followMmd,
       audioFade,
@@ -163,6 +169,7 @@ function readConfig() {
     followMmd: selection.followMmd,
     audioFade: selection.audioFade,
     maskMode,
+    rangeSuffix: selection.rangeSuffix,
   };
 }
 
@@ -312,7 +319,15 @@ function plan(runtime, config = readConfig()) {
     job,
     { ...out, audio: "none", hiRes: false },
     config.engines,
-    { output: temp, maskOutput: mask ? maskTemp(temp) : undefined },
+    {
+      output: temp,
+      maskOutput: mask ? maskTemp(temp) : undefined,
+      // Where the export starts on MMD's timeline, for the trim page.
+      tag:
+        Number.isInteger(runtime.startFrame) && runtime.startFrame >= 0
+          ? { mmd: { start: runtime.startFrame } }
+          : {},
+    },
   );
   // DirectShow frames are usually stored bottom-up.
   const flip = runtime.bottomUp ? "vflip," : "";
@@ -375,6 +390,7 @@ function plan(runtime, config = readConfig()) {
     settings: { ...s, alphaMask: mask },
     engines: config.engines,
     audioFade: config.audioFade,
+    rangeSuffix: config.rangeSuffix !== false,
   });
   return result;
 }
@@ -475,6 +491,31 @@ function audioArgs(s) {
   return args;
 }
 
+// The MMD frame range in the name, as rendered: "scene.mp4" with frames
+// 400–600 → "scene_0400-0600f.mp4" (a mask-only "scene_alpha.mp4" →
+// "scene_0400-0600f_alpha.mp4"). The end counts the frames that really
+// arrived, so a cancelled render names what it holds.
+function withRange(output, config, job) {
+  if (
+    config.rangeSuffix === false ||
+    !(job.startFrame >= 0) ||
+    !(job.frames > 0)
+  )
+    return output;
+  const rate = frameRate(job.avgTimePerFrame);
+  const end =
+    job.startFrame +
+    Math.max(1, Math.round((job.frames * TIMELINE_FPS * rate.den) / rate.num)) -
+    1;
+  const pad = (n) => String(n).padStart(4, "0");
+  const ext = path.extname(output);
+  const stem = output.slice(0, -ext.length);
+  const suffix = `_${pad(job.startFrame)}-${pad(end)}f`;
+  return stem.endsWith("_alpha")
+    ? stem.slice(0, -6) + suffix + "_alpha" + ext
+    : stem + suffix + ext;
+}
+
 // The output's name, or "<name> (2)" and so on when that name (or its mask's)
 // was taken while MMD rendered: never overwrite someone's file.
 function freeOutput(output, withMask) {
@@ -516,8 +557,8 @@ async function finish(
   const s = config.settings;
   const matte = maskTemp(job.temp);
   const hasMask = matte !== job.temp && fs.existsSync(matte);
-  const planned = job.output;
-  job = { ...job, output: freeOutput(job.output, hasMask) };
+  const planned = withRange(job.output, config, job);
+  job = { ...job, output: freeOutput(planned, hasMask) };
   if (job.output !== planned)
     log("同名文件在导出期间已存在，改存为：" + job.output);
   const rate = frameRate(job.avgTimePerFrame);
@@ -815,6 +856,7 @@ module.exports = {
   FADES,
   MASK_MODES,
   presetMask,
+  withRange,
   snapshotPath,
   interrupted,
   recover,

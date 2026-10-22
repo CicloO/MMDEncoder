@@ -76,25 +76,31 @@ function describe(dir, g) {
 }
 
 // The sequence a PNG file belongs to, or the largest one in a folder; null
-// when there is no sequence of at least two frames.
-function find(target) {
+// when there is no sequence of at least two frames. Pass the same memo (a
+// Map) for many picks at once: each folder is then read and described once.
+function find(target, memo = new Map()) {
+  const scanned = (dir) => {
+    if (!memo.has(dir)) memo.set(dir, scan(dir));
+    return memo.get(dir);
+  };
+  const described = (dir, g) => (g.described ||= describe(dir, g));
   const stat = fs.statSync(target);
   if (stat.isDirectory()) {
-    const groups = scan(target).sort(
+    const groups = [...scanned(target)].sort(
       (a, b) => b.frames.length - a.frames.length,
     );
     const g = groups.find((g) => g.frames.length >= 2);
-    return g ? describe(target, g) : null;
+    return g ? described(target, g) : null;
   }
   const dir = path.dirname(target);
   const m = PNG.exec(path.basename(target));
   if (!m) return null;
-  const g = scan(dir).find((g) =>
+  const g = scanned(dir).find((g) =>
     g.frames.some(
       (f) => f.file.toLowerCase() === path.basename(target).toLowerCase(),
     ),
   );
-  return g && g.frames.length >= 2 ? describe(dir, g) : null;
+  return g && g.frames.length >= 2 ? described(dir, g) : null;
 }
 
 module.exports = { find };

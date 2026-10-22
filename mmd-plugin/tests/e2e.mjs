@@ -147,7 +147,8 @@ try {
   );
 
   // The finish step runs in the background after the render.
-  const mp4 = path.join(dir, "导出 test.mp4");
+  // MMD frames 300–359 in the name (rangeSuffix is on by default).
+  const mp4 = path.join(dir, "导出 test_0300-0359f.mp4");
   for (let i = 0; i < 120 && (fs.existsSync(avi) || !fs.existsSync(mp4)); i++)
     await new Promise((r) => setTimeout(r, 500));
   check(fs.existsSync(mp4), "MP4 created next to the AVI with the AVI's name");
@@ -156,7 +157,7 @@ try {
     !fs.readdirSync(dir).some((n) => n.includes(".mmdencoder-")),
     "temporary video and mask removed",
   );
-  const mask = path.join(dir, "导出 test_alpha.mp4");
+  const mask = path.join(dir, "导出 test_0300-0359f_alpha.mp4");
   if (fs.existsSync(mask)) {
     const m = probe(mask).streams;
     check(

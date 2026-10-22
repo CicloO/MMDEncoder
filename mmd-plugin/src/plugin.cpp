@@ -333,7 +333,7 @@ static bool readFile(const std::wstring& path, std::string& out);
 // saved to mmd-selection.json, which MMDEncoder also reads and writes; MMDEncoder adopts a
 // choice saved here as soon as it lands.
 
-enum { IDC_PRESET = 101, IDC_FOLLOW = 102, IDC_FADE = 103, IDC_MASK = 104, IDC_OPEN_APP = 105 };
+enum { IDC_PRESET = 101, IDC_FOLLOW = 102, IDC_FADE = 103, IDC_MASK = 104, IDC_OPEN_APP = 105, IDC_SUFFIX = 106 };
 static const double kFades[] = {0, 0.5, 1, 2};
 static const wchar_t* kFadeNames[] = {L"关闭", L"0.5 秒", L"1 秒", L"2 秒"};
 // Alpha mask: the choice overrides the preset's own alpha setting.
@@ -348,6 +348,7 @@ struct SettingsContext {
   std::vector<Preset> presets;
   std::wstring presetId;
   bool followMmd = true;
+  bool rangeSuffix = true;  // name the file with the MMD frame range (_0400-0600f)
   int maskMode = -1;  // index into kMaskModes; -1 = saved by 1.4.1, the preset decides
   double audioFade = 0;
   std::wstring appExe;  // MMDEncoder.exe, from mmd-export.json
@@ -419,6 +420,7 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
     }
     SendMessageW(presets, CB_SETCURSEL, selected, 0);
     CheckDlgButton(dlg, IDC_FOLLOW, ctx->followMmd ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(dlg, IDC_SUFFIX, ctx->rangeSuffix ? BST_CHECKED : BST_UNCHECKED);
     HWND fade = GetDlgItem(dlg, IDC_FADE);
     int fadeIndex = 0;
     for (int i = 0; i < 4; i++) {
@@ -457,6 +459,7 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
       }
       ctx->presetId = ctx->presets[i].id;
       ctx->followMmd = IsDlgButtonChecked(dlg, IDC_FOLLOW) == BST_CHECKED;
+      ctx->rangeSuffix = IsDlgButtonChecked(dlg, IDC_SUFFIX) == BST_CHECKED;
       int f = (int)SendDlgItemMessageW(dlg, IDC_FADE, CB_GETCURSEL, 0, 0);
       ctx->audioFade = kFades[f < 0 ? 0 : f];
       int m = (int)SendDlgItemMessageW(dlg, IDC_MASK, CB_GETCURSEL, 0, 0);
@@ -493,6 +496,7 @@ static void showSettings(HWND parent) {
   if (readFile(dir + L"\\mmd-selection.json", raw) && JsonReader(raw).parse(selection)) {
     ctx.presetId = selection[L"presetId"].s;
     ctx.followMmd = selection[L"followMmd"].type != Json::Bool || selection[L"followMmd"].b;
+    ctx.rangeSuffix = selection[L"rangeSuffix"].type != Json::Bool || selection[L"rangeSuffix"].b;
     ctx.audioFade = selection[L"audioFade"].n;
     for (int i = 0; i < 3; i++)
       if (selection[L"maskMode"].s == utf16(kMaskModes[i])) ctx.maskMode = i;
@@ -502,22 +506,24 @@ static void showSettings(HWND parent) {
   }
   ctx.appExe = config[L"appExe"].s;
 
-  DialogTemplate t(L"MMDEncoder 导出设置", 270, 148);
+  DialogTemplate t(L"MMDEncoder 导出设置", 270, 162);
   const WORD STATIC_ = 0x0082, BUTTON_ = 0x0080, COMBO_ = 0x0085;
   t.control(0xFFFF, STATIC_, SS_LEFT, 10, 8, 250, 9, L"导出预设");
   t.control(IDC_PRESET, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 19, 250, 160, L"");
   t.control(IDC_FOLLOW, BUTTON_, BS_AUTOCHECKBOX | WS_TABSTOP, 10, 38, 250, 11,
-            L"分辨率和帧率跟随 MMD（用这里设定的尺寸和帧率）");
-  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 54, 120, 9, L"Alpha 遮罩（同名 _alpha 黑白视频）");
-  t.control(IDC_MASK, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 65, 120, 80, L"");
-  t.control(0xFFFF, STATIC_, SS_LEFT, 140, 54, 120, 9, L"音频淡入淡出");
-  t.control(IDC_FADE, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 140, 65, 120, 80, L"");
-  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 88, 250, 34,
-            L"成片保存在 AVI 同目录、同名，自动合成音频，完成后删除占位 AVI。"
+            L"分辨率和帧率跟随 MMD");
+  t.control(IDC_SUFFIX, BUTTON_, BS_AUTOCHECKBOX | WS_TABSTOP, 10, 52, 250, 11,
+            L"文件名加 MMD 帧范围");
+  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 68, 120, 9, L"Alpha 遮罩");
+  t.control(IDC_MASK, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 79, 120, 80, L"");
+  t.control(0xFFFF, STATIC_, SS_LEFT, 140, 68, 120, 9, L"音频淡入淡出");
+  t.control(IDC_FADE, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 140, 79, 120, 80, L"");
+  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 102, 250, 34,
+            L"成片保存在 AVI 同目录、以 AVI 的文件名命名，自动合成音频，完成后删除占位 AVI。"
             L"遮罩选项优先于预设自带的遮罩设置。这里的选择与 MMDEncoder 的“MMD 导出”同步，以最后保存的为准。");
-  t.control(IDC_OPEN_APP, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 10, 126, 80, 15, L"打开 MMDEncoder");
-  t.control(IDOK, BUTTON_, BS_DEFPUSHBUTTON | WS_TABSTOP, 148, 126, 54, 15, L"确定");
-  t.control(IDCANCEL, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 206, 126, 54, 15, L"取消");
+  t.control(IDC_OPEN_APP, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 10, 140, 80, 15, L"打开 MMDEncoder");
+  t.control(IDOK, BUTTON_, BS_DEFPUSHBUTTON | WS_TABSTOP, 148, 140, 54, 15, L"确定");
+  t.control(IDCANCEL, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 206, 140, 54, 15, L"取消");
   if (DialogBoxIndirectParamW(g_module, t.get(), parent, settingsProc, (LPARAM)&ctx) != 1) return;
 
   SYSTEMTIME st;
@@ -529,6 +535,7 @@ static void showSettings(HWND parent) {
   std::string json = "{\n  \"presetId\": " + jsonString(ctx.presetId) + ",\n  \"followMmd\": " +
                      (ctx.followMmd ? "true" : "false") + ",\n  \"maskMode\": \"" + kMaskModes[ctx.maskMode] +
                      "\",\n  \"alphaMask\": " + (ctx.maskMode == 1 ? "true" : "false") +
+                     ",\n  \"rangeSuffix\": " + (ctx.rangeSuffix ? "true" : "false") +
                      ",\n  \"audioFade\": " + fade +
                      ",\n  \"savedAt\": \"" + saved + "\"\n}\n";
   std::wstring file = dir + L"\\mmd-selection.json", tmp = file + L".tmp";

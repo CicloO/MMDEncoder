@@ -202,14 +202,18 @@ test(
     try {
       const appDir = path.join(root, "app");
       portable(appDir, "1.0.0");
-      const preserved = path.join(appDir, ".update", "old", "preserved.txt");
-      fs.mkdirSync(path.dirname(preserved), { recursive: true });
-      fs.writeFileSync(preserved, "earlier program files");
-      const kept = () =>
-        assert.equal(
-          fs.readFileSync(preserved, "utf8"),
-          "earlier program files",
-        );
+      // Several earlier failed restores, each kept in its own numbered folder.
+      const kept_ = ["old", "old-2", "old-3"].map((n) =>
+        path.join(appDir, ".update", n, "preserved.txt"),
+      );
+      for (const p of kept_) {
+        fs.mkdirSync(path.dirname(p), { recursive: true });
+        fs.writeFileSync(p, "earlier program files");
+      }
+      const kept = () => {
+        for (const p of kept_)
+          assert.equal(fs.readFileSync(p, "utf8"), "earlier program files", p);
+      };
       const logDir = path.join(root, "logs");
       const make = (fetchImpl) =>
         createUpdater({
@@ -248,7 +252,7 @@ test(
         if (
           fs.existsSync(log) &&
           /更新完成|更新失败/.test(fs.readFileSync(log, "utf8")) &&
-          !fs.existsSync(path.join(appDir, ".update", "old-2"))
+          !fs.existsSync(path.join(appDir, ".update", "old-4"))
         )
           break;
         await new Promise((r) => setTimeout(r, 200));

@@ -19,6 +19,8 @@ export type Settings = {
   alphaMask: boolean;
   // Hi-Res audio (FLAC / PCM): 24-bit, twice the rate below 48 kHz.
   hiRes: boolean;
+  // A keyframe every second (automatic GOP only), for lossless cutting.
+  editFriendly: boolean;
   alphaMode: string;
   outputMode: string;
   outputDir: string;
@@ -96,6 +98,32 @@ export type MediaMeta = Partial<Meta> & {
   audioOnly?: boolean;
   bitRate?: number;
 };
+export type TrimClip = {
+  id: string;
+  path: string;
+  name: string;
+  status: "indexing" | "ready" | "invalid";
+  error?: string;
+  codec?: string;
+  width?: number;
+  height?: number;
+  fps?: { num: number; den: number };
+  frames?: number;
+  // Frames a cut may start at, or "all" when every frame can.
+  cuts?: number[] | "all";
+  refused?: string[];
+  // MMD frame of the video's first frame and where that came from.
+  mmdStart?: number | null;
+  mmdStartFrom?: "tag" | "name" | "manual" | "";
+  // Encode settings recorded by MMDEncoder (needed for smart cut).
+  encoding?: Record<string, unknown> | null;
+  // Why smart cut cannot be used on this clip ("" when it can).
+  smartBlocker?: string;
+  from?: number;
+  to?: number;
+  requested?: { from: number; to: number };
+  empty?: boolean;
+};
 export type MediaJob = {
   meta?: MediaMeta;
   metaError?: string;
@@ -146,11 +174,22 @@ export type State = {
     signature: string;
   };
   mediaJobs: MediaJob[];
+  // Lossless trim page (backend/trim.cjs through the service).
+  trim: {
+    clips: TrimClip[];
+    running: boolean;
+    smart: boolean;
+    progress: number;
+    stage: string;
+    output: string;
+    error: string;
+  };
   mmd: {
     presetId: string;
     followMmd: boolean;
     audioFade: number;
     maskMode: "off" | "with" | "only";
+    rangeSuffix?: boolean;
     error: string;
     interrupted: {
       id: string;

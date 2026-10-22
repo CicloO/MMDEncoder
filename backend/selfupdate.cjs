@@ -173,7 +173,7 @@ function createUpdater({
   // A folder "old" (or "old-2", …) means a swap could not be restored: it
   // holds earlier program files the user may still need, so nothing here ever
   // deletes it — not a new download, not a failed one, not the next install.
-  const isRecovery = (name) => /^old(-d+)?$/.test(name);
+  const isRecovery = (name) => /^old(-\d+)?$/.test(name);
   // Remove what downloads left behind (zip, unpacked "new"), keeping "old*".
   function clearWork() {
     let names = [];

@@ -89,8 +89,9 @@ try {
   // FFmpeg comes from the managed tools folder, never from PATH (cut to System32 above).
   assert.ok(engines.ffmpeg && engines.ffprobe, JSON.stringify(engines));
   assert.ok(
+    // Paths only (engineInfo also holds flags such as soxr).
     Object.values(engines)
-      .filter(Boolean)
+      .filter((p) => typeof p === "string" && p)
       .every((p) =>
         path.resolve(p).toLowerCase().startsWith(toolsRoot.toLowerCase()),
       ),
