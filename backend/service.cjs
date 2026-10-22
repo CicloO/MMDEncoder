@@ -13,6 +13,22 @@ const media = require("./media.cjs");
 const { createTools, DEFAULT_ROOT } = require("./tools.cjs");
 const mmdExport = require("./mmd-export.cjs");
 const mmdPlugin = require("./mmd-plugin.cjs");
+const sequence = require("./sequence.cjs");
+// Frame rate a PNG sequence starts with; it can be changed per sequence.
+const SEQUENCE_FPS = 30;
+const SEQUENCE_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120];
+// The NTSC rates as exact fractions for FFmpeg.
+const sequenceRate = (fps) => ({
+  fps,
+  fpsText:
+    { 23.976: "24000/1001", 29.97: "30000/1001", 59.94: "60000/1001" }[fps] ||
+    String(fps),
+});
+// Output names come from the sequence name (frame_0001.png → frame).
+const nameSource = (job) =>
+  job.sequence
+    ? path.join(job.sequence.dir, job.sequence.name + ".png")
+    : job.path;
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
   engineDir,
@@ -32,7 +48,9 @@ function createService({
   const children = new Set();
   const pendingLogs = new Map();
   let evidenceTimer = null,
-    hadJobs = false;
+    hadJobs = false,
+    pushTimer = null,
+    lastPush = 0;
   let active = null,
     stopped = false,
     disposed = false,
@@ -58,15 +76,21 @@ function createService({
       presetId: "",
       followMmd: true,
       audioFade: 0,
-      alphaMask: false,
+      // "off" | "with" | "only"; "" until a preset decides (settings from 1.4.1).
+      maskMode: "",
       savedAt: "",
       error: "",
       plugin: { available: false, installed: false, upToDate: false, path: "" },
       test: null,
       lastExport: null,
+      // Exports cut off when MMD crashed or closed (see mmd-export interrupted()).
+      interrupted: [],
     },
     engineInfo: { ffmpeg: "", ffprobe: "", nvencc: "" },
     detectionLog: "",
+    // Built-ins the user had edited that an update changed: the user's version
+    // waits here until they choose to drop it or keep it as a personal preset.
+    presetConflicts: [],
   };
   // A tools folder chosen in the app is remembered in data/tools-location.json;
   // an explicit toolsRoot (environment / tests) always wins.
@@ -92,7 +116,33 @@ function createService({
       evidenceTimer.unref();
     }
     hadJobs ||= state.jobs.length > 0;
-    if (!disposed && typeof onUpdate === "function") onUpdate(clone(state));
+    if (disposed || typeof onUpdate !== "function") return;
+    push();
+  }
+  // Encoder output: FFmpeg prints progress many times a second, and each push
+  // copies the whole state to the window, so these go out at most every
+  // 200 ms; the last one is always sent, at most 200 ms late. Status changes
+  // use emit() and go out at once.
+  function emitProgress() {
+    if (disposed || typeof onUpdate !== "function" || pushTimer) return;
+    const wait = lastPush + 200 - Date.now();
+    if (wait > 0) {
+      pushTimer = setTimeout(push, wait);
+      pushTimer.unref?.();
+    } else push();
+  }
+  function push() {
+    clearTimeout(pushTimer);
+    pushTimer = null;
+    lastPush = Date.now();
+    if (disposed) return;
+    // The window reads a video job's log through the "logs" action; leaving
+    // the up-to-200 KB logs out keeps each push small however long the queue.
+    const s = clone({
+      ...state,
+      jobs: state.jobs.map(({ log, ...j }) => j),
+    });
+    onUpdate(s);
   }
   // Batch writes rather than synchronously touching disk for every encoder line.
   // The renderer receives a bounded tail; the on-disk task log retains every line.
@@ -202,12 +252,20 @@ function createService({
             ),
           ),
           deletedBuiltins: [...deletedBuiltins],
+          // Unanswered update conflicts survive a restart.
+          ...(state.presetConflicts.length
+            ? {
+                builtinConflicts: state.presetConflicts.map(
+                  ({ id, name, settings }) => ({ id, name, settings }),
+                ),
+              }
+            : {}),
           presetOrder: state.presets.map((p) => p.id),
           mmdExport: {
             presetId: state.mmd.presetId,
             followMmd: state.mmd.followMmd,
             audioFade: state.mmd.audioFade,
-            alphaMask: state.mmd.alphaMask,
+            maskMode: state.mmd.maskMode,
             savedAt: state.mmd.savedAt,
           },
         },
@@ -220,9 +278,17 @@ function createService({
   }
   // The export choice is shared with the plugin's settings window in MMD through
   // mmd-selection.json; take it over when it was saved there more recently.
+  // A choice saved in MMD always beats what this window still shows: it is
+  // adopted as soon as the file changes (see the watcher below), and the app
+  // only writes the field the user changed on top of it.
   function adoptMmdSelection() {
     const s = mmdExport.readSelection();
     const m = state.mmd;
+    // Settings from 1.4.1: the mask follows what the preset did by itself.
+    if (!m.maskMode)
+      m.maskMode = mmdExport.presetMask(
+        state.presets.find((p) => p.id === m.presetId)?.settings,
+      );
     if (!s) {
       // First run with a choice from settings.json: publish it for the plugin.
       if (m.presetId) {
@@ -236,10 +302,25 @@ function createService({
       presetId: s.presetId,
       followMmd: s.followMmd,
       audioFade: s.audioFade,
-      alphaMask: s.alphaMask,
+      maskMode:
+        s.maskMode ||
+        mmdExport.presetMask(
+          state.presets.find((p) => p.id === s.presetId)?.settings,
+        ),
       savedAt: s.savedAt,
     });
     return true;
+  }
+  let selectionWatched = false;
+  function watchMmdSelection() {
+    if (selectionWatched || disposed) return;
+    selectionWatched = true;
+    fs.watchFile(mmdExport.selectionPath(), { interval: 1000 }, () => {
+      if (!disposed && adoptMmdSelection()) {
+        persist();
+        emit();
+      }
+    });
   }
   // Keep the plugin's mmd-export.json (tools, helper, every preset) in step:
   // every preset change goes through persist(), tool changes through detect().
@@ -249,7 +330,11 @@ function createService({
     try {
       adoptMmdSelection();
       mmdExport.writeConfig({
-        presets: state.presets.map(({ id, name, settings }) => ({ id, name, settings })),
+        presets: state.presets.map(({ id, name, settings }) => ({
+          id,
+          name,
+          settings,
+        })),
         engines: state.engineInfo,
         appExe: mmdAppExe,
         helper: path.join(__dirname, "mmd-export.cjs"),
@@ -263,7 +348,7 @@ function createService({
       ? ""
       : !preset
         ? "导出预设已被删除，请重新选择"
-        : mmdExport.unsupported(preset.settings) ||
+        : mmdExport.unsupported(preset.settings, m.maskMode) ||
           (!state.engineInfo.ffmpeg || !state.engineInfo.ffprobe
             ? "请先在“设置与引擎”里安装编码工具"
             : "");
@@ -282,6 +367,8 @@ function createService({
   async function refreshMmdPlugin() {
     state.mmd.plugin = await mmdPlugin.status(mmdPluginDll);
     state.mmd.lastExport = lastMmdExport();
+    state.mmd.interrupted = mmdExport.interrupted();
+    watchMmdSelection();
   }
   // Encode a short synthetic clip exactly as an MMD export would.
   async function testMmdExport() {
@@ -292,6 +379,7 @@ function createService({
       path.join(os.tmpdir(), "mmdencoder-export-test-"),
     );
     const started = Date.now();
+    let snapshot = "";
     try {
       const width = 640,
         height = 360,
@@ -304,6 +392,7 @@ function createService({
         bottomUp: true,
         avgTimePerFrame: 333333,
       });
+      snapshot = mmdExport.snapshotPath(plan.temp);
       const child = spawn(plan.exe, plan.args, {
         windowsHide: true,
         stdio: ["pipe", "ignore", "pipe"],
@@ -312,12 +401,31 @@ function createService({
       let stderr = "";
       child.stderr.on("data", (d) => (stderr = (stderr + d).slice(-4000)));
       child.stdin.on("error", () => {});
+      // Settles once, whether FFmpeg fails to start, exits early or hangs.
+      const exited = new Promise((resolve) => {
+        child.once("error", (e) => {
+          stderr += "\n" + e.message;
+          resolve(-1);
+        });
+        child.once("close", (code) => resolve(code ?? -1));
+      });
+      const timer = setTimeout(() => {
+        stderr += "\n测试编码超过 60 秒未结束，已停止";
+        child.kill();
+      }, 60000);
+      let gone = false;
+      exited.then(() => (gone = true));
       const frame = Buffer.alloc(width * height * 4, 0x80);
-      for (let i = 0; i < frames; i++)
+      for (let i = 0; i < frames && !gone; i++)
         if (!child.stdin.write(frame))
-          await new Promise((r) => child.stdin.once("drain", r));
-      child.stdin.end();
-      const code = await new Promise((r) => child.on("close", r));
+          // Wait for room in the pipe, or for FFmpeg to be gone.
+          await Promise.race([
+            new Promise((r) => child.stdin.once("drain", r)),
+            exited,
+          ]);
+      if (!gone) child.stdin.end();
+      const code = await exited;
+      clearTimeout(timer);
       children.delete(child);
       if (code !== 0)
         throw Error(
@@ -343,6 +451,7 @@ function createService({
       throw e;
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
+      if (snapshot) fs.rmSync(snapshot, { force: true });
     }
   }
   function schema(p, full = false) {
@@ -409,25 +518,46 @@ function createService({
         state.mmd.savedAt = saved.mmdExport.savedAt;
       if (typeof saved.mmdExport.followMmd === "boolean")
         state.mmd.followMmd = saved.mmdExport.followMmd;
-      if (typeof saved.mmdExport.alphaMask === "boolean")
-        state.mmd.alphaMask = saved.mmdExport.alphaMask;
+      if (mmdExport.MASK_MODES.includes(saved.mmdExport.maskMode))
+        state.mmd.maskMode = saved.mmdExport.maskMode;
+      // 1.4.1 only had the "also export the mask" switch.
+      else if (saved.mmdExport.alphaMask === true) state.mmd.maskMode = "with";
     }
     state.settings = { ...core.DEFAULTS, ...schema(saved.settings) };
     for (const id of saved.deletedBuiltins || [])
       if (typeof id === "string") deletedBuiltins.add(id);
     // Personal presets always survive an update. A built-in the new version
-    // changed replaces the user's edit of it (its fingerprint no longer
-    // matches); a built-in it dropped simply disappears.
+    // changed (its fingerprint no longer matches) takes the new definition, and
+    // the user's edit of it becomes a conflict they resolve in the app: drop it
+    // or keep it as a personal preset. A built-in the new version dropped
+    // simply disappears.
     const overrides =
       saved.builtins && typeof saved.builtins === "object"
         ? saved.builtins
         : {};
+    const conflict = (id, o, builtinName) => {
+      try {
+        const v = presetValid({
+          name: o.name || builtinName,
+          settings: o.settings,
+        });
+        if (!state.presetConflicts.some((c) => c.id === id))
+          state.presetConflicts.push({
+            id,
+            name: v.name,
+            settings: v.settings,
+            builtinName,
+          });
+      } catch {}
+    };
     state.presets = state.presets
       .filter((p) => !deletedBuiltins.has(p.id))
       .map((p) => {
         const o = overrides[p.id];
         if (!o || typeof o !== "object") return p;
         const r = { ...p };
+        if (o.settings && o.base !== builtinFingerprint(p))
+          conflict(p.id, o, p.name);
         if (o.settings && o.base === builtinFingerprint(p))
           try {
             const v = presetValid({
@@ -445,6 +575,12 @@ function createService({
         if (typeof o.hidden === "boolean") r.hidden = o.hidden;
         return r;
       });
+    for (const c of Array.isArray(saved.builtinConflicts)
+      ? saved.builtinConflicts
+      : []) {
+      const b = state.presets.find((p) => p.builtin && p.id === c?.id);
+      if (b && c.settings) conflict(b.id, c, b.name);
+    }
     for (const p of saved.presets || []) {
       let valid;
       try {
@@ -723,7 +859,7 @@ function createService({
         encoding: true,
         onData: (t) => {
           job.log = (job.log + t).slice(-200000);
-          emit();
+          emitProgress();
         },
       });
       if (stopped) throw Error("已取消");
@@ -1048,25 +1184,60 @@ function createService({
     for (const input of paths) {
       if (typeof input !== "string" || !path.isAbsolute(input))
         throw Error("素材必须为绝对路径");
-      const resolved = path.resolve(input);
+      let resolved = path.resolve(input);
+      // A PNG, or a folder of them, is read as an image sequence; picking
+      // several frames of one sequence adds it once.
+      let seq = null,
+        isDir = false;
+      try {
+        isDir = fs.statSync(resolved).isDirectory();
+        if (isDir || /\.png$/i.test(resolved)) seq = sequence.find(resolved);
+      } catch {}
+      if (isDir && !seq) {
+        state.notice = "文件夹里没有 PNG 序列：" + path.basename(input);
+        continue;
+      }
+      if (seq) resolved = seq.first;
       if (
-        state.jobs.some((j) => j.path.toLowerCase() === resolved.toLowerCase())
+        state.jobs.some(
+          (j) =>
+            j.path.toLowerCase() === resolved.toLowerCase() ||
+            (seq &&
+              j.sequence?.pattern.toLowerCase() === seq.pattern.toLowerCase()),
+        )
       ) {
-        state.notice = "已跳过重复素材：" + path.basename(input);
+        if (!seq || paths.length === 1)
+          state.notice =
+            "已跳过重复素材：" + (seq ? seq.name : path.basename(input));
         continue;
       }
       const job = {
         id: crypto.randomUUID(),
         path: resolved,
-        name: path.basename(input),
+        name: seq ? seq.name + "（PNG 序列）" : path.basename(input),
         status: "probing",
         progress: 0,
+        ...(seq ? { sequence: { ...seq, ...sequenceRate(SEQUENCE_FPS) } } : {}),
       };
       state.jobs.push(job);
       emit();
       try {
         if (!state.engineInfo.ffprobe)
           throw Error("未找到 ffprobe，无法读取素材");
+        if (/\.png$/i.test(resolved) && !seq)
+          throw Error(
+            "只有一张 PNG，不是图片序列（需要 name_0001.png 这样带连续编号的文件）",
+          );
+        if (seq?.missing !== null && seq?.missing !== undefined)
+          throw Error(
+            `PNG 序列不连续：缺少第 ${seq.missing} 帧（从 ${seq.start} 开始找到 ${seq.total} 张）`,
+          );
+        if (seq) {
+          job.meta = await sequenceMeta(job);
+          job.status = "ready";
+          emit();
+          continue;
+        }
         const stat = fs.statSync(input);
         if (!stat.isFile()) throw Error("输入不是文件");
         const r = await run(
@@ -1131,6 +1302,38 @@ function createService({
     }
     return clone(state);
   }
+  // A PNG sequence has no frame rate of its own: the user sets it (default
+  // SEQUENCE_FPS), and length and timing follow from it.
+  async function sequenceMeta(job) {
+    const q = job.sequence;
+    const r = await run(
+      state.engineInfo.ffprobe,
+      [
+        "-v",
+        "error",
+        "-show_streams",
+        "-show_format",
+        "-of",
+        "json",
+        ...core.inputArgs(job),
+      ],
+      { timeout: 30000 },
+    );
+    return withSequenceRate(core.metadata(JSON.parse(r.stdout)), q);
+  }
+  function withSequenceRate(meta, q) {
+    return {
+      ...meta,
+      fps: q.fps,
+      fpsText: q.fpsText,
+      duration: q.count / q.fps,
+      size: q.size,
+      // Bits per second over the whole sequence, as for a video file.
+      videoBitRate: Math.round((q.size * 8 * q.fps) / q.count),
+      vfr: false,
+      sequence: { count: q.count, start: q.start },
+    };
+  }
   // Apply a drag-sort result: ids must be exactly the current list's ids.
   function reorder(list, ids) {
     if (
@@ -1160,7 +1363,11 @@ function createService({
     if (!state.engineInfo.ffmpeg) errors.push("未找到 FFmpeg");
     // Mask only encodes with FFmpeg's lossless x264 / VP9, not the chosen encoder.
     const maskOnly = s.alphaMode === "mask";
-    if (!maskOnly && s.encoder.startsWith("nvencc:") && !state.engineInfo.nvencc)
+    if (
+      !maskOnly &&
+      s.encoder.startsWith("nvencc:") &&
+      !state.engineInfo.nvencc
+    )
       errors.push("未找到 NVEncC");
     if (
       !maskOnly &&
@@ -1183,7 +1390,7 @@ function createService({
       commands = [];
     try {
       paths = core.outputPaths(
-        job.path,
+        nameSource(job),
         s,
         state.jobs.indexOf(job) + 1,
         fs.existsSync,
@@ -1267,7 +1474,7 @@ function createService({
       let paths = maskOnly
         ? { output: job.output, maskOutput: job.maskOutput }
         : core.outputPaths(
-            job.path,
+            nameSource(job),
             s,
             state.jobs.indexOf(job) + 1,
             fs.existsSync,
@@ -1318,7 +1525,7 @@ function createService({
                 );
             }
             job.elapsed = (Date.now() - job.startedAt) / 1000;
-            emit();
+            emitProgress();
           },
         });
         if (c.output === temps.output) {
@@ -1327,7 +1534,7 @@ function createService({
           } catch (e) {
             if (e.code !== "EEXIST") throw e;
             paths = core.outputPaths(
-              job.path,
+              nameSource(job),
               s,
               state.jobs.indexOf(job) + 1,
               fs.existsSync,
@@ -1451,11 +1658,18 @@ function createService({
                 "-show_format",
                 "-of",
                 "json",
-                file,
+                // A PNG sequence is read as the video it becomes.
+                ...(key === "before" && !payload.media && job.sequence
+                  ? core.inputArgs(job)
+                  : [file]),
               ],
               { timeout: 30000 },
             );
-            result[key] = { path: file, ...JSON.parse(r.stdout) };
+            result[key] = {
+              path:
+                key === "before" && job.sequence ? job.sequence.pattern : file,
+              ...JSON.parse(r.stdout),
+            };
           } catch (e) {
             result[key] = {
               path: file,
@@ -1867,6 +2081,27 @@ function createService({
         state.presets = reorder(state.presets, payload.ids);
         persist();
         break;
+      case "resolvePresetConflict": {
+        // keep: save the user's old version as a personal preset next to the
+        // built-in; otherwise drop it (the new built-in stays either way).
+        const c = state.presetConflicts.find((x) => x.id === payload.id);
+        if (!c) throw Error("未找到待处理的预设");
+        if (payload.keep) {
+          let name = c.name + "（我的修改）";
+          for (
+            let n = 2;
+            state.presets.some((p) => sameName(p.name, name));
+            n++
+          )
+            name = `${c.name}（我的修改 ${n}）`;
+          const copy = presetValid({ name, settings: c.settings });
+          const at = state.presets.findIndex((p) => p.id === c.id);
+          state.presets.splice(at < 0 ? state.presets.length : at + 1, 0, copy);
+        }
+        state.presetConflicts = state.presetConflicts.filter((x) => x !== c);
+        persist();
+        break;
+      }
       case "restoreBuiltinPresets": {
         // Bring back deleted built-ins and undo edits / hide choices on them.
         const defaults = clone(core.BUILTINS);
@@ -1889,6 +2124,25 @@ function createService({
       case "reorderJobs":
         state.jobs = reorder(state.jobs, payload.ids);
         break;
+      case "setSequenceFps": {
+        const job = requireJob(payload?.id);
+        if (!job.sequence) throw Error("这个素材不是图片序列");
+        if (!SEQUENCE_RATES.includes(payload.fps)) throw Error("帧率无效");
+        if (
+          ![
+            "ready",
+            "invalid",
+            "done",
+            "failed",
+            "cancelled",
+            "partial",
+          ].includes(job.status)
+        )
+          throw Error("正在处理的素材不能改帧率");
+        Object.assign(job.sequence, sequenceRate(payload.fps));
+        if (job.meta) job.meta = withSequenceRate(job.meta, job.sequence);
+        break;
+      }
       case "mediaReorder":
         state.mediaJobs = reorder(state.mediaJobs, payload.ids);
         break;
@@ -1929,6 +2183,13 @@ function createService({
             !state.presets.some((p) => p.id === payload.presetId)
           )
             throw Error("未找到预设");
+          // A preset that writes a mask by itself sets the mask choice to
+          // match; it can still be changed afterwards.
+          const own = mmdExport.presetMask(
+            state.presets.find((p) => p.id === payload.presetId)?.settings,
+          );
+          if (own !== "off" && payload.presetId !== state.mmd.presetId)
+            state.mmd.maskMode = own;
           state.mmd.presetId = payload.presetId;
           state.mmd.test = null;
         }
@@ -1939,8 +2200,12 @@ function createService({
         }
         if (typeof payload.followMmd === "boolean")
           state.mmd.followMmd = payload.followMmd;
-        if (typeof payload.alphaMask === "boolean")
-          state.mmd.alphaMask = payload.alphaMask;
+        if (payload.maskMode !== undefined) {
+          if (!mmdExport.MASK_MODES.includes(payload.maskMode))
+            throw Error("遮罩选项无效");
+          state.mmd.maskMode = payload.maskMode;
+          state.mmd.test = null;
+        }
         state.mmd.savedAt = mmdExport.writeSelection({
           ...state.mmd,
           savedAt: undefined,
@@ -1952,6 +2217,18 @@ function createService({
         if (state.running) throw Error("请等待当前压制结束后再测试");
         await testMmdExport();
         break;
+      case "mmdRecover":
+      case "mmdDiscard": {
+        if (typeof payload?.id !== "string") throw Error("无效的导出记录");
+        try {
+          if (action === "mmdRecover") await mmdExport.recover(payload.id);
+          else mmdExport.discard(payload.id);
+        } finally {
+          state.mmd.interrupted = mmdExport.interrupted();
+        }
+        state.mmd.lastExport = lastMmdExport();
+        break;
+      }
       default:
         throw Error("不支持的操作：" + action);
     }
@@ -1959,8 +2236,32 @@ function createService({
     return clone(state);
   }
   setImmediate(() => {
-    if (!disposed) detect();
+    if (disposed) return;
+    detect();
+    // Exports cut off when MMD crashed or closed: offer to finish them, at
+    // start and whenever it happens while the app is open.
+    checkInterrupted();
+    interruptTimer = setInterval(checkInterrupted, 3000);
+    interruptTimer.unref?.();
+    watchMmdSelection();
   });
+  let interruptTimer = null;
+  function checkInterrupted() {
+    if (disposed) return;
+    let list;
+    try {
+      list = mmdExport.interrupted();
+    } catch {
+      return;
+    }
+    const ids = (l) => l.map((x) => x.id).join();
+    if (ids(list) === ids(state.mmd.interrupted)) return;
+    const known = new Set(state.mmd.interrupted.map((x) => x.id));
+    state.mmd.interrupted = list;
+    if (list.some((x) => !known.has(x.id)))
+      state.notice = `有 ${list.length} 个 MMD 导出意外中断，可在“MMD 导出”里补完已导出的部分`;
+    emit();
+  }
   return {
     invoke,
     getState: () => clone(state),
@@ -1968,6 +2269,9 @@ function createService({
       flushEvidence();
       disposed = true;
       stopped = true;
+      if (selectionWatched) fs.unwatchFile(mmdExport.selectionPath());
+      clearTimeout(pushTimer);
+      clearInterval(interruptTimer);
       for (const child of children) child.kill();
     },
   };

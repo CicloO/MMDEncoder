@@ -30,9 +30,16 @@ const TIMELINE_FPS = 30;
 const PLACEHOLDER_TAG = "MMDE";
 
 // The choice of preset and options. Both MMDEncoder and the plugin's settings
-// window in MMD ("詳細設定") write it; the newer savedAt wins.
+// window in MMD ("詳細設定") write it; the newer savedAt wins, and MMDEncoder
+// picks up a choice saved in MMD as soon as it lands.
 const selectionPath = () => path.join(baseDir(), "mmd-selection.json");
 const FADES = [0, 0.5, 1, 2];
+// Alpha mask: none, next to the video (<name>_alpha.<ext>), or the mask alone.
+// The choice overrides the preset's own alpha setting.
+const MASK_MODES = ["off", "with", "only"];
+// What a preset would do by itself; the default when a preset is picked.
+const presetMask = (s) =>
+  s?.alphaMode === "mask" ? "only" : s?.alphaMask ? "with" : "off";
 
 function writeAtomic(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -50,8 +57,12 @@ function readSelection() {
       followMmd: s.followMmd !== false,
       // Seconds of audio fade-in and fade-out (0 = off).
       audioFade: FADES.includes(s.audioFade) ? s.audioFade : 0,
-      // Also write a black-and-white alpha mask (<name>_alpha.<ext>).
-      alphaMask: s.alphaMask === true,
+      // "" = saved before 1.4.2: the preset decides, plus the old switch.
+      maskMode: MASK_MODES.includes(s.maskMode)
+        ? s.maskMode
+        : s.alphaMask === true
+          ? "with"
+          : "",
       savedAt: typeof s.savedAt === "string" ? s.savedAt : "",
     };
   } catch {
@@ -63,14 +74,16 @@ function writeSelection({
   presetId = "",
   followMmd = true,
   audioFade = 0,
-  alphaMask = false,
+  maskMode = "off",
   savedAt,
 }) {
   const selection = {
     presetId,
     followMmd,
     audioFade,
-    alphaMask,
+    maskMode: MASK_MODES.includes(maskMode) ? maskMode : "off",
+    // For MMDEncoder 1.4.1 and its plugin, which only know this switch.
+    alphaMask: maskMode === "with",
     savedAt: savedAt || new Date().toISOString(),
   };
   writeAtomic(selectionPath(), selection);
@@ -87,7 +100,7 @@ function writeConfig({
   presetId = "",
   followMmd = true,
   audioFade = 0,
-  alphaMask = false,
+  maskMode = "",
   engines,
   appExe,
   helper,
@@ -95,7 +108,12 @@ function writeConfig({
   if (!presets) {
     const id = presetId || "export";
     presets = [{ id, name: presetName, settings }];
-    writeSelection({ presetId: id, followMmd, audioFade, alphaMask });
+    writeSelection({
+      presetId: id,
+      followMmd,
+      audioFade,
+      maskMode: maskMode || presetMask(settings),
+    });
   }
   const config = {
     version: 2,
@@ -126,7 +144,10 @@ function readConfig() {
     );
   const preset = config.presets.find((p) => p.id === selection.presetId);
   if (!preset) throw Error("所选导出预设已不存在，请重新选择");
-  if (preset.unsupported) throw Error(preset.unsupported);
+  const maskMode = selection.maskMode || presetMask(preset.settings);
+  // The mask alone does not use the preset's encoder.
+  if (maskMode !== "only" && preset.unsupported)
+    throw Error(preset.unsupported);
   if (!config.engines?.ffmpeg || !config.engines?.ffprobe)
     throw Error("请先在 MMDEncoder 的“设置与引擎”里安装编码工具");
   return {
@@ -136,12 +157,13 @@ function readConfig() {
     settings: preset.settings,
     followMmd: selection.followMmd,
     audioFade: selection.audioFade,
-    alphaMask: selection.alphaMask,
+    maskMode,
   };
 }
 
 // Why a preset cannot be used for a live MMD export (empty string = usable).
-function unsupported(s) {
+function unsupported(s, maskMode = "") {
+  if (maskMode === "only") return "";
   if (s.alphaMode !== "mask" && s.encoder.startsWith("nvencc:"))
     return "NVEncC（含 RTX 超分 / 补帧）需要两段处理，MMD 直接导出暂不支持";
   return "";
@@ -204,9 +226,42 @@ function frameRate(avgTimePerFrame) {
   };
 }
 
-// runtime: { avi, width, height, bits, bottomUp, avgTimePerFrame }
+// Each export's settings as they were when it started, so finish (and a
+// recovery after MMD crashed) never mixes in a preset chosen mid-render.
+const pendingDir = () => path.join(baseDir(), "pending");
+const snapshotPath = (temp) =>
+  path.join(
+    pendingDir(),
+    require("node:crypto")
+      .createHash("sha1")
+      .update(path.resolve(temp).toLowerCase())
+      .digest("hex")
+      .slice(0, 16) + ".json",
+  );
+
+function readSnapshot(temp) {
+  try {
+    const s = JSON.parse(fs.readFileSync(snapshotPath(temp), "utf8"));
+    return s.version === 1 ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+// runtime: { avi, width, height, bits, bottomUp, avgTimePerFrame, pmm?, startFrame? }
 function plan(runtime, config = readConfig()) {
-  const s = config.settings;
+  const maskMode = config.maskMode || presetMask(config.settings);
+  // The mask choice overrides the preset's own alpha setting.
+  const s = {
+    ...config.settings,
+    alphaMode:
+      maskMode === "only"
+        ? "mask"
+        : config.settings.alphaMode === "mask"
+          ? "discard"
+          : config.settings.alphaMode,
+    alphaMask: false,
+  };
   const blocked = unsupported(s);
   if (blocked) throw Error(blocked);
   const rate = frameRate(runtime.avgTimePerFrame);
@@ -229,11 +284,12 @@ function plan(runtime, config = readConfig()) {
     outputMode: "source",
     nameTemplate: "{name}",
   };
-  // The mask: from the export option or a split-alpha preset. MMD only sends
-  // alpha with 32-bit frames; without it the mask is skipped, not the export.
+  // MMD only sends alpha with 32-bit frames; without it a mask next to the
+  // video is skipped, not the export.
   const notes = [];
-  let mask =
-    s.alphaMode !== "mask" && (config.alphaMask === true || !!s.alphaMask);
+  if (maskMode === "only" && !alpha)
+    throw Error("MMD 没有提供 Alpha 画面，无法只导出遮罩");
+  let mask = maskMode === "with";
   if (mask && !alpha) {
     mask = false;
     notes.push("MMD 没有提供 Alpha 画面，未导出遮罩");
@@ -286,7 +342,7 @@ function plan(runtime, config = readConfig()) {
     ];
   }
   const command = commands[0];
-  return {
+  const result = {
     exe: command.exe,
     args,
     temp,
@@ -298,6 +354,24 @@ function plan(runtime, config = readConfig()) {
     fps: rate,
     presetName: config.presetName,
   };
+  writeAtomic(snapshotPath(temp), {
+    version: 1,
+    at: new Date().toISOString(),
+    // The MMD process that renders (this helper's parent): when it is gone and
+    // the snapshot is still here, the export was cut off.
+    mmdPid: process.ppid,
+    avi: runtime.avi,
+    pmm: runtime.pmm || "",
+    startFrame: Number.isInteger(runtime.startFrame) ? runtime.startFrame : -1,
+    avgTimePerFrame: runtime.avgTimePerFrame,
+    temp,
+    output: paths.output,
+    presetName: config.presetName,
+    settings: { ...s, alphaMask: mask },
+    engines: config.engines,
+    audioFade: config.audioFade,
+  });
+  return result;
 }
 
 // ------------------------------------------------------------------ finish ---
@@ -379,33 +453,51 @@ function audioArgs(s) {
   return args;
 }
 
-// The mask's single luma level when every pixel of every frame is the same,
-// otherwise null. Decodes the lossless mask once with signalstats.
-async function flatLevel(config, file) {
-  const { stderr } = await run(config.engines.ffmpeg, [
-    "-hide_banner",
-    "-nostdin",
-    "-nostats",
-    "-v",
-    "info",
-    "-i",
-    file,
-    "-vf",
-    "signalstats,metadata=print:key=lavfi.signalstats.YMIN,metadata=print:key=lavfi.signalstats.YMAX",
-    "-f",
-    "null",
-    "-",
-  ]);
-  const values = [
-    ...stderr.matchAll(/lavfi\.signalstats\.Y(?:MIN|MAX)=(\d+)/g),
-  ].map((m) => Number(m[1]));
-  if (!values.length) throw Error("没有读到遮罩画面");
-  return values.every((v) => v === values[0]) ? values[0] : null;
+// The output's name, or "<name> (2)" and so on when that name (or its mask's)
+// was taken while MMD rendered: never overwrite someone's file.
+function freeOutput(output, withMask) {
+  const ext = path.extname(output);
+  const stem = output.slice(0, -ext.length);
+  for (let n = 1; n < 100000; n++) {
+    const name = n === 1 ? output : `${stem} (${n})${ext}`;
+    if (!fs.existsSync(name) && !(withMask && fs.existsSync(maskOutput(name))))
+      return name;
+  }
+  throw Error("无法分配不重名的输出文件");
+}
+
+// Move a finished file into place without replacing an existing one: a hard
+// link fails if the name exists; drives without hard links (exFAT) fall back
+// to checking just before the rename.
+function placeFile(from, to) {
+  try {
+    fs.linkSync(from, to);
+    fs.rmSync(from, { force: true });
+    return;
+  } catch (e) {
+    if (e.code === "EEXIST") throw Error("输出文件已存在，未覆盖：" + to);
+  }
+  if (fs.existsSync(to)) throw Error("输出文件已存在，未覆盖：" + to);
+  fs.renameSync(from, to);
 }
 
 // job: { avi, temp, output, frames, avgTimePerFrame, startFrame, pmm }
-async function finish(job, config = readConfig(), log = () => {}) {
+// config: the settings the export started with (its snapshot) when there is one.
+async function finish(
+  job,
+  config = readSnapshot(job.temp) || readConfig(),
+  log = () => {},
+) {
+  // From here this process owns the export: MMD may close while it runs.
+  if (config.version === 1)
+    writeAtomic(snapshotPath(job.temp), { ...config, mmdPid: process.pid });
   const s = config.settings;
+  const matte = maskTemp(job.temp);
+  const hasMask = matte !== job.temp && fs.existsSync(matte);
+  const planned = job.output;
+  job = { ...job, output: freeOutput(job.output, hasMask) };
+  if (job.output !== planned)
+    log("同名文件在导出期间已存在，改存为：" + job.output);
   const rate = frameRate(job.avgTimePerFrame);
   await waitUnlocked(job.avi);
   let aviInfo = null;
@@ -459,7 +551,7 @@ async function finish(job, config = readConfig(), log = () => {}) {
   }
   const af = filters.filter(Boolean).join(",");
   if (source === "none") {
-    fs.renameSync(job.temp, job.output);
+    placeFile(job.temp, job.output);
   } else {
     await run(config.engines.ffmpeg, [
       "-hide_banner",
@@ -489,30 +581,16 @@ async function finish(job, config = readConfig(), log = () => {}) {
   if (!video) throw Error("成片没有视频流：" + job.output);
   // The mask was encoded next to the video during the render.
   let mask = "";
-  const matte = maskTemp(job.temp);
-  if (matte !== job.temp && fs.existsSync(matte)) {
-    // One flat value from start to end (all white: nothing transparent; all
-    // black: nothing visible) carries no information, so it is not kept.
-    const flat = await flatLevel(config, matte).catch((e) => {
-      log("无法检查遮罩内容，照常保留：" + e.message);
-      return null;
-    });
-    if (flat !== null) {
-      fs.rmSync(matte, { force: true });
-      log(
-        flat >= 128
-          ? "遮罩全白（画面没有透明区域），未保留遮罩"
-          : "遮罩全黑（画面全透明），未保留遮罩",
-      );
-    } else {
-      mask = maskOutput(job.output);
-      if (fs.existsSync(mask)) throw Error("遮罩文件已存在，未覆盖：" + mask);
-      fs.renameSync(matte, mask);
-      log("Alpha 遮罩：" + mask);
-    }
+  // Always kept, even when it is all white or all black: checking that took
+  // longer than the clip itself at 4K, and the user can judge it at a glance.
+  if (hasMask) {
+    mask = maskOutput(job.output);
+    placeFile(matte, mask);
+    log("Alpha 遮罩：" + mask);
   }
   // Only ever delete an AVI this plugin wrote (placeholder frames only).
   if (placeholder) fs.rmSync(job.avi, { force: true });
+  fs.rmSync(snapshotPath(job.temp), { force: true });
   return {
     output: job.output,
     ...(mask ? { mask } : {}),
@@ -520,6 +598,116 @@ async function finish(job, config = readConfig(), log = () => {}) {
     duration: Number(result.format?.duration) || 0,
     aviDeleted: placeholder,
   };
+}
+
+// ---------------------------------------------------------------- recovery ---
+// When MMD crashes or is closed mid-render, FFmpeg sees its input end and
+// still completes the video it has, but finish never runs: the frames sit in
+// the hidden temp file without audio. Its snapshot outlives the MMD process.
+
+function alive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
+  }
+}
+
+// Exports cut off before finish: [{ id, output, temp, at, presetName, size }].
+function interrupted() {
+  let names = [];
+  try {
+    names = fs.readdirSync(pendingDir()).filter((n) => n.endsWith(".json"));
+  } catch {
+    return [];
+  }
+  const list = [];
+  for (const name of names) {
+    const file = path.join(pendingDir(), name);
+    let snap;
+    try {
+      snap = JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch {
+      continue;
+    }
+    if (snap.version !== 1 || alive(snap.mmdPid)) continue;
+    let size = 0;
+    try {
+      size = fs.statSync(snap.temp).size;
+    } catch {}
+    // Nothing was written, or finish moved it already: forget it.
+    if (!size) {
+      fs.rmSync(file, { force: true });
+      fs.rmSync(maskTemp(snap.temp), { force: true });
+      continue;
+    }
+    list.push({
+      id: name.slice(0, -5),
+      output: snap.output,
+      temp: snap.temp,
+      at: snap.at,
+      presetName: snap.presetName,
+      size,
+    });
+  }
+  return list.sort((a, b) => (a.at < b.at ? 1 : -1));
+}
+
+function snapshotById(id) {
+  if (!/^[0-9a-f]{16}$/.test(id)) throw Error("无效的导出记录");
+  const snap = JSON.parse(
+    fs.readFileSync(path.join(pendingDir(), id + ".json"), "utf8"),
+  );
+  if (alive(snap.mmdPid)) throw Error("这个导出仍在进行中");
+  return snap;
+}
+
+// Finish an interrupted export with the frames that were written.
+async function recover(id, log = () => {}) {
+  const snap = snapshotById(id);
+  const { stdout } = await run(snap.engines.ffprobe, [
+    "-v",
+    "error",
+    "-select_streams",
+    "v:0",
+    "-count_packets",
+    "-show_entries",
+    "stream=nb_read_packets",
+    "-of",
+    "csv=p=0",
+    snap.temp,
+  ]);
+  const frames = parseInt(stdout, 10);
+  if (!frames) throw Error("中断的导出里没有可用画面：" + snap.temp);
+  log(`恢复中断的导出：${frames} 帧`);
+  const job = {
+    avi: snap.avi,
+    temp: snap.temp,
+    output: snap.output,
+    pmm: snap.pmm,
+    startFrame: snap.startFrame,
+    avgTimePerFrame: snap.avgTimePerFrame,
+    frames,
+  };
+  const r = await finish(job, snap, log);
+  remember({
+    ok: true,
+    recovered: true,
+    ...r,
+    frames,
+    startFrame: snap.startFrame,
+  });
+  return r;
+}
+
+// Throw an interrupted export away.
+function discard(id) {
+  const snap = snapshotById(id);
+  fs.rmSync(snap.temp, { force: true });
+  fs.rmSync(maskTemp(snap.temp), { force: true });
+  fs.rmSync(path.join(pendingDir(), id + ".json"), { force: true });
 }
 
 function remember(entry) {
@@ -547,13 +735,25 @@ async function main() {
   if (mode === "finish") {
     const lines = [];
     const log = (m) => lines.push(m);
+    const started = Date.now();
     try {
-      const r = await finish(job, readConfig(), log);
+      const r = await finish(job, undefined, log);
       remember({
         ok: true,
         ...r,
         frames: job.frames,
         startFrame: job.startFrame,
+        // Seconds, measured by the plugin in MMD (setup, render, time MMD
+        // waited for the encoder, FFmpeg's finish after the last frame) and
+        // here (adding audio, moving files).
+        ...(job.timing && typeof job.timing === "object"
+          ? {
+              timing: {
+                ...job.timing,
+                finish: (Date.now() - started) / 1000,
+              },
+            }
+          : {}),
         notes: lines,
       });
     } catch (e) {
@@ -572,6 +772,12 @@ if (require.main === module) main();
 
 module.exports = {
   FADES,
+  MASK_MODES,
+  presetMask,
+  snapshotPath,
+  interrupted,
+  recover,
+  discard,
   configPath,
   selectionPath,
   readSelection,

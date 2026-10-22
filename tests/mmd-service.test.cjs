@@ -100,17 +100,47 @@ test(
         ["builtin-4k", 2],
       );
 
-      // The alpha mask switch is shared with the plugin and reaches the plan.
-      assert.equal(state().mmd.alphaMask, false, "mask is off by default");
-      await svc.invoke("mmdExportSet", { alphaMask: true });
-      assert.equal(mx.readSelection().alphaMask, true);
-      assert.equal(mx.readConfig().alphaMask, true);
+      // The alpha mask choice is shared with the plugin and reaches the plan.
+      assert.equal(state().mmd.maskMode, "off", "mask is off by default");
+      await svc.invoke("mmdExportSet", { maskMode: "with" });
+      assert.equal(mx.readSelection().maskMode, "with");
+      assert.equal(mx.readSelection().alphaMask, undefined);
+      assert.equal(
+        JSON.parse(fs.readFileSync(mx.selectionPath(), "utf8")).alphaMask,
+        true,
+        "1.4.1 plugins still read the old switch",
+      );
+      assert.equal(mx.readConfig().maskMode, "with");
       assert.ok(mx.plan(runtime).maskOutput.endsWith("x_alpha.mp4"));
       await svc.invoke("mmdTest");
       assert.match(state().mmd.test.message, /含 Alpha 遮罩/);
+      // Mask only: one output, the mask, named _alpha.
+      await svc.invoke("mmdExportSet", { maskMode: "only" });
+      const only = mx.plan(runtime);
+      assert.ok(only.output.endsWith("x_alpha.mp4") && !only.maskOutput);
+      await svc.invoke("mmdTest");
+      assert.equal(state().mmd.test.ok, true, state().mmd.test.message);
+      await assert.rejects(
+        svc.invoke("mmdExportSet", { maskMode: "maybe" }),
+        /遮罩选项无效/,
+      );
+      // The choice overrides the preset: a split-alpha preset set to "off"
+      // writes no mask. Picking a preset that writes a mask sets the choice.
       await svc.invoke("mmdExportSet", { presetId: "builtin-alpha-mask" });
       assert.equal(state().mmd.error, "");
-      await svc.invoke("mmdExportSet", { alphaMask: false });
+      assert.equal(state().mmd.maskMode, "with", "preset sets the default");
+      await svc.invoke("mmdExportSet", { maskMode: "off" });
+      assert.equal(mx.plan(runtime).maskOutput, undefined);
+      assert.ok(!mx.plan(runtime).output.endsWith("_alpha.mp4"));
+      // A choice saved in MMD reaches the app without asking (file watcher).
+      await new Promise((r) => setTimeout(r, 20));
+      mx.writeSelection({
+        ...mx.readSelection(),
+        maskMode: "only",
+        savedAt: undefined,
+      });
+      await until(() => state().mmd.maskMode === "only", 5000);
+      await svc.invoke("mmdExportSet", { maskMode: "off" });
 
       // A personal preset that gets renamed, then deleted.
       await svc.invoke("savePreset", { name: "我的导出" });

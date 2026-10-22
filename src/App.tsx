@@ -130,6 +130,7 @@ export default function App() {
     [renameTarget, setRenameTarget] = useState<Preset | null>(null),
     [saveId, setSaveId] = useState("");
   const initialized = useRef(false),
+    seenInterrupted = useRef(new Set<string>()),
     stateRef = useRef<State | null>(null),
     lastNotice = useRef(""),
     draftRef = useRef<Settings | null>(null),
@@ -223,6 +224,15 @@ export default function App() {
         s.presets.find((p) => p.name === s.settings.presetName)?.id || "",
       );
       if (s.notice) setError(s.notice);
+      // An update changed built-ins the user had edited: ask once per start.
+      if (s.presetConflicts?.length) setModal("conflicts");
+    }
+    // An MMD export was cut off (now, or before this start): open "MMD 导出"
+    // where it can be finished, unless another dialog is in the way.
+    const cut = s.mmd.interrupted || [];
+    if (cut.some((x) => !seenInterrupted.current.has(x.id))) {
+      cut.forEach((x) => seenInterrupted.current.add(x.id));
+      setModal((m) => m || "mmd");
     }
   }
   useEffect(() => {
@@ -283,12 +293,10 @@ export default function App() {
     true,
     { handle: true },
   );
-  // Software built-ins stay hidden while H.264 NVENC is available, unless the
-  // user chose otherwise with the hide / show button.
-  const hardwareH264 =
-    !!state?.detecting || !!state?.engines.some((e) => e.id === "h264_nvenc");
-  const presetHidden = (p: Preset) =>
-    p.hidden ?? (p.builtin && p.id.endsWith("-sw") && hardwareH264);
+  // Frame rates a PNG sequence can play at (backend SEQUENCE_RATES).
+  const SEQUENCE_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120];
+  // Every preset shows unless the user hid it with the hide / show button.
+  const presetHidden = (p: Preset) => p.hidden ?? false;
   useEffect(() => {
     if (page >= pageCount) setPage(pageCount - 1);
   }, [page, pageCount]);
@@ -741,7 +749,7 @@ export default function App() {
                   <p>
                     拖入多个视频，或从文件夹中选择
                     <br />
-                    保留创作，把压制交给队列。
+                    PNG 序列：拖入文件夹，或选其中任意一张。
                   </p>
                   <Button onClick={add} disabled={busy}>
                     <FolderOpen size={17} />
@@ -897,8 +905,42 @@ export default function App() {
                 </div>
                 <h3 title={job.name}>{job.name}</h3>
                 {renderMeta()}
-                <p className="path-text" title={job.path}>
-                  {job.path}
+                {job.sequence && (
+                  // Pictures carry no frame rate: the user says how fast they play.
+                  <div className="sequence-rate">
+                    <Select
+                      id="sequence-fps"
+                      label="序列帧率"
+                      value={String(job.sequence.fps)}
+                      disabled={
+                        state.running ||
+                        ![
+                          "ready",
+                          "invalid",
+                          "done",
+                          "failed",
+                          "cancelled",
+                          "partial",
+                        ].includes(job.status)
+                      }
+                      hint={`${job.sequence.count} 张图片按这个帧率播放，时长随之改变。`}
+                      options={SEQUENCE_RATES.map((r) => ({
+                        value: String(r),
+                        label: `${r} FPS`,
+                      }))}
+                      onChange={(v) =>
+                        action("setSequenceFps", { id: job.id, fps: Number(v) })
+                      }
+                    />
+                  </div>
+                )}
+                <p
+                  className="path-text"
+                  title={job.sequence ? job.sequence.pattern : job.path}
+                >
+                  {job.sequence
+                    ? job.sequence.pattern.replace(/%%/g, "%")
+                    : job.path}
                 </p>
                 {job.error && (
                   <div className="inline-error" role="alert">
@@ -1094,9 +1136,9 @@ export default function App() {
                         changed({
                           ...s,
                           encoder: v,
-                          // ProRes takes a quantizer, not a CRF; start at 8.
+                          // ProRes takes a quantizer, not a CRF; start at 16 (the built-in value).
                           ...(v === "prores_ks" && s.encoder !== "prores_ks"
-                            ? { quality: 8, rateControl: "quality" }
+                            ? { quality: 12, rateControl: "quality" }
                             : {}),
                           preset:
                             en?.backend === "cpu"
@@ -1152,7 +1194,7 @@ export default function App() {
                     </div>
                     <p className="hint quality-hint">
                       {s.encoder === "prores_ks"
-                        ? "ProRes 量化 1–64：数值越小质量越高、文件越大；0 为编码器默认（约为量化 8 的 4 倍大小）。4:2:2 对应 HQ，4:4:4 对应 4444。"
+                        ? "ProRes 量化 1–64：数值越小质量越高、文件越大；0 为编码器默认（实测约为量化 12 的 4 倍大小）。4:2:2 对应 HQ，4:4:4 对应 4444。"
                         : s.rateControl === "bitrate"
                           ? "目标平均码率（kbps）：数值越大通常质量越高、文件越大；单遍 VBR 实际码率会波动，不保证文件大小。"
                           : s.rateControl === "qp"
@@ -1459,11 +1501,11 @@ export default function App() {
                           ...s,
                           alphaMode: v === "split" ? "discard" : v,
                           alphaMask: v === "split",
-                          // ProRes alpha starts at quantizer 8 (~1/4 of the default size).
+                          // ProRes alpha starts at quantizer 16 (~1/5 of the default size).
                           ...(v === "preserve" &&
                           s.alphaMode !== "preserve" &&
                           s.encoder === "prores_ks"
-                            ? { quality: 8 }
+                            ? { quality: 12 }
                             : {}),
                         })
                       }
@@ -1846,6 +1888,43 @@ export default function App() {
       </Modal>
       <Modal
         error={error}
+        open={modal === "conflicts" && !!state.presetConflicts?.length}
+        onClose={() => setModal("")}
+        title="内置预设已更新"
+        description="新版本改动了下面这些内置预设，而你之前修改过它们。内置预设已换成新版；你的修改可以丢弃，也可以另存为个人预设。关闭这个窗口后，下次打开软件还会再问。"
+      >
+        <div className="preset-list">
+          {state.presetConflicts?.map((c) => (
+            <div className="preset-item" key={c.id}>
+              <div>
+                <strong>{c.builtinName}</strong>
+                <small>你修改过的版本：{c.name}</small>
+              </div>
+              <Button
+                onClick={() =>
+                  call("resolvePresetConflict", { id: c.id, keep: false })
+                }
+              >
+                用新版覆盖
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() =>
+                  call(
+                    "resolvePresetConflict",
+                    { id: c.id, keep: true },
+                    "已另存为个人预设",
+                  )
+                }
+              >
+                保留我的版本
+              </Button>
+            </div>
+          ))}
+        </div>
+      </Modal>
+      <Modal
+        error={error}
         open={modal === "presets"}
         onClose={() => setModal("")}
         title="预设管理"
@@ -1867,11 +1946,7 @@ export default function App() {
                 <small>
                   {p.builtin ? (p.edited ? "内置 · 已修改" : "内置") : "个人"} ·{" "}
                   {p.settings.container.toUpperCase()} · {p.settings.encoder}
-                  {presetHidden(p)
-                    ? p.hidden !== undefined
-                      ? " · 已隐藏"
-                      : " · 已自动隐藏（本机支持硬件编码）"
-                    : ""}
+                  {presetHidden(p) ? " · 已隐藏" : ""}
                 </small>
               </div>
               <Button
@@ -1966,6 +2041,45 @@ export default function App() {
         title="MMD 导出"
         description="把一个预设当作 MMD 的视频编码器：在 MMD 的“AVI 输出”里选择视频编码“MMDEncoder”，直接导出带音频的成片。这里的选择也可以在 MMD 的“詳細設定”里修改。"
       >
+        {state.mmd.interrupted.length > 0 && (
+          <section className="modal-section" aria-label="中断的导出">
+            <h3>中断的导出</h3>
+            <p className="hint">
+              MMD
+              在导出途中崩溃或被关闭时，已导出的画面仍保存在临时文件里。补完会按导出开始时的设置合成音频并改回正式文件名。
+            </p>
+            {state.mmd.interrupted.map((x) => (
+              <div className="status-row" key={x.id}>
+                <p title={x.temp}>
+                  {baseName(x.output)}
+                  <small className="row-detail">
+                    {x.presetName} · 已导出 {(x.size / 1048576).toFixed(1)} MiB
+                    · {new Date(x.at).toLocaleString()} 开始
+                  </small>
+                </p>
+                <div className="row-actions">
+                  <Button
+                    variant="primary"
+                    disabled={mmdBusy}
+                    onClick={() =>
+                      mmdCall("mmdRecover", { id: x.id }, "已补完中断的导出")
+                    }
+                  >
+                    补完
+                  </Button>
+                  <Button
+                    disabled={mmdBusy}
+                    onClick={() =>
+                      mmdCall("mmdDiscard", { id: x.id }, "已删除中断的导出")
+                    }
+                  >
+                    删除
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
         <section
           className="modal-section"
           aria-label="插件"
@@ -1973,14 +2087,16 @@ export default function App() {
         >
           <h3>插件</h3>
           <div className="status-row">
-            <p>
+            <p className={state.mmd.plugin.broken ? "inline-error" : undefined}>
               {!state.mmd.plugin.available
                 ? "这个版本没有附带 MMD 导出插件。"
-                : !state.mmd.plugin.installed
-                  ? "未安装。安装后在 MMD 的“AVI 输出”里选择视频编码“MMDEncoder”。"
-                  : state.mmd.plugin.upToDate
-                    ? "已安装，在 MMD 的“AVI 输出”里选择视频编码“MMDEncoder”。"
-                    : "已安装，有新版插件可以更新（MMD 重启后生效）。"}
+                : state.mmd.plugin.broken
+                  ? "插件需要修复：注册的插件文件已不存在，MMD 里会找不到“MMDEncoder”。点“修复插件”重新安装，然后重启 MMD。"
+                  : !state.mmd.plugin.installed
+                    ? "未安装。安装后在 MMD 的“AVI 输出”里选择视频编码“MMDEncoder”。"
+                    : state.mmd.plugin.upToDate
+                      ? "已安装，在 MMD 的“AVI 输出”里选择视频编码“MMDEncoder”。"
+                      : "已安装，有新版插件可以更新（MMD 重启后生效）。"}
             </p>
             <div className="row-actions">
               {state.mmd.plugin.available &&
@@ -1992,7 +2108,11 @@ export default function App() {
                       mmdCall("mmdInstall", undefined, "MMD 导出插件已安装")
                     }
                   >
-                    {state.mmd.plugin.installed ? "更新插件" : "安装到 MMD"}
+                    {state.mmd.plugin.broken
+                      ? "修复插件"
+                      : state.mmd.plugin.installed
+                        ? "更新插件"
+                        : "安装到 MMD"}
                   </Button>
                 )}
               {state.mmd.plugin.installed && (
@@ -2045,38 +2165,27 @@ export default function App() {
               </small>
             </span>
           </label>
-          {(() => {
-            // A split-alpha preset always writes the mask; a mask-only preset
-            // writes nothing else, so the switch only matters for other presets.
-            const ps = presets.find(
-              (p) => p.id === state.mmd.presetId,
-            )?.settings;
-            const fixed = ps?.alphaMode === "mask" || !!ps?.alphaMask;
-            return (
-              <label className="check-card">
-                <input
-                  type="checkbox"
-                  checked={
-                    fixed ? ps?.alphaMode !== "mask" : state.mmd.alphaMask
-                  }
-                  disabled={mmdBusy || fixed}
-                  onChange={(e) =>
-                    mmdCall("mmdExportSet", { alphaMask: e.target.checked })
-                  }
-                />
-                <span>
-                  <strong>同时导出 Alpha 遮罩</strong>
-                  <small>
-                    {ps?.alphaMode === "mask"
-                      ? "所选预设只导出黑白遮罩。"
-                      : ps?.alphaMask
-                        ? "所选预设本身就会导出黑白遮罩。"
-                        : "成片之外再导出一个同名 _alpha 黑白遮罩（无损，白色不透明、黑色透明），可用于后期合成。"}
-                  </small>
-                </span>
-              </label>
-            );
-          })()}
+          {/* Overrides the preset's own alpha setting; the same choice as
+              in MMD's 詳細設定, where a change wins over this window. */}
+          <Select
+            id="mmd-mask-mode"
+            label="Alpha 遮罩"
+            value={state.mmd.maskMode || "off"}
+            disabled={mmdBusy}
+            hint={
+              state.mmd.maskMode === "only"
+                ? "只导出同名 _alpha 黑白遮罩（无损，白色不透明、黑色透明），不导出彩色画面和音频，比完整导出快。"
+                : state.mmd.maskMode === "with"
+                  ? "成片之外再导出一个同名 _alpha 黑白遮罩（无损，白色不透明、黑色透明），可用于后期合成。"
+                  : "这里的选择优先于预设自带的遮罩设置；与 MMD“詳細設定”同步，以最后保存的为准。"
+            }
+            options={[
+              { value: "off", label: "不导出" },
+              { value: "with", label: "同时导出遮罩" },
+              { value: "only", label: "仅导出遮罩" },
+            ]}
+            onChange={(maskMode) => mmdCall("mmdExportSet", { maskMode })}
+          />
           <Select
             id="mmd-audio-fade"
             label="音频淡入淡出"
@@ -2133,6 +2242,32 @@ export default function App() {
               </Button>
             </div>
           </div>
+          {(() => {
+            // Where the last export's time went, measured by the plugin.
+            const e = state.mmd.lastExport;
+            const t = e?.ok ? e.timing : undefined;
+            if (!t || !(t.render > 0)) return null;
+            const s = (v: number) => `${v.toFixed(1)} 秒`;
+            const share = (100 * t.waited) / t.render;
+            const total = t.setup + t.render + t.encoderTail + (t.finish || 0);
+            return (
+              <p className="hint export-timing">
+                上次导出耗时 {s(total)}：准备 {s(t.setup)} · 渲染 {s(t.render)}
+                {e?.frames
+                  ? `（${(e.frames / t.render).toFixed(1)} fps）`
+                  : ""}{" "}
+                · 等待编码器 {s(t.waited)}（{share.toFixed(0)}%，单帧最长{" "}
+                {Math.round(t.longestWait * 1000)} 毫秒） · 编码收尾{" "}
+                {s(t.encoderTail)}
+                {t.finish !== undefined
+                  ? ` · 合成音频与整理 ${s(t.finish)}`
+                  : ""}
+                {share >= 10
+                  ? "。编码器跟不上 MMD 渲染，换更快的预设（如硬件编码）可缩短导出时间。"
+                  : "。编码没有拖慢 MMD，导出时间主要花在 MMD 渲染上。"}
+              </p>
+            );
+          })()}
         </section>
       </Modal>
       <Modal

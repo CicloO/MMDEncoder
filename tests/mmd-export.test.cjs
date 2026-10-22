@@ -405,7 +405,7 @@ test(
           audio: "none",
         },
         presetName: "x",
-        alphaMask: true,
+        maskMode: "with",
         engines: { ffmpeg: ff, ffprobe: fp },
         appExe: "",
         helper: "",
@@ -471,7 +471,7 @@ test(
       );
       assert.equal(info(r.output)[0].codec_name, "h264");
 
-      // Nothing transparent anywhere: the all-white mask is not kept.
+      // Nothing transparent anywhere: the all-white mask is still kept (the user decides).
       const opaqueAvi = path.join(root, "opaque.avi");
       placeholderAvi(opaqueAvi);
       const po = mx.plan({ ...runtime, avi: opaqueAvi });
@@ -490,10 +490,13 @@ test(
         mx.readConfig(),
         (m) => opaqueNotes.push(m),
       );
-      assert.equal(ro.mask, undefined);
-      assert.ok(!fs.existsSync(po.maskOutput) && !fs.existsSync(po.maskTemp));
+      assert.equal(ro.mask, po.maskOutput, opaqueNotes.join(" | "));
+      assert.ok(fs.existsSync(po.maskOutput) && !fs.existsSync(po.maskTemp));
       assert.ok(fs.existsSync(po.output), "the video itself is kept");
-      assert.match(opaqueNotes.join(), /遮罩全白.*未保留遮罩/);
+      assert.ok(
+        grayAt(po.maskOutput, 40) > 230 && grayAt(po.maskOutput, 280) > 230,
+        "all white",
+      );
 
       // RGB24 frames carry no alpha: the export goes on without the mask.
       const p24 = mx.plan({ ...runtime, bits: 24 });
@@ -532,6 +535,105 @@ test(
         ["video"],
       );
       assert.ok(grayAt(r2.output, 40) > 230 && grayAt(r2.output, 280) < 20);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "export snapshot: finish uses the settings it started with, never overwrites, and a cut-off export can be finished or dropped",
+  { skip: !fs.existsSync(ff), timeout: 120000 },
+  async () => {
+    const { root, mx } = fresh();
+    try {
+      const width = 160,
+        height = 120,
+        frames = 12;
+      mx.writeConfig({
+        settings: {
+          ...preset("builtin-1080-sw").settings,
+          resizeMode: "source",
+          audio: "none",
+        },
+        presetName: "x",
+        engines: { ffmpeg: ff, ffprobe: fp },
+        appExe: "",
+        helper: "",
+      });
+      const runtime = (avi) => ({
+        avi,
+        width,
+        height,
+        bits: 32,
+        bottomUp: true,
+        avgTimePerFrame: 333333,
+        pmm: "",
+        startFrame: 0,
+      });
+      const job = (p, avi) => ({
+        avi,
+        temp: p.temp,
+        output: p.output,
+        frames,
+        avgTimePerFrame: 333333,
+        startFrame: 0,
+        pmm: "",
+      });
+
+      // The settings travel with the export: finish works without the
+      // current config, and a file that took the name meanwhile is kept.
+      const avi = path.join(root, "a.avi");
+      placeholderAvi(avi);
+      const p = mx.plan(runtime(avi));
+      assert.ok(fs.existsSync(mx.snapshotPath(p.temp)));
+      await render(p, width, height, frames);
+      fs.rmSync(mx.configPath());
+      fs.writeFileSync(p.output, "KEEP");
+      const notes = [];
+      const r = await mx.finish(job(p, avi), undefined, (m) => notes.push(m));
+      assert.equal(r.output, path.join(root, "a (2).mp4"), notes.join(" | "));
+      assert.equal(fs.readFileSync(p.output, "utf8"), "KEEP");
+      assert.ok(!fs.existsSync(mx.snapshotPath(p.temp)), "snapshot removed");
+      assert.deepEqual(mx.interrupted(), []);
+
+      // MMD gone mid-render: the frames written so far can be finished later.
+      mx.writeConfig({
+        settings: {
+          ...preset("builtin-1080-sw").settings,
+          resizeMode: "source",
+          audio: "none",
+        },
+        presetName: "x",
+        engines: { ffmpeg: ff, ffprobe: fp },
+        appExe: "",
+        helper: "",
+      });
+      const dead = (q) => {
+        const file = mx.snapshotPath(q.temp);
+        const snap = JSON.parse(fs.readFileSync(file, "utf8"));
+        fs.writeFileSync(file, JSON.stringify({ ...snap, mmdPid: 2 ** 30 }));
+      };
+      const b = path.join(root, "b.avi");
+      const q = mx.plan(runtime(b));
+      await render(q, width, height, frames);
+      assert.deepEqual(mx.interrupted(), [], "MMD still running");
+      dead(q);
+      const [cut] = mx.interrupted();
+      assert.equal(cut.output, q.output);
+      const rec = await mx.recover(cut.id);
+      assert.equal(rec.output, q.output);
+      assert.ok(!fs.existsSync(q.temp));
+      assert.deepEqual(mx.interrupted(), []);
+
+      const c = path.join(root, "c.avi");
+      const d = mx.plan(runtime(c));
+      await render(d, width, height, frames);
+      dead(d);
+      mx.discard(mx.interrupted()[0].id);
+      assert.ok(!fs.existsSync(d.temp) && !fs.existsSync(d.output));
+      assert.deepEqual(mx.interrupted(), []);
+      assert.throws(() => mx.discard("../x"), /无效/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

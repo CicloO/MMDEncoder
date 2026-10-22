@@ -6,8 +6,8 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 const root = path.resolve(import.meta.dirname, ".."),
-  portable = root,
-  evidence = path.join(portable, "verification");
+  evidence = path.join(root, "verification");
+fs.mkdirSync(path.join(evidence, "work"), { recursive: true });
 const dir = fs.mkdtempSync(
     path.resolve(root, "verification/work") + path.sep + "recovery-",
   ),
@@ -15,13 +15,21 @@ const dir = fs.mkdtempSync(
 const ff = require("./engines.cjs").ff;
 const regular = path.join(dir, "普通视频.mp4"),
   corrupt = path.join(dir, "损坏视频.mp4"),
-  alpha = path.join(
-    JSON.parse(
-      fs.readFileSync(path.join(evidence, "desktop-test.json"), "utf8"),
-    ).testDir,
-    "MMD 舞台测试 60fps.mkv",
-  );
+  alpha = path.join(dir, "MMD 舞台测试 60fps.mkv");
 fs.writeFileSync(corrupt, "not a video");
+// Semi-transparent source for the split-alpha batch (made here, so this test
+// does not depend on desktop.mjs having run first).
+execFileSync(ff, [
+  "-v",
+  "error",
+  "-f",
+  "lavfi",
+  "-i",
+  "testsrc2=s=160x90:r=60:d=1,format=yuva444p,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a=128",
+  "-c:v",
+  "ffv1",
+  alpha,
+]);
 execFileSync(ff, [
   "-v",
   "error",
@@ -33,19 +41,28 @@ execFileSync(ff, [
   "libx264",
   regular,
 ]);
+// Since 1.2.0 the encoders live in the managed tools folder, not next to the
+// program: %LOCALAPPDATA%\MMDEncoder\tools, or MMD_TEST_TOOLS_ROOT when set.
+const toolsRoot = path.resolve(
+  process.env.MMD_TEST_TOOLS_ROOT ||
+    path.join(process.env.LOCALAPPDATA, "MMDEncoder", "tools"),
+);
+// The packaged program when MMD_PACKAGE_EXE names it, otherwise this checkout.
+const packaged = process.env.MMD_PACKAGE_EXE;
 const env = {
   ...process.env,
   PATH: process.env.SystemRoot + "\\System32",
   MMD_ENCODER_DATA: data,
   MMD_ENCODER_TEST: "1",
-  MMD_ENCODER_TOOLS_ROOT: process.env.MMD_TEST_TOOLS_ROOT,
-  MMD_ENCODER_ENGINES: process.env.MMD_TEST_ENGINE_DIR,
+  MMD_ENCODER_TOOLS_ROOT: toolsRoot,
+  // Keeps the MMD plugin's settings (written on every start) out of the real
+  // %LOCALAPPDATA%\MMDEncoder\mmd-plugin.
+  LOCALAPPDATA: path.join(dir, "local"),
 };
 async function launch() {
   const app = await electron.launch({
-    executablePath:
-      process.env.MMD_PACKAGE_EXE ||
-      path.resolve(root, "release/MMDEncoder/MMDEncoder.exe"),
+    executablePath: packaged || require("electron"),
+    args: packaged ? [] : [root],
     env,
     timeout: 60000,
   });
@@ -69,7 +86,16 @@ try {
   const engines = await page.evaluate(
     async () => (await window.encoder.invoke("state")).engineInfo,
   );
-  assert.ok(Object.values(engines).every((p) => p.startsWith(portable)));
+  // FFmpeg comes from the managed tools folder, never from PATH (cut to System32 above).
+  assert.ok(engines.ffmpeg && engines.ffprobe, JSON.stringify(engines));
+  assert.ok(
+    Object.values(engines)
+      .filter(Boolean)
+      .every((p) =>
+        path.resolve(p).toLowerCase().startsWith(toolsRoot.toLowerCase()),
+      ),
+    JSON.stringify(engines),
+  );
   await app.evaluate(({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, corrupt);
@@ -186,7 +212,10 @@ try {
   await page.getByRole("button", { name: "保存预设", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   await page.getByRole("button", { name: "预设管理", exact: true }).click();
-  await page.getByRole("button", { name: "编辑名称", exact: true }).click();
+  await page
+    .getByRole("button", { name: "编辑名称", exact: true })
+    .last()
+    .click(); // the personal preset comes after the built-ins
   await page.getByLabel("预设名称", { exact: true }).fill("重新命名");
   await page.getByRole("button", { name: "保存名称", exact: true }).click();
   await page
@@ -205,6 +234,9 @@ try {
   await expect.poll(() => fs.existsSync(exported)).toBe(true);
   const contents = JSON.parse(fs.readFileSync(exported, "utf8"));
   assert.equal(contents.presets.length, 1);
+  const presetCount = (
+    await page.evaluate(() => window.encoder.invoke("state"))
+  ).presets.length;
   const badJSON = path.join(dir, "bad.json");
   fs.writeFileSync(badJSON, "{");
   await app.evaluate(({ dialog }, p) => {
@@ -214,7 +246,7 @@ try {
   await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
   assert.equal(
     (await page.evaluate(() => window.encoder.invoke("state"))).presets.length,
-    6,
+    presetCount,
   );
   console.log("Recovery checkpoint", checks.length);
   checks.push("malformed import retains existing presets");
@@ -244,7 +276,7 @@ try {
   );
   console.log("Recovery checkpoint", checks.length);
   checks.push(
-    "portable executable without FFmpeg PATH",
+    "tools from the managed folder without FFmpeg on PATH",
     "settings survive restart",
   );
   await page.getByRole("button", { name: "输出", exact: true }).click();

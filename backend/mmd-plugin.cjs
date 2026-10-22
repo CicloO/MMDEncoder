@@ -9,6 +9,7 @@ const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
 
 const CLSID = "{DC3F6BD1-923F-467A-BF73-F115AF705033}";
+const BARE = CLSID.slice(1, -1);
 const DLL = "MMDEncoderPlugin.dll";
 const binDir = () =>
   path.join(process.env.LOCALAPPDATA || "", "MMDEncoder", "mmd-plugin", "bin");
@@ -56,9 +57,36 @@ async function status(bundled) {
   return {
     available,
     installed,
+    // Registered, but the DLL it points to is gone: MMD cannot load it.
+    broken: !!registered && !installed,
     path: installed ? registered : "",
     upToDate: installed && available && hash(registered) === hash(bundled),
   };
+}
+
+// install.log: who installed or removed which build, and what the registry
+// pointed to before and after. The registry was twice found pointing back to
+// an older, deleted build; this records enough to see what did it.
+function journal(event, details) {
+  let version = "";
+  try {
+    version = require(path.join(__dirname, "..", "package.json")).version;
+  } catch {}
+  try {
+    const dir = path.join(binDir(), "..", "logs");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(
+      path.join(dir, "install.log"),
+      JSON.stringify({
+        at: new Date().toISOString(),
+        event,
+        app: process.execPath,
+        version,
+        pid: process.pid,
+        ...details,
+      }) + "\n",
+    );
+  } catch {}
 }
 
 async function install(bundled) {
@@ -68,12 +96,25 @@ async function install(bundled) {
   fs.mkdirSync(dir, { recursive: true });
   const target = path.join(dir, DLL);
   if (hash(target) !== hash(bundled)) fs.copyFileSync(bundled, target);
+  const before = await registeredPath();
   const r = await run(path.join(system32(), "regsvr32.exe"), ["/s", target]);
   if (r.code !== 0)
     throw Error("注册插件失败（regsvr32 退出码 " + r.code + "）");
-  if ((await registeredPath()).toLowerCase() !== target.toLowerCase())
+  const after = await registeredPath();
+  if (after.toLowerCase() !== target.toLowerCase()) {
+    journal("install-failed", {
+      bundled,
+      target,
+      before,
+      after,
+      regsvr32: r.code,
+    });
     throw Error("注册插件后没有在注册表里找到它");
-  cleanup(dir);
+  }
+  // Keep this build and the previous one: the registry has been seen pointing
+  // back to an older build, and that DLL must still be there when it does.
+  const removed = await cleanup([dir, before && path.dirname(before)]);
+  journal("install", { bundled, target, before, after, removed });
   return status(bundled);
 }
 
@@ -81,25 +122,51 @@ async function uninstall(bundled) {
   const registered = await registeredPath();
   if (registered && fs.existsSync(registered))
     await run(path.join(system32(), "regsvr32.exe"), ["/s", "/u", registered]);
-  cleanup("");
+  else if (registered)
+    // The registered DLL is gone, so it cannot unregister itself: remove the
+    // keys DllRegisterServer wrote (see mmd-plugin/src/plugin.cpp).
+    for (const key of [
+      `HKCU\\Software\\Classes\\DirectShow\\MediaObjects\\Categories\\33d9a760-90c8-11d0-bd43-00a0c911ce86\\${BARE}`,
+      `HKCU\\Software\\Classes\\DirectShow\\MediaObjects\\${BARE}`,
+      `HKCU\\Software\\Classes\\CLSID\\${CLSID}`,
+    ])
+      await run(path.join(system32(), "reg.exe"), ["delete", key, "/f"]);
+  const removed = await cleanup([], { all: true });
+  journal("uninstall", { registered, removed });
   return status(bundled);
 }
 
-// Remove other builds; a DLL still loaded by an open MMD stays until next time.
-function cleanup(keep) {
+// Remove builds older than the ones in keep (the new build and the previously
+// registered one) plus the newest other folder, so two builds always remain;
+// the folder the registry points to is never removed. A DLL still loaded by an
+// open MMD cannot be deleted and stays until next time.
+async function cleanup(keep, { all = false } = {}) {
   let entries = [];
   try {
     entries = fs.readdirSync(binDir(), { withFileTypes: true });
   } catch {
-    return;
+    return [];
   }
-  for (const e of entries) {
-    const full = path.join(binDir(), e.name);
-    if (keep && full.toLowerCase() === keep.toLowerCase()) continue;
+  const registered = all ? "" : await registeredPath();
+  const kept = new Set(
+    [...keep, registered && path.dirname(registered)]
+      .filter(Boolean)
+      .map((p) => p.toLowerCase()),
+  );
+  const folders = entries.map((e) => path.join(binDir(), e.name));
+  const others = folders
+    .filter((full) => !kept.has(full.toLowerCase()))
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  // Fewer than two builds kept here: the newest other one is the previous.
+  const keptHere = folders.length - others.length;
+  if (!all && keptHere < 2 && others.length) others.shift();
+  const removed = [];
+  for (const full of others)
     try {
       fs.rmSync(full, { recursive: true, force: true });
+      removed.push(path.basename(full));
     } catch {}
-  }
+  return removed;
 }
 
-module.exports = { CLSID, status, install, uninstall, registeredPath };
+module.exports = { CLSID, status, install, uninstall, registeredPath, cleanup };

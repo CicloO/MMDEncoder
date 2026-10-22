@@ -38,9 +38,10 @@ const DEFAULTS = {
   vfgMode: "medium",
   vfgModelDir: "",
 };
-// ProRes quantizer used when switching to ProRes: measured on MMD footage at
-// about 1/4 of the default size with SSIM 0.998 against the source.
-const PRORES_QUALITY = 8;
+// ProRes quantizer for the built-in presets and when switching to ProRes:
+// measured on a 4K MMD render at about 1/5 of the default size, colour SSIM
+// 0.997 against the lossless source; alpha is unaffected by the quantizer.
+const PRORES_QUALITY = 12;
 const ENGINES = [
   ["libx264", "H.264 · CPU", "cpu", "h264", [8, 10]],
   ["libx265", "HEVC · CPU", "cpu", "hevc", [8, 10]],
@@ -96,8 +97,8 @@ const BUILTINS = [
   },
 ];
 // Recommended upload presets: a hardware (NVENC CQ) and a software (x264 CRF)
-// variant at a similar bitrate (CQ 29 ≈ CRF 21, measured). Scaling uses the long
-// edge, so landscape and portrait sources both come out at 3840 / 1920.
+// variant. Scaling uses the long edge, so landscape and portrait sources both
+// come out at 3840 / 1920.
 const RECOMMENDED = [
   // id, name, long edge
   ["4k", "默认 4K", 3840],
@@ -162,9 +163,9 @@ BUILTINS.splice(
       lookaheadLevel: 0,
     },
   },
-  // Split: the recommended hardware parameters at the source size, plus a
-  // separate lossless grayscale mask (smaller than lossy masks, measured);
-  // editors use it as a luma matte.
+  // Split: the recommended hardware encoder at the source size with a higher
+  // quality (CQ 19, it is meant for editing), plus a separate lossless
+  // grayscale mask (smaller than lossy masks, measured) used as a luma matte.
   {
     id: "builtin-alpha-mask",
     name: "分离 Alpha · H.264 MP4",
@@ -172,13 +173,33 @@ BUILTINS.splice(
       ...DEFAULTS,
       encoder: "h264_nvenc",
       container: "mp4",
-      quality: 29,
+      quality: 19,
       preset: "p4",
       lookahead: 32,
       lookaheadLevel: 0,
       audioBitrate: 320,
       alphaMode: "discard",
       alphaMask: true,
+    },
+  },
+  // Editing intermediate without alpha: ProRes 422 HQ at the source size,
+  // smaller than 4444 and read by every editor.
+  {
+    id: "builtin-prores422",
+    name: "ProRes 422 HQ · 剪辑素材",
+    settings: {
+      ...DEFAULTS,
+      encoder: "prores_ks",
+      alphaMode: "discard",
+      bitDepth: 10,
+      chroma: "422",
+      container: "mov",
+      audio: "pcm_s16le",
+      preset: "medium",
+      rateControl: "quality",
+      quality: PRORES_QUALITY,
+      lookahead: 0,
+      lookaheadLevel: 0,
     },
   },
 );
@@ -226,7 +247,9 @@ function maskSettings(s) {
     bitDepth: 8,
     chroma: "420",
     quality: 0,
-    preset: "medium",
+    // Lossless x264: veryfast is ~30% quicker than medium for ~7% more size
+    // (4K MMD mask, docs/编码器实测对比.md); VP9 was not measured.
+    preset: s.container === "webm" ? "medium" : "veryfast",
     rateControl: "quality",
     lookahead: 0,
     lookaheadLevel: 0,
@@ -787,13 +810,30 @@ function filter(s, meta, mask) {
   if (s.resizeMode !== "source") f.push("setsar=1");
   return f.join(",");
 }
+// The source as FFmpeg input options: a file, or a PNG sequence read by the
+// image2 demuxer at the frame rate the user gave it (job.sequence).
+function inputArgs(job) {
+  const q = job.sequence;
+  return q
+    ? [
+        "-f",
+        "image2",
+        "-framerate",
+        String(q.fpsText || q.fps),
+        "-start_number",
+        String(q.start),
+        "-i",
+        q.pattern,
+      ]
+    : ["-i", job.path];
+}
 function buildCommands(job, s, engines, paths) {
   const errors = validate(s, job.meta);
   if (errors.length) throw Error(errors.join("；"));
   const base = ["-hide_banner", "-nostdin", "-n"];
   if (job.meta?.hasAlpha && ["vp8", "vp9"].includes(job.meta.codec))
     base.push("-c:v", job.meta.codec === "vp9" ? "libvpx-vp9" : "libvpx");
-  base.push("-i", job.path);
+  base.push(...inputArgs(job));
   const colors = [
     "-colorspace",
     s.colorSpace === "bt601"
@@ -1120,6 +1160,7 @@ function compatibility(s, engines = ENGINES) {
 }
 module.exports = {
   PRORES_QUALITY,
+  inputArgs,
   audioInfo,
   compatibility,
   DEFAULTS,

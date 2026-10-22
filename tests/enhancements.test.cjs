@@ -92,6 +92,7 @@ test("recommended presets pair hardware and software variants and scale by the l
       "默认 1080p · 软件",
       "保留 Alpha · ProRes 4444",
       "分离 Alpha · H.264 MP4",
+      "ProRes 422 HQ · 剪辑素材",
     ],
   );
   for (const p of c.BUILTINS) {
@@ -137,18 +138,28 @@ test("recommended presets pair hardware and software variants and scale by the l
   const alpha = byId["builtin-alpha"];
   assert.equal(alpha.encoder, "prores_ks");
   assert.equal(alpha.container, "mov");
-  assert.equal(alpha.quality, 8);
-  assert.equal(c.PRORES_QUALITY, 8);
+  assert.equal(alpha.quality, 12);
+  assert.equal(c.PRORES_QUALITY, 12);
+  // ProRes 422 HQ editing preset: no alpha, 10-bit 4:2:2, source size.
+  const p422 = byId["builtin-prores422"];
+  assert.equal(p422.encoder, "prores_ks");
+  assert.equal(p422.chroma, "422");
+  assert.equal(p422.bitDepth, 10);
+  assert.equal(p422.alphaMode, "discard");
+  assert.equal(p422.resizeMode, "source");
+  assert.equal(p422.quality, 12);
+  assert.deepEqual(c.validate(p422), []);
   const mask = byId["builtin-alpha-mask"];
   assert.equal(mask.resizeMode, "source");
-  // Split uses the recommended hardware parameters.
-  for (const k of ["encoder", "quality", "preset", "lookahead", "audioBitrate"])
+  // Split uses the recommended hardware encoder settings at CQ 19.
+  for (const k of ["encoder", "preset", "lookahead", "audioBitrate"])
     assert.equal(mask[k], byId["builtin-4k"][k]);
+  assert.equal(mask.quality, 19);
   assert.equal(mask.container, "mp4");
   assert.equal(mask.alphaMode, "discard");
   assert.equal(mask.alphaMask, true);
   // ProRes: quantizer 1–64 reaches FFmpeg, 0 keeps the encoder default.
-  const prores = { ...alpha, quality: 8 };
+  const prores = { ...alpha, quality: 16 };
   assert.deepEqual(c.validate(prores), []);
   assert.ok(
     c

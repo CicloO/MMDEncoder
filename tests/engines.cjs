@@ -1,3 +1,4 @@
+require("./isolate.cjs");
 const path = require("node:path");
 const { createTools } = require("../backend/tools.cjs");
 const managed = process.env.MMD_TEST_TOOLS_ROOT

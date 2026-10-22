@@ -5,10 +5,10 @@ Locale zh-CN, local Windows desktop, offline by default. No accounts or uploads.
 | Capability      | Canonical owner                               | Source of truth | Allowed variants           | Verification           |
 | --------------- | --------------------------------------------- | --------------- | -------------------------- | ---------------------- |
 | Select/Listbox  | src/components.tsx Select                     | DESIGN.md       | native Windows popup       | desktop keyboard tests |
-| Form            | src/components.tsx Field + backend validation | API.md          | settings / preset          | integration + UI       |
+| Form            | src/components.tsx Field + backend validation | backend/service.cjs | settings / preset          | integration + UI       |
 | Scrollbar       | src/style.css global baseline                 | DESIGN.md       | bounded logs               | computed style         |
 | Toast           | src/App.tsx Notice                            | this contract   | status / error             | live region            |
-| CRUD            | preset dialog + service                       | API.md          | builtin read-only / custom | CRUD UI test           |
+| CRUD            | preset dialog + service                       | backend/service.cjs | builtin read-only / custom | CRUD UI test           |
 | Table Selection | queue focus button                            | this contract   | single item detail         | keyboard + pagination  |
 
 Queue is a paged list, 20 entries per page, single focused item for detail; start applies current settings to waiting tasks, not only focused item. Search state is not required: no search box and transient private local paths never enter URLs. Page clamps after deletion. Source file removal only removes a queue item and never deletes the file. Clear completed is reversible by re-add and needs no confirmation.

@@ -78,5 +78,5 @@ test("preserve alpha in an unsupported format offers split alpha keeping the for
   const prores = c
     .compatibility(s, engines)
     .suggestions.find((x) => x.id === "prores_ks");
-  assert.equal(prores.patch.quality, 8);
+  assert.equal(prores.patch.quality, 12);
 });

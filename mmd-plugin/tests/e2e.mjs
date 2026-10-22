@@ -116,7 +116,7 @@ try {
     settings,
     presetName: "默认 1080p · CPU",
     presetId: "builtin-1080-sw",
-    alphaMask: true,
+    maskMode: "with",
     engines: { ffmpeg: ff, ffprobe: fp },
     appExe,
     helper: path.join(root, "backend/mmd-export.cjs"),

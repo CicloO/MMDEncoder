@@ -49,6 +49,8 @@ export type Meta = {
   hasAlpha: boolean;
   vfr?: boolean;
   videoBitRate?: number;
+  // A PNG image sequence read as video.
+  sequence?: { count: number; start: number };
   audio?: {
     codec: string;
     sampleRate: number;
@@ -72,6 +74,13 @@ export type Job = {
   output?: string;
   maskOutput?: string;
   settings?: Settings;
+  // PNG sequence source: FFmpeg pattern and the frame rate the user gave it.
+  sequence?: {
+    pattern: string;
+    start: number;
+    count: number;
+    fps: number;
+  };
 };
 // Video metadata, or an audio-only summary for audio files on the media page.
 export type MediaMeta = Partial<Meta> & {
@@ -100,7 +109,7 @@ export type Preset = {
   id: string;
   name: string;
   builtin: boolean;
-  // undefined = automatic (software built-ins hide while NVENC is available)
+  // undefined = shown; true / false = set with the hide / show button
   hidden?: boolean;
   edited?: boolean;
   settings: Settings;
@@ -117,6 +126,8 @@ export type State = {
   jobs: Job[];
   settings: Settings;
   presets: Preset[];
+  // Built-ins the user had edited that an update changed (see service.cjs).
+  presetConflicts?: { id: string; name: string; builtinName: string }[];
   engines: Engine[];
   detecting: boolean;
   located?: boolean;
@@ -132,10 +143,19 @@ export type State = {
     presetId: string;
     followMmd: boolean;
     audioFade: number;
-    alphaMask: boolean;
+    maskMode: "off" | "with" | "only";
     error: string;
+    interrupted: {
+      id: string;
+      output: string;
+      temp: string;
+      at: string;
+      presetName: string;
+      size: number;
+    }[];
     plugin: {
       available: boolean;
+      broken?: boolean;
       installed: boolean;
       upToDate: boolean;
       path: string;
@@ -150,6 +170,15 @@ export type State = {
       error?: string;
       startFrame?: number;
       frames?: number;
+      // Seconds; written by plugins from 1.4.2 on.
+      timing?: {
+        setup: number;
+        render: number;
+        waited: number;
+        longestWait: number;
+        encoderTail: number;
+        finish?: number;
+      };
     } | null;
   };
   engineInfo: { ffmpeg: string; ffprobe: string; nvencc: string };

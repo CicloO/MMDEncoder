@@ -553,6 +553,7 @@ test("built-in presets can be edited, hidden, deleted, reordered and restored ac
       "builtin-1080-sw",
       "builtin-alpha",
       "builtin-alpha-mask",
+      "builtin-prores422",
     ]);
     assert.equal(find("builtin-4k-sw").hidden, undefined);
     await svc.invoke("renamePreset", { id: "builtin-4k", name: "油管" });

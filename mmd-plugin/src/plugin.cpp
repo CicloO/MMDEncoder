@@ -16,6 +16,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <tlhelp32.h>
 #include <cguid.h>
 #include <knownfolders.h>
 #include <mediaobj.h>
@@ -24,6 +25,7 @@
 #include <amvideo.h>
 #include <strmif.h>
 #include <shlobj.h>
+#include <shellapi.h>
 #include <winternl.h>
 
 #include <algorithm>
@@ -150,6 +152,17 @@ class Log {
   HANDLE file_ = INVALID_HANDLE_VALUE;
   std::wstring dir_, path_;
 };
+
+static double seconds() {
+  static const double freq = [] {
+    LARGE_INTEGER f;
+    QueryPerformanceFrequency(&f);
+    return (double)f.QuadPart;
+  }();
+  LARGE_INTEGER now;
+  QueryPerformanceCounter(&now);
+  return now.QuadPart / freq;
+}
 
 static void plog(const wchar_t* fmt, ...) {
   wchar_t buf[4096];
@@ -317,30 +330,36 @@ static bool readFile(const std::wstring& path, std::string& out);
 // ------------------------------------------------------ settings window ---
 // MMD's "詳細設定" for this codec: the same choices as MMDEncoder's preset
 // manager (preset, follow MMD's size and frame rate, alpha mask, audio fade). The choice is
-// saved to mmd-selection.json, which MMDEncoder also reads and writes.
+// saved to mmd-selection.json, which MMDEncoder also reads and writes; MMDEncoder adopts a
+// choice saved here as soon as it lands.
 
-enum { IDC_PRESET = 101, IDC_FOLLOW = 102, IDC_FADE = 103, IDC_MASK = 104 };
+enum { IDC_PRESET = 101, IDC_FOLLOW = 102, IDC_FADE = 103, IDC_MASK = 104, IDC_OPEN_APP = 105 };
 static const double kFades[] = {0, 0.5, 1, 2};
 static const wchar_t* kFadeNames[] = {L"关闭", L"0.5 秒", L"1 秒", L"2 秒"};
+// Alpha mask: the choice overrides the preset's own alpha setting.
+static const char* kMaskModes[] = {"off", "with", "only"};
+static const wchar_t* kMaskNames[] = {L"不导出", L"同时导出遮罩", L"仅导出遮罩"};
 
 struct SettingsContext {
   struct Preset {
     std::wstring id, name;
-    int mask;  // 0 = per the switch, 1 = preset always writes a mask, 2 = mask-only preset
+    int mask;  // what the preset does by itself: index into kMaskModes
   };
   std::vector<Preset> presets;
   std::wstring presetId;
   bool followMmd = true;
-  bool alphaMask = false;
+  int maskMode = -1;  // index into kMaskModes; -1 = saved by 1.4.1, the preset decides
   double audioFade = 0;
+  std::wstring appExe;  // MMDEncoder.exe, from mmd-export.json
 };
 
-// The mask switch follows the preset when the preset decides it.
-static void updateMaskBox(HWND dlg, SettingsContext* ctx) {
+// Picking a preset that writes a mask by itself sets the mask choice to match.
+static void presetPicked(HWND dlg, SettingsContext* ctx, bool initial) {
   int i = (int)SendDlgItemMessageW(dlg, IDC_PRESET, CB_GETCURSEL, 0, 0);
-  int fixed = i >= 0 && i < (int)ctx->presets.size() ? ctx->presets[i].mask : 0;
-  CheckDlgButton(dlg, IDC_MASK, (fixed ? fixed == 1 : ctx->alphaMask) ? BST_CHECKED : BST_UNCHECKED);
-  EnableWindow(GetDlgItem(dlg, IDC_MASK), !fixed);
+  int own = i >= 0 && i < (int)ctx->presets.size() ? ctx->presets[i].mask : 0;
+  int mode = (int)SendDlgItemMessageW(dlg, IDC_MASK, CB_GETCURSEL, 0, 0);
+  if (initial ? ctx->maskMode < 0 : own != 0) mode = own;
+  SendDlgItemMessageW(dlg, IDC_MASK, CB_SETCURSEL, mode < 0 ? 0 : mode, 0);
 }
 
 // In-memory dialog template (no .rc file needed).
@@ -407,16 +426,26 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
       if (kFades[i] == ctx->audioFade) fadeIndex = i;
     }
     SendMessageW(fade, CB_SETCURSEL, fadeIndex, 0);
-    updateMaskBox(dlg, ctx);
+    HWND mask = GetDlgItem(dlg, IDC_MASK);
+    for (int i = 0; i < 3; i++) SendMessageW(mask, CB_ADDSTRING, 0, (LPARAM)kMaskNames[i]);
+    SendMessageW(mask, CB_SETCURSEL, ctx->maskMode < 0 ? 0 : ctx->maskMode, 0);
+    presetPicked(dlg, ctx, true);
     return TRUE;
   }
-  if (msg == WM_COMMAND && LOWORD(wp) == IDC_MASK && HIWORD(wp) == BN_CLICKED) {
-    ctx->alphaMask = IsDlgButtonChecked(dlg, IDC_MASK) != BST_CHECKED;
-    CheckDlgButton(dlg, IDC_MASK, ctx->alphaMask ? BST_CHECKED : BST_UNCHECKED);
+  // Open MMDEncoder (an open one comes to the front) to manage presets and exports.
+  if (msg == WM_COMMAND && LOWORD(wp) == IDC_OPEN_APP && HIWORD(wp) == BN_CLICKED) {
+    const std::wstring& exe = ctx->appExe;
+    const size_t slash = exe.find_last_of(L"\\/");
+    if (exe.empty() || GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES ||
+        (INT_PTR)ShellExecuteW(dlg, L"open", exe.c_str(), nullptr,
+                               slash == std::wstring::npos ? nullptr : exe.substr(0, slash).c_str(),
+                               SW_SHOWNORMAL) <= 32)
+      MessageBoxW(dlg, L"找不到 MMDEncoder。\n\n可能已移动或删除；请手动打开 MMDEncoder，它会自动更新这里记录的位置。",
+                  L"MMDEncoder", MB_OK | MB_ICONWARNING);
     return TRUE;
   }
   if (msg == WM_COMMAND && LOWORD(wp) == IDC_PRESET && HIWORD(wp) == CBN_SELCHANGE) {
-    updateMaskBox(dlg, ctx);
+    presetPicked(dlg, ctx, false);
     return TRUE;
   }
   if (msg == WM_COMMAND && (LOWORD(wp) == IDOK || LOWORD(wp) == IDCANCEL)) {
@@ -430,6 +459,8 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
       ctx->followMmd = IsDlgButtonChecked(dlg, IDC_FOLLOW) == BST_CHECKED;
       int f = (int)SendDlgItemMessageW(dlg, IDC_FADE, CB_GETCURSEL, 0, 0);
       ctx->audioFade = kFades[f < 0 ? 0 : f];
+      int m = (int)SendDlgItemMessageW(dlg, IDC_MASK, CB_GETCURSEL, 0, 0);
+      ctx->maskMode = m < 0 ? 0 : m;
     }
     EndDialog(dlg, LOWORD(wp) == IDOK);
     return TRUE;
@@ -455,7 +486,7 @@ static void showSettings(HWND parent) {
       const Json& s = p[L"settings"];
       int mask = s[L"alphaMode"].s == L"mask"                               ? 2
                  : s[L"alphaMask"].type == Json::Bool && s[L"alphaMask"].b ? 1
-                                                                            : 0;
+                                                                            : 0;  // kMaskModes
       ctx.presets.push_back({p[L"id"].s, p[L"name"].s, mask});
     }
   raw.clear();
@@ -463,8 +494,13 @@ static void showSettings(HWND parent) {
     ctx.presetId = selection[L"presetId"].s;
     ctx.followMmd = selection[L"followMmd"].type != Json::Bool || selection[L"followMmd"].b;
     ctx.audioFade = selection[L"audioFade"].n;
-    ctx.alphaMask = selection[L"alphaMask"].type == Json::Bool && selection[L"alphaMask"].b;
+    for (int i = 0; i < 3; i++)
+      if (selection[L"maskMode"].s == utf16(kMaskModes[i])) ctx.maskMode = i;
+    // Saved by 1.4.1, which only had the "also export the mask" switch.
+    if (ctx.maskMode < 0 && selection[L"alphaMask"].type == Json::Bool && selection[L"alphaMask"].b)
+      ctx.maskMode = 1;
   }
+  ctx.appExe = config[L"appExe"].s;
 
   DialogTemplate t(L"MMDEncoder 导出设置", 270, 148);
   const WORD STATIC_ = 0x0082, BUTTON_ = 0x0080, COMBO_ = 0x0085;
@@ -472,13 +508,14 @@ static void showSettings(HWND parent) {
   t.control(IDC_PRESET, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 19, 250, 160, L"");
   t.control(IDC_FOLLOW, BUTTON_, BS_AUTOCHECKBOX | WS_TABSTOP, 10, 38, 250, 11,
             L"分辨率和帧率跟随 MMD（用这里设定的尺寸和帧率）");
-  t.control(IDC_MASK, BUTTON_, BS_CHECKBOX | WS_TABSTOP, 10, 52, 250, 11,
-            L"同时导出 Alpha 遮罩（同名 _alpha 黑白视频）");
-  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 72, 250, 9, L"音频淡入淡出");
-  t.control(IDC_FADE, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 83, 110, 80, L"");
-  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 104, 250, 26,
+  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 54, 120, 9, L"Alpha 遮罩（同名 _alpha 黑白视频）");
+  t.control(IDC_MASK, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 65, 120, 80, L"");
+  t.control(0xFFFF, STATIC_, SS_LEFT, 140, 54, 120, 9, L"音频淡入淡出");
+  t.control(IDC_FADE, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 140, 65, 120, 80, L"");
+  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 88, 250, 34,
             L"成片保存在 AVI 同目录、同名，自动合成音频，完成后删除占位 AVI。"
-            L"这里的选择与 MMDEncoder 的“MMD 导出”同步。");
+            L"遮罩选项优先于预设自带的遮罩设置。这里的选择与 MMDEncoder 的“MMD 导出”同步，以最后保存的为准。");
+  t.control(IDC_OPEN_APP, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 10, 126, 80, 15, L"打开 MMDEncoder");
   t.control(IDOK, BUTTON_, BS_DEFPUSHBUTTON | WS_TABSTOP, 148, 126, 54, 15, L"确定");
   t.control(IDCANCEL, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 206, 126, 54, 15, L"取消");
   if (DialogBoxIndirectParamW(g_module, t.get(), parent, settingsProc, (LPARAM)&ctx) != 1) return;
@@ -490,8 +527,9 @@ static void showSettings(HWND parent) {
             st.wSecond, st.wMilliseconds);
   sprintf_s(fade, "%g", ctx.audioFade);
   std::string json = "{\n  \"presetId\": " + jsonString(ctx.presetId) + ",\n  \"followMmd\": " +
-                     (ctx.followMmd ? "true" : "false") + ",\n  \"alphaMask\": " +
-                     (ctx.alphaMask ? "true" : "false") + ",\n  \"audioFade\": " + fade +
+                     (ctx.followMmd ? "true" : "false") + ",\n  \"maskMode\": \"" + kMaskModes[ctx.maskMode] +
+                     "\",\n  \"alphaMask\": " + (ctx.maskMode == 1 ? "true" : "false") +
+                     ",\n  \"audioFade\": " + fade +
                      ",\n  \"savedAt\": \"" + saved + "\"\n}\n";
   std::wstring file = dir + L"\\mmd-selection.json", tmp = file + L".tmp";
   HANDLE h = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
@@ -910,6 +948,7 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
   STDMETHODIMP AllocateStreamingResources() override {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     frames_ = 0;
+    waited_ = longestWait_ = 0;
     failed_ = false;
     finished_ = false;
     error_.clear();
@@ -937,8 +976,20 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
     BYTE* data = nullptr;
     DWORD bytes = 0;
     buffer->GetBufferAndLength(&data, &bytes);
-    if (frames_ == 0) start();
-    if (encoder_ && !failed_) writeFrame(data, bytes);
+    if (frames_ == 0) {
+      const double t = seconds();
+      start();
+      setup_ = seconds() - t;
+      renderStart_ = seconds();
+    }
+    if (encoder_ && !failed_) {
+      // Time MMD spends blocked here is time it waits for FFmpeg.
+      const double t = seconds();
+      writeFrame(data, bytes);
+      const double w = seconds() - t;
+      waited_ += w;
+      if (w > longestWait_) longestWait_ = w;
+    }
     pendingFlags_ = flags;
     pendingTime_ = time;
     pendingLength_ = length;
@@ -1014,10 +1065,11 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
     helper_ = config_[L"helper"].s;
     if (appExe_.empty() || helper_.empty()) return fail(L"导出设置不完整，请在 MMDEncoder 里重新选择导出预设");
 
-    char job[2048];
-    sprintf_s(job, "{\"avi\":%s,\"width\":%ld,\"height\":%ld,\"bits\":%d,\"bottomUp\":%s,\"avgTimePerFrame\":%lld}",
-              jsonString(avi_).c_str(), width_, height_, bits_, b.biHeight > 0 ? "true" : "false",
-              inInfo_.AvgTimePerFrame);
+    // pmm and startFrame let a cut-off export be finished later (mmd-export recover()).
+    char head[512];
+    sprintf_s(head, ",\"width\":%ld,\"height\":%ld,\"bits\":%d,\"bottomUp\":%s,\"avgTimePerFrame\":%lld,\"startFrame\":%ld}",
+              width_, height_, bits_, b.biHeight > 0 ? "true" : "false", inInfo_.AvgTimePerFrame, mmd_.startFrame);
+    const std::string job = "{\"avi\":" + jsonString(avi_) + ",\"pmm\":" + jsonString(mmd_.pmm) + head;
     std::string reply;
     Json plan;
     if (!runHelper(appExe_, helper_, L"plan", job, reply, 30000) || !JsonReader(reply).parse(plan))
@@ -1087,6 +1139,7 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (finished_ || frames_ == 0) return;
     finished_ = true;
+    const double lastFrame = seconds();
     if (stdin_) CloseHandle(stdin_), stdin_ = nullptr;
     DWORD code = 1;
     if (encoder_) {
@@ -1100,10 +1153,21 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
       if (code != 0) fail(L"FFmpeg 编码失败（退出码 " + std::to_wstring(code) + L"），详见 FFmpeg 日志");
     }
     plog(L"render end: %llu frames, ffmpeg exit %lu", frames_, code);
+    // Whether a frame queue would help: share of the render MMD sat waiting
+    // for FFmpeg to take a frame, and how long FFmpeg ran on after the last one.
+    const double render = lastFrame - renderStart_;
+    plog(L"timing: setup %.2f s, render %.2f s (%.1f fps), waiting for FFmpeg %.2f s (%.1f%%, longest %.0f ms), "
+         L"FFmpeg finished %.2f s after the last frame",
+         setup_, render, render > 0 ? frames_ / render : 0.0, waited_, render > 0 ? 100 * waited_ / render : 0.0,
+         1000 * longestWait_, seconds() - lastFrame);
     if (!failed_) {
-      char head[256];
-      sprintf_s(head, ",\"frames\":%llu,\"avgTimePerFrame\":%lld,\"startFrame\":%ld}", frames_,
-                inInfo_.AvgTimePerFrame, mmd_.startFrame);
+      // The same timing, for MMDEncoder to show with the export.
+      char head[512];
+      sprintf_s(head,
+                ",\"frames\":%llu,\"avgTimePerFrame\":%lld,\"startFrame\":%ld,\"timing\":{\"setup\":%.3f,"
+                "\"render\":%.3f,\"waited\":%.3f,\"longestWait\":%.3f,\"encoderTail\":%.3f}}",
+                frames_, inInfo_.AvgTimePerFrame, mmd_.startFrame, setup_, render, waited_, longestWait_,
+                seconds() - lastFrame);
       std::string job = "{\"avi\":" + jsonString(avi_) + ",\"temp\":" + jsonString(temp_) +
                         ",\"output\":" + jsonString(output_) + ",\"pmm\":" + jsonString(mmd_.pmm) + head;
       if (startDetached(appExe_, helper_, job)) {
@@ -1150,6 +1214,7 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
   DWORD pendingFlags_ = 0;
   REFERENCE_TIME pendingTime_ = 0, pendingLength_ = 0;
   unsigned long long frames_ = 0;
+  double setup_ = 0, renderStart_ = 0, waited_ = 0, longestWait_ = 0;  // seconds
   long width_ = 0, height_ = 0;
   int bits_ = 0;
   MmdState mmd_;
@@ -1220,7 +1285,45 @@ static std::wstring categoryKey() {
 }
 
 // Per-user registration (HKCU): no administrator rights needed.
+// One line per (un)registration in logs\install.log, next to the lines the app
+// writes: which process registered which DLL. The registry was twice found
+// pointing back to an older, deleted build; this shows who wrote it.
+static void journal(const char* event) {
+  wchar_t dll[MAX_PATH] = L"", host[MAX_PATH] = L"";
+  GetModuleFileNameW(g_module, dll, MAX_PATH);
+  GetModuleFileNameW(nullptr, host, MAX_PATH);
+  std::wstring parent;
+  // regsvr32 itself says little; its parent process tells who ran it.
+  HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snap != INVALID_HANDLE_VALUE) {
+    PROCESSENTRY32W pe{sizeof(pe)};
+    DWORD self = GetCurrentProcessId(), parentId = 0;
+    for (BOOL ok = Process32FirstW(snap, &pe); ok; ok = Process32NextW(snap, &pe))
+      if (pe.th32ProcessID == self) parentId = pe.th32ParentProcessID;
+    for (BOOL ok = Process32FirstW(snap, &pe); parentId && ok; ok = Process32NextW(snap, &pe))
+      if (pe.th32ProcessID == parentId) parent = pe.szExeFile;
+    CloseHandle(snap);
+  }
+  SYSTEMTIME st;
+  GetSystemTime(&st);
+  char at[40];
+  sprintf_s(at, "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute,
+            st.wSecond, st.wMilliseconds);
+  std::string line = std::string("{\"at\":\"") + at + "\",\"event\":\"" + event + "\",\"dll\":" + jsonString(dll) +
+                     ",\"host\":" + jsonString(host) + ",\"parent\":" + jsonString(parent) +
+                     ",\"pid\":" + std::to_string(GetCurrentProcessId()) + "}\n";
+  std::wstring dir = pluginDir() + L"\\logs";
+  CreateDirectoryW(dir.c_str(), nullptr);
+  HANDLE h = CreateFileW((dir + L"\\install.log").c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                         nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (h == INVALID_HANDLE_VALUE) return;
+  DWORD written = 0;
+  WriteFile(h, line.data(), (DWORD)line.size(), &written, nullptr);
+  CloseHandle(h);
+}
+
 STDAPI DllRegisterServer() {
+  journal("dll-register");
   wchar_t path[MAX_PATH];
   GetModuleFileNameW(g_module, path, MAX_PATH);
   std::vector<GUID> inputs;
@@ -1237,6 +1340,7 @@ STDAPI DllRegisterServer() {
 }
 
 STDAPI DllUnregisterServer() {
+  journal("dll-unregister");
   for (const std::wstring& key : {categoryKey(), dmoKey(), classKey()}) {
     RegDeleteTreeW(HKEY_CURRENT_USER, key.c_str());
     RegDeleteKeyW(HKEY_CURRENT_USER, key.c_str());

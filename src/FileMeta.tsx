@@ -42,7 +42,7 @@ export function metaSummary(meta: MediaMeta) {
   const video = mbps(meta.videoBitRate);
   return meta.audioOnly
     ? `${meta.audio ? audioText(meta.audio) : meta.codec.toUpperCase()} · ${formatDuration(meta.duration)} · ${formatSize(meta.size)}`
-    : `${meta.width}×${meta.height} · ${formatFPS(meta.fpsText || meta.fps || 0)} FPS · ${[video && video + " Mbps", audioShort(meta.audio), formatSize(meta.size)].filter(Boolean).join(" · ")}`;
+    : `${meta.width}×${meta.height} · ${formatFPS(meta.fpsText || meta.fps || 0)} FPS · ${[meta.sequence ? `${meta.sequence.count} 张 PNG` : video && video + " Mbps", meta.sequence ? "" : audioShort(meta.audio), formatSize(meta.size)].filter(Boolean).join(" · ")}`;
 }
 
 // Parameter block shown under "当前素材" / "当前文件".
@@ -85,7 +85,11 @@ export function FileMeta({ meta }: { meta: MediaMeta }) {
         )}
       </div>
       <div className="metadata">
-        <span>{meta.codec.toUpperCase()}</span>
+        <span>
+          {meta.sequence
+            ? `PNG 序列 · ${meta.sequence.count} 帧`
+            : meta.codec.toUpperCase()}
+        </span>
         <span>{meta.pixFmt}</span>
         <span>{meta.bitDepth || "未知"}-bit</span>
         <span>{formatDuration(meta.duration)}</span>

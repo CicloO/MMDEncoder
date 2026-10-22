@@ -1282,3 +1282,13 @@ html[data-theme="light"] {
   width: 100%;
   margin: 0 auto;
 }
+.status-row .row-detail {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.sequence-rate {
+  max-width: 240px;
+  margin-top: 14px;
+}
