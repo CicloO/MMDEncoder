@@ -262,7 +262,7 @@ node tests/rtx-live.cjs        # RTX 实机测试（需要 NVIDIA 显卡）
 
 ## 许可证
 
-本项目以 [MIT 许可证](LICENSE) 发布。
+Copyright (c) 2026 CicloO。本项目以 [Mozilla Public License 2.0](LICENSE)（MPL 2.0）发布：可以自由使用、修改和分发，包括用在闭源或商业软件中；但修改了本项目的源文件并分发时，这些文件须继续以 MPL 2.0 公开源代码。发行包里的协议全文是 `LICENSE-MMDEncoder.txt`（同目录的 `LICENSE` 是 Electron 的协议）。1.4.3 及以前的版本以 MIT 许可证发布。
 
 FFmpeg、ffprobe、NVEncC 等第三方工具不属于本项目，由用户另行下载，遵循各自的许可证，详见 [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md)。
 

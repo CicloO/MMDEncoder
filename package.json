@@ -3,7 +3,7 @@
   "version": "1.5.0",
   "private": true,
   "description": "MMD 独立视频压制工具",
-  "license": "MIT",
+  "license": "MPL-2.0",
   "main": "desktop/main.cjs",
   "scripts": {
     "dev": "vite --host 127.0.0.1",

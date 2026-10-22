@@ -108,6 +108,8 @@ for (const [from, to] of [
   ["README.md", "README.md"],
   ["docs/CHANGELOG.md", "CHANGELOG.md"],
   ["docs/THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"],
+  // The root LICENSE beside the exe is Electron's own.
+  ["LICENSE", "LICENSE-MMDEncoder.txt"],
 ])
   await fs.copyFile(path.join(root, from), path.join(dest, to));
 await fs.mkdir(appDir, { recursive: true });
