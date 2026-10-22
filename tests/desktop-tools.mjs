@@ -217,15 +217,53 @@ try {
   const axe = await new AxeBuilder({ page }).setLegacyMode().analyze();
   assert.deepEqual(axe.violations, []);
   checks.push("media narrow viewport and accessibility");
+  // 关于: version, this version's notes, support links; updates no
+  // longer live in the engine dialog.
+  await page.getByRole("button", { name: /关于/ }).click();
+  const about = page.getByRole("dialog", { name: "关于" });
+  await expect(about.locator(".about-version strong")).toHaveText(
+    require("../package.json").version,
+  );
+  await expect(about.locator(".release-notes h4").first()).toBeVisible();
+  await expect(about.getByRole("button", { name: "问题反馈" })).toBeVisible();
+  const aboutHeight = (await about.boundingBox()).height;
+  await screenshot(app, "about-fixed.png");
+  const aboutAxe = await new AxeBuilder({ page })
+    .include('[role="dialog"]')
+    .setLegacyMode()
+    .analyze();
+  assert.deepEqual(aboutAxe.violations, []);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /个可用编码器|检测编码器/ }).click();
+  await expect(page.getByRole("dialog", { name: "编码引擎" })).toBeVisible();
+  assert.ok(
+    Math.abs(
+      (await page.getByRole("dialog").boundingBox()).height - aboutHeight,
+    ) < 2,
+  );
+  await expect(page.getByRole("region", { name: "软件更新" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  checks.push("about dialog: version, changelog, support, accessibility");
   await page.getByRole("button", { name: "视频压制", exact: true }).click();
   await page.getByRole("button", { name: "超分补帧", exact: true }).click();
   await page.selectOption("#upscaler", "artcnn");
   await expect(page.getByText(/保留原有颗粒质感/)).toBeVisible();
-  checks.push("ArtCNN upscaler choice");
+  await page.selectOption("#artcnnModel", "C4F32");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        async () => (await window.encoder.invoke("state")).settings.artcnnModel,
+      ),
+    )
+    .toBe("C4F32");
+  // The 1080p pre-scale option was removed after testing (it lost detail).
+  await expect(page.locator("#prescale1080")).toHaveCount(0);
+  checks.push("ArtCNN upscaler and model choice");
   await screenshot(app, "upscale-artcnn.png");
   await page.selectOption("#upscaler", "vsr");
   await page.selectOption("#vsrQuality", "16");
-  await expect(page.getByText(/16–19 补细节/)).toBeVisible();
+  await expect(page.locator("#vsrQuality")).toHaveValue("16");
+  await expect(page.getByText("本机验证")).toBeVisible();
   checks.push("RTX controls and detail restoration semantics");
   await screenshot(app, "rtx-settings.png");
   fs.writeFileSync(

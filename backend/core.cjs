@@ -19,6 +19,8 @@ const DEFAULTS = {
   resizeAxis: "width",
   audio: "aac",
   audioBitrate: 0,
+  // Seconds of fade-in at the start and fade-out at the end (0 = off).
+  audioFade: 0,
   // Hi-Res audio (FLAC / PCM): 24-bit, twice the rate below 48 kHz.
   hiRes: false,
   alphaMask: false,
@@ -38,6 +40,7 @@ const DEFAULTS = {
   // Enlarging: "lanczos" (FFmpeg) or "artcnn" (ArtCNN shader on the GPU
   // through libplacebo / Vulkan). RTX VSR is the separate vsr switch.
   upscaler: "lanczos",
+  artcnnModel: "C4F16",
   vsr: false,
   vsrScale: 2,
   vsrQuality: 4,
@@ -296,6 +299,10 @@ function validate(s, meta) {
     ["lanczos", "artcnn"].includes(s.upscaler ?? "lanczos"),
     "放大算法无效",
   );
+  check(
+    ["C4F16", "C4F32"].includes(s.artcnnModel ?? "C4F16"),
+    "ArtCNN 模型无效",
+  );
   if (s.vsr) {
     check(
       Number.isFinite(s.vsrScale) && s.vsrScale >= 1 && s.vsrScale <= 4,
@@ -394,6 +401,10 @@ function validate(s, meta) {
       s.audioBitrate ?? 0,
     ),
     "音频码率无效，请选择列表中的码率",
+  );
+  check(
+    media.FADES.includes(s.audioFade ?? 0),
+    "音频淡入淡出无效，请选择列表中的时长",
   );
   check(typeof s.alphaMask === "boolean", "透明遮罩开关无效");
   check(typeof s.hiRes === "boolean", "Hi-Res 开关无效");
@@ -847,13 +858,14 @@ const BACKGROUNDS = {
   black: [0, 0, 0],
   white: [255, 255, 255],
 };
-const ARTCNN = path.join(
-  __dirname,
-  "..",
-  "assets",
-  "shaders",
-  "ArtCNN_C4F16.glsl",
-);
+const artcnnPath = (s) =>
+  path.join(
+    __dirname,
+    "..",
+    "assets",
+    "shaders",
+    `ArtCNN_${s.artcnnModel || "C4F16"}.glsl`,
+  );
 // ArtCNN only enlarges; shrinking (or keeping the size) stays with Lanczos.
 // ArtCNN is a 2x model: its shader only runs when both sides grow by more
 // than 1.3x (its own //!WHEN), and libplacebo scales the 2x result to the
@@ -883,6 +895,10 @@ const filterPath = (p) =>
     .replace(/\\/g, "/")
     .replace(/[\\':]/g, (c) => "\\" + c)
     .replace(/[\\'[\],;]/g, (c) => "\\" + c);
+// FFmpeg's part before VSR in NVEncC: everything except the resize.
+function vsrPrepare(s) {
+  return { ...s, vsr: false, upscaler: "lanczos", resizeMode: "source" };
+}
 function filter(s, meta, mask) {
   const f = [];
   // YUV sources without a colour matrix tag are read as BT.709: FFmpeg would
@@ -945,7 +961,7 @@ function filter(s, meta, mask) {
           : matrix(s.colorSpace)
       }:range=${yuv ? range(meta.colorRange) : range(s.colorRange)}`,
       "hwupload",
-      `libplacebo=w=${size.width}:h=${size.height}:custom_shader_path=${filterPath(ARTCNN)}:colorspace=${matrix(s.colorSpace)}:range=${range(s.colorRange)}:format=${out}`,
+      `libplacebo=w=${size.width}:h=${size.height}:custom_shader_path=${filterPath(artcnnPath(s))}:colorspace=${matrix(s.colorSpace)}:range=${range(s.colorRange)}:format=${out}`,
       "hwdownload",
       `format=${out}`,
     );
@@ -1059,29 +1075,34 @@ function buildCommands(job, s, engines, paths) {
     "-color_range",
     s.colorRange,
   ];
+  const hiResPlan =
+    s.hiRes &&
+    job.meta?.audio &&
+    media.hiResPlan(s.audio === "flac" ? "flac" : "wav", job.meta.audio);
   const audio =
     job.meta?.audio && s.audio !== "none"
       ? [
           "-map",
           "0:a:0?",
-          ...(s.hiRes
-            ? // PCM becomes 24-bit PCM; see media.hiResPlan for the rules.
-              media.hiResArgs(
-                media.hiResPlan(
-                  s.audio === "flac" ? "flac" : "wav",
-                  job.meta.audio,
-                ),
-                engines?.soxr,
-              )
-            : [
-                "-c:a",
-                s.audio,
-                ...(["aac", "libopus"].includes(s.audio) && s.audioBitrate
-                  ? ["-b:a", s.audioBitrate + "k"]
-                  : s.audio === "aac"
-                    ? ["-b:a", "192k"]
-                    : []),
-              ]),
+          // Fade in / out over the source's length (audio keeps its timing).
+          ...media.withAudioFilter(
+            s.hiRes
+              ? // PCM becomes 24-bit PCM; see media.hiResPlan for the rules.
+                // A fade means re-encoding even where Hi-Res would copy.
+                s.audioFade && hiResPlan.action === "copy"
+                ? media.hiResCodec(hiResPlan)
+                : media.hiResArgs(hiResPlan, engines?.soxr)
+              : [
+                  "-c:a",
+                  s.audio,
+                  ...(["aac", "libopus"].includes(s.audio) && s.audioBitrate
+                    ? ["-b:a", s.audioBitrate + "k"]
+                    : s.audio === "aac"
+                      ? ["-b:a", "192k"]
+                      : []),
+                ],
+            media.fadeFilter(s.audioFade, job.meta.duration),
+          ),
         ]
       : ["-an"];
   const result = [];
@@ -1104,11 +1125,7 @@ function buildCommands(job, s, engines, paths) {
           "-map",
           "0:v:0",
           "-vf",
-          filter(
-            s.vsr ? { ...s, vsr: false, resizeMode: "source" } : s,
-            job.meta || {},
-            false,
-          ),
+          filter(s.vsr ? vsrPrepare(s) : s, job.meta || {}, false),
           "-c:v",
           "rawvideo",
           "-pix_fmt",

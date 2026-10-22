@@ -657,6 +657,7 @@ const AUDIO_CODECS = {
 //     from audio.offset seconds: positive skips into the file, negative
 //     starts it that much later)
 //   audio.codec: aac | flac | pcm; audio.kbps for AAC.
+//   audio.fade: seconds of fade in / out over the whole result (0 = off).
 async function addAudio(tools, segments, video, output, audio, signal) {
   const codec = AUDIO_CODECS[audio.codec || "aac"];
   if (!codec) throw Error("音频格式无效");
@@ -715,6 +716,10 @@ async function addAudio(tools, segments, video, output, audio, signal) {
         "[aout]",
     );
   } else throw Error("音频方式无效");
+  // Optional fade in at the very start and out at the very end of the whole
+  // result (joins between segments stay unfaded).
+  const fade = require("./media.cjs").fadeFilter(audio.fade, total);
+  if (fade) graph.push(`[aout]${fade}[afaded]`);
   await run(
     tools.ffmpeg,
     [
@@ -729,7 +734,7 @@ async function addAudio(tools, segments, video, output, audio, signal) {
       "-map",
       "0:v:0",
       "-map",
-      "[aout]",
+      fade ? "[afaded]" : "[aout]",
       "-c:v",
       "copy",
       ...codec(audio.kbps),

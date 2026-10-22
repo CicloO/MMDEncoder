@@ -42,7 +42,8 @@ test("Hi-Res needs FLAC or PCM; adding the setting does not mark built-ins as ch
   // Settings saved by 1.4.2 recorded built-ins' fingerprints without hiRes.
   const shipped = core.BUILTINS[0];
   // 1.4.2 had neither hiRes nor editFriendly (nor upscaler, added later).
-  const { hiRes, editFriendly, upscaler, ...before } = shipped.settings;
+  const { hiRes, editFriendly, upscaler, audioFade, artcnnModel, ...before } =
+    shipped.settings;
   assert.equal(upscaler, "lanczos");
   assert.equal(editFriendly, false);
   assert.equal(hiRes, false);

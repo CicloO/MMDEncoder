@@ -92,6 +92,7 @@ export function Modal({
   description,
   error,
   wide,
+  fixedHeight,
   children,
 }: {
   open: boolean;
@@ -100,30 +101,37 @@ export function Modal({
   description: string;
   error?: string;
   wide?: boolean;
+  fixedHeight?: boolean;
   children: ReactNode;
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={(v) => !v && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="overlay" />
-        <Dialog.Content className={wide ? "modal wide" : "modal"}>
-          <div className="modal-head">
-            <div>
-              <Dialog.Title>{title}</Dialog.Title>
-              <Dialog.Description>{description}</Dialog.Description>
+        <Dialog.Content
+          className={`modal${wide ? " wide" : ""}${fixedHeight ? " modal-fixed" : ""}`}
+        >
+          <div className="modal-scroll">
+            <div className="modal-head">
+              <div>
+                <Dialog.Title>{title}</Dialog.Title>
+                <Dialog.Description>{description}</Dialog.Description>
+              </div>
+              <Dialog.Close asChild>
+                <Button onClick={onClose} aria-label="关闭" title="关闭">
+                  <X size={18} />
+                </Button>
+              </Dialog.Close>
             </div>
-            <Dialog.Close asChild>
-              <Button onClick={onClose} aria-label="关闭" title="关闭">
-                <X size={18} />
-              </Button>
-            </Dialog.Close>
+            <div className="modal-body">
+              {children}
+              {error && (
+                <p className="inline-error" role="alert">
+                  {error}
+                </p>
+              )}
+            </div>
           </div>
-          {children}
-          {error && (
-            <p className="inline-error" role="alert">
-              {error}
-            </p>
-          )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

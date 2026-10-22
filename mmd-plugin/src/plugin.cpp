@@ -359,7 +359,9 @@ static void presetPicked(HWND dlg, SettingsContext* ctx, bool initial) {
   int i = (int)SendDlgItemMessageW(dlg, IDC_PRESET, CB_GETCURSEL, 0, 0);
   int own = i >= 0 && i < (int)ctx->presets.size() ? ctx->presets[i].mask : 0;
   int mode = (int)SendDlgItemMessageW(dlg, IDC_MASK, CB_GETCURSEL, 0, 0);
-  if (initial ? ctx->maskMode < 0 : own != 0) mode = own;
+  // MMD export options outrank the preset: only a choice saved before the
+  // mask option existed is derived from the preset, once, on opening.
+  if (initial && ctx->maskMode < 0) mode = own;
   SendDlgItemMessageW(dlg, IDC_MASK, CB_SETCURSEL, mode < 0 ? 0 : mode, 0);
 }
 
@@ -520,7 +522,7 @@ static void showSettings(HWND parent) {
   t.control(IDC_FADE, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 140, 79, 120, 80, L"");
   t.control(0xFFFF, STATIC_, SS_LEFT, 10, 102, 250, 34,
             L"成片保存在 AVI 同目录、以 AVI 的文件名命名，自动合成音频，完成后删除占位 AVI。"
-            L"遮罩选项优先于预设自带的遮罩设置。这里的选择与 MMDEncoder 的“MMD 导出”同步，以最后保存的为准。");
+            L"这里的选项均优先于预设；与 MMDEncoder 的“MMD 导出”同步，以最后保存为准。淡入淡出仅作用于成片首尾。");
   t.control(IDC_OPEN_APP, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 10, 140, 80, 15, L"打开 MMDEncoder");
   t.control(IDOK, BUTTON_, BS_DEFPUSHBUTTON | WS_TABSTOP, 148, 140, 54, 15, L"确定");
   t.control(IDCANCEL, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 206, 140, 54, 15, L"取消");

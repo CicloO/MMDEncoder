@@ -88,3 +88,5 @@ Do show genuine encoder capabilities, paths and actionable recovery. Do preserve
 Resolution uses source dimensions by default. Custom dimensions lock source aspect ratio by default; each batch item derives its other dimension from its own source. Alpha retention is explicit and incompatible codec combinations show actionable errors.
 
 The top function navigation separates video encoding from media extraction/merge. Media tools reuse shared Field/Select/Button and the same panels, status colors and logs. RTX options occupy a settings tab, with VSR and VFG grouped separately. Compatibility fixes sit beside the explanation, describe the actual resulting codec, and only apply after a click. File details use the existing modal and real source/output metadata; missing output is an explicit state.
+
+右上角“关于 / 编码引擎 / 预设管理 / MMD 导出”统一为 752px 高（小窗口减至视口高度减 50px）。默认内容无需外层滚动；溢出时整窗内容滚动，滚动条贴最右侧并按圆角裁切。列表弹窗利用剩余高度展示条目，操作区位于底部。“关于”的简略日志区固定 190px，高度溢出后独立滚动。四个顶栏弹窗底部内容距边缘统一 24px。

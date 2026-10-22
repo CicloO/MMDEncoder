@@ -64,6 +64,25 @@ function hiResPlan(format, source = {}) {
 }
 // Audio options for a Hi-Res plan; soxr is FFmpeg's best resampler when the
 // installed build has it, otherwise its own resampler at high quality.
+// Audio fade-in and fade-out lengths offered on every page (seconds, 0 = off).
+const FADES = [0, 0.5, 1, 2];
+// afade filters for a fade in at the start and out at the end of `length`
+// seconds of audio, each at most half of it; "" when there is nothing to do.
+function fadeFilter(fade, length) {
+  const d = Math.min(Number(fade) || 0, (Number(length) || 0) / 2);
+  if (!(d > 0)) return "";
+  return `afade=t=in:st=0:d=${d},afade=t=out:st=${(length - d).toFixed(6)}:d=${d}`;
+}
+// Codec arguments with one more audio filter: joined into an existing -af
+// (the fade first, then any resampling) or added as a new one.
+function withAudioFilter(args, filter) {
+  if (!filter) return args;
+  const i = args.indexOf("-af");
+  if (i < 0) return ["-af", filter, ...args];
+  const out = args.slice();
+  out[i + 1] = filter + "," + out[i + 1];
+  return out;
+}
 function hiResArgs(plan, soxr) {
   if (plan.action === "copy") return ["-c:a", "copy"];
   const filter = hiResFilter(plan, soxr);
@@ -144,9 +163,17 @@ function command(p, tools, output) {
   )
     throw Error("视频提取 / 合并使用 .mp4 或 .mkv 输出");
   const hiRes = p.hiRes && p.operation !== "video";
-  const codecArgs = hiRes
-    ? hiResArgs(hiResPlan(p.audioFormat, p.sourceAudio), p.soxr)
+  const fade = p.operation === "video" ? 0 : Number(p.fade) || 0;
+  if (fade && p.audioFormat === "copy")
+    throw Error("复制原音轨时不能淡入淡出，请改为重新编码的格式");
+  const plan = hiRes && hiResPlan(p.audioFormat, p.sourceAudio);
+  let codecArgs = hiRes
+    ? // A fade means re-encoding even when Hi-Res would copy.
+      fade && plan.action === "copy"
+      ? hiResCodec(plan)
+      : hiResArgs(plan, p.soxr)
     : ["-c:a", audio[0]];
+  codecArgs = withAudioFilter(codecArgs, fadeFilter(fade, p.fadeLength));
   const args = ["-hide_banner", "-nostdin", "-n", "-i", p.input];
   if (p.operation === "merge") args.push("-i", p.audioInput);
   if (p.operation === "audio") args.push("-map", "0:a:0", "-vn", ...codecArgs);
@@ -210,6 +237,9 @@ function suggestOutput(p, settings, exists) {
   throw Error("无法分配不重名的输出文件");
 }
 module.exports = {
+  FADES,
+  fadeFilter,
+  withAudioFilter,
   hiResPlan,
   hiResArgs,
   hiResFilter,

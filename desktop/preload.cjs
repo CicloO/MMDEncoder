@@ -54,6 +54,8 @@ const allowed = new Set([
   "appVersion",
   "checkAppUpdate",
   "openReleasePage",
+  "aboutInfo",
+  "openProjectPage",
   "appUpdateStatus",
   "downloadAppUpdate",
   "installAppUpdate",

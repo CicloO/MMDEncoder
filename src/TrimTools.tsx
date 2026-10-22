@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { Button, Field, Select, useDragSort } from "./components";
+import { fadeOptions } from "./presentation";
 import type { State, TrimClip } from "./types";
 
 const OPTIONS_KEY = "mmd-trim-options";
@@ -28,6 +29,8 @@ type Options = {
   kbps: number;
   audioFile: string;
   offset: string;
+  // Seconds of fade in at the start and out at the end of the whole result.
+  fade: number;
   mmdFrames: boolean;
   location: string;
   outputDir: string;
@@ -38,6 +41,7 @@ const DEFAULT_OPTIONS: Options = {
   kbps: 320,
   audioFile: "",
   offset: "0",
+  fade: 0,
   mmdFrames: false,
   location: "source",
   outputDir: "",
@@ -687,6 +691,17 @@ export function TrimTools({
                   onChange={(v) => set("audioCodec", v)}
                 />
               )}
+              {o.audioMode !== "none" && (
+                <Select
+                  id="trim-fade"
+                  label="音频淡入淡出"
+                  value={String(o.fade ?? 0)}
+                  disabled={t.running}
+                  options={fadeOptions}
+                  hint="只在整段成片的开头淡入、结尾淡出，片段之间的接缝不做淡化。"
+                  onChange={(v) => set("fade", Number(v))}
+                />
+              )}
               {o.audioMode !== "none" && o.audioCodec === "aac" && (
                 <Select
                   id="trim-kbps"
@@ -802,6 +817,7 @@ export function TrimTools({
                     kbps: o.kbps,
                     file: o.audioFile,
                     offset: offsetSeconds(),
+                    fade: o.fade ?? 0,
                   },
                   location: o.location,
                   outputDir: o.outputDir,

@@ -10,7 +10,12 @@ const path = require("node:path");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const { createService } = require("../backend/service.cjs");
-const { checkForUpdate, RELEASES_URL } = require("../backend/update.cjs");
+const {
+  checkForUpdate,
+  RELEASES_URL,
+  PROJECT_PAGES,
+  changelogSection,
+} = require("../backend/update.cjs");
 const { createUpdater } = require("../backend/selfupdate.cjs");
 let win,
   service,
@@ -310,6 +315,26 @@ else {
           quitting = true;
           service.dispose();
           app.quit();
+          return null;
+        }
+        if (action === "aboutInfo") {
+          // The packaged app has CHANGELOG.md beside the exe.
+          const file = app.isPackaged
+            ? path.join(base, "CHANGELOG.md")
+            : path.join(base, "docs", "CHANGELOG.md");
+          let notes = "";
+          try {
+            notes = changelogSection(
+              await fs.readFile(file, "utf8"),
+              app.getVersion(),
+            );
+          } catch {}
+          return { version: app.getVersion(), notes };
+        }
+        if (action === "openProjectPage") {
+          const url = PROJECT_PAGES[payload?.page];
+          if (!url) throw new Error("未知的项目页面");
+          await shell.openExternal(url);
           return null;
         }
         if (action === "openReleasePage") {

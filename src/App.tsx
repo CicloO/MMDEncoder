@@ -47,6 +47,7 @@ import { TrimTools } from "./TrimTools";
 import { MediaDetails } from "./MediaDetails";
 import { FileMeta, metaSummary } from "./FileMeta";
 import { RtxSettings } from "./RtxSettings";
+import { AboutDialog } from "./AboutDialog";
 import {
   formatFPS,
   formatDuration,
@@ -54,6 +55,8 @@ import {
   statusLabels,
   audioLabels,
   compatibilityErrors,
+  fadeOptions,
+  fadeHint,
 } from "./presentation";
 import type { State, Settings, Preview, Job, Preset } from "./types";
 
@@ -192,7 +195,7 @@ export default function App() {
     try {
       const r = await window.encoder.invoke("checkAppUpdate");
       setUpdate({ checking: false, ...r });
-      if (r.newer) notify(`发现新版本 ${r.latest}，可在“设置与引擎”中更新`);
+      if (r.newer) notify(`发现新版本 ${r.latest}，可在右上角“关于”中更新`);
     } catch (e) {
       const message = (e as Error).message.replace(
         /^Error invoking remote method '[^']+': (?:Error: )?/,
@@ -672,11 +675,15 @@ export default function App() {
             MMD 导出
           </Button>
           <Button
-            title="设置与引擎"
-            aria-label="设置与引擎"
-            onClick={() => setModal("engines")}
+            className="about-button"
+            title={update.newer ? `关于 · 新版本 ${update.latest}` : "关于"}
+            aria-label={
+              update.newer ? `关于，有新版本 ${update.latest}` : "关于"
+            }
+            onClick={() => setModal("about")}
           >
             <Settings2 size={18} />
+            {update.newer && <span className="update-dot" aria-hidden="true" />}
           </Button>
         </div>
       </header>
@@ -1472,6 +1479,19 @@ export default function App() {
                             : "目标码率；实际码率会随编码器和声音内容变化。"
                       }
                     />
+                    <Select
+                      id="audioFade"
+                      label="音频淡入淡出"
+                      value={String(s.audioFade ?? 0)}
+                      options={fadeOptions}
+                      disabled={s.audio === "none"}
+                      hint={
+                        s.audio === "none"
+                          ? "不保留音频，无需淡入淡出。"
+                          : fadeHint
+                      }
+                      onChange={(v) => set("audioFade", Number(v))}
+                    />
                     <label className="checkbox-row">
                       <input
                         type="checkbox"
@@ -2013,6 +2033,7 @@ export default function App() {
         error={error}
         open={modal === "presets"}
         onClose={() => setModal("")}
+        fixedHeight
         title="预设管理"
         description="拖动排序；隐藏的预设不出现在预设下拉框里。内置预设也可以改名、更新或删除，随时可以恢复。导入导出只包含个人预设。"
       >
@@ -2124,8 +2145,9 @@ export default function App() {
         error={error}
         open={modal === "mmd"}
         onClose={() => setModal("")}
+        fixedHeight
         title="MMD 导出"
-        description="把一个预设当作 MMD 的视频编码器：在 MMD 的“AVI 输出”里选择视频编码“MMDEncoder”，直接导出带音频的成片。这里的选择也可以在 MMD 的“詳細設定”里修改。"
+        description="在 MMD“AVI 输出”中选择 MMDEncoder。这里的选项优先于预设，并与 MMD“詳細設定”同步。"
       >
         {state.mmd.interrupted.length > 0 && (
           <section className="modal-section" aria-label="中断的导出">
@@ -2245,10 +2267,7 @@ export default function App() {
             />
             <span>
               <strong>分辨率和帧率跟随 MMD</strong>
-              <small>
-                使用 MMD“AVI
-                输出”里设定的尺寸和帧率，忽略预设里的分辨率与帧率；编码器、画质和音频仍按预设。
-              </small>
+              <small>使用 MMD“AVI 输出”的尺寸和帧率。</small>
             </span>
           </label>
           <label className="check-card">
@@ -2263,47 +2282,38 @@ export default function App() {
             <span>
               <strong>文件名加 MMD 帧范围</strong>
               <small>
-                例如
-                场景_0400-0600f.mp4（按实际导出的帧计算）。起始帧也写进文件里，“无损剪辑”按
-                MMD 帧号定位时会用到。
+                例如 场景_0400-0600f.mp4；支持剪辑时按 MMD 帧号定位。
               </small>
             </span>
           </label>
-          {/* Overrides the preset's own alpha setting; the same choice as
+          <div className="form-row">
+            {/* Overrides the preset's own alpha setting; the same choice as
               in MMD's 詳細設定, where a change wins over this window. */}
-          <Select
-            id="mmd-mask-mode"
-            label="Alpha 遮罩"
-            value={state.mmd.maskMode || "off"}
-            disabled={mmdBusy}
-            hint={
-              state.mmd.maskMode === "only"
-                ? "只导出同名 _alpha 黑白遮罩（无损，白色不透明、黑色透明），不导出彩色画面和音频，比完整导出快。"
-                : state.mmd.maskMode === "with"
-                  ? "成片之外再导出一个同名 _alpha 黑白遮罩（无损，白色不透明、黑色透明），可用于后期合成。"
-                  : "这里的选择优先于预设自带的遮罩设置；与 MMD“詳細設定”同步，以最后保存的为准。"
-            }
-            options={[
-              { value: "off", label: "不导出" },
-              { value: "with", label: "同时导出遮罩" },
-              { value: "only", label: "仅导出遮罩" },
-            ]}
-            onChange={(maskMode) => mmdCall("mmdExportSet", { maskMode })}
-          />
-          <Select
-            id="mmd-audio-fade"
-            label="音频淡入淡出"
-            value={String(state.mmd.audioFade)}
-            disabled={mmdBusy}
-            hint="从歌曲中间开始或结束的片段，首尾不会突然开始或戛然而止。"
-            options={[
-              { value: "0", label: "关闭" },
-              { value: "0.5", label: "0.5 秒" },
-              { value: "1", label: "1 秒" },
-              { value: "2", label: "2 秒" },
-            ]}
-            onChange={(v) => mmdCall("mmdExportSet", { audioFade: Number(v) })}
-          />
+            <Select
+              id="mmd-mask-mode"
+              label="Alpha 遮罩"
+              value={state.mmd.maskMode || "off"}
+              disabled={mmdBusy}
+              hint="无损黑白遮罩：白色不透明，黑色透明。"
+              options={[
+                { value: "off", label: "不导出" },
+                { value: "with", label: "同时导出遮罩" },
+                { value: "only", label: "仅导出遮罩" },
+              ]}
+              onChange={(maskMode) => mmdCall("mmdExportSet", { maskMode })}
+            />
+            <Select
+              id="mmd-audio-fade"
+              label="音频淡入淡出"
+              value={String(state.mmd.audioFade)}
+              disabled={mmdBusy}
+              hint="仅淡化成片首尾。"
+              options={fadeOptions}
+              onChange={(v) =>
+                mmdCall("mmdExportSet", { audioFade: Number(v) })
+              }
+            />
+          </div>
         </section>
         <section className="modal-section" aria-label="测试与日志">
           <h3>测试与日志</h3>
@@ -2374,101 +2384,29 @@ export default function App() {
           })()}
         </section>
       </Modal>
+      <AboutDialog
+        open={modal === "about"}
+        onClose={() => setModal("")}
+        update={update}
+        appUpdate={appUpdate}
+        blocked={
+          busy || state.running || state.trim?.running
+            ? "请等待当前压制或剪辑导出结束后再更新"
+            : ""
+        }
+        onCheck={() => void checkUpdate()}
+        onDownload={() => void downloadUpdate()}
+        onInstall={() => void installUpdate()}
+        action={action}
+      />
       <Modal
         error={error}
         open={modal === "engines"}
         onClose={() => setModal("")}
+        fixedHeight
         title="编码引擎"
         description="首次使用从官方来源下载工具到本机；安装后可离线编码，无需管理员权限。"
       >
-        <section
-          className="modal-section"
-          aria-label="软件更新"
-          aria-busy={update.checking}
-        >
-          <h3>软件更新</h3>
-          <div className="status-row">
-            <p>
-              MMDEncoder {__APP_VERSION__} ·{" "}
-              {update.checking
-                ? "正在检查更新…"
-                : update.error
-                  ? "检查更新失败：" + update.error
-                  : update.newer
-                    ? `发现新版本 ${update.latest}`
-                    : update.current
-                      ? update.latest
-                        ? "已是最新版本"
-                        : "项目尚未发布版本"
-                      : "尚未检查更新"}
-            </p>
-            <div className="row-actions">
-              <Button
-                disabled={update.checking || appUpdate.phase === "downloading"}
-                onClick={() => checkUpdate()}
-              >
-                <RefreshCw size={15} />
-                检查更新
-              </Button>
-              {update.newer && update.canInstall && (
-                <Button
-                  variant="primary"
-                  disabled={
-                    busy ||
-                    state.running ||
-                    ["downloading", "extracting", "installing"].includes(
-                      appUpdate.phase,
-                    )
-                  }
-                  onClick={() =>
-                    appUpdate.phase === "ready"
-                      ? void installUpdate()
-                      : void downloadUpdate()
-                  }
-                >
-                  <ArrowDownToLine size={15} />
-                  {appUpdate.phase === "ready"
-                    ? "重启并完成更新"
-                    : appUpdate.phase === "downloading"
-                      ? "正在下载…"
-                      : appUpdate.phase === "extracting"
-                        ? "正在解压…"
-                        : "下载并更新"}
-                </Button>
-              )}
-              <Button
-                variant={
-                  update.newer && !update.canInstall ? "primary" : undefined
-                }
-                onClick={() =>
-                  action("openReleasePage", {
-                    url: update.newer ? update.url : "",
-                  })
-                }
-              >
-                <ExternalLink size={15} />
-                {update.newer ? "打开下载页" : "项目发行页"}
-              </Button>
-            </div>
-          </div>
-          {update.newer && (
-            <p
-              className={appUpdate.error ? "inline-error" : "hint"}
-              role={appUpdate.error ? "alert" : undefined}
-            >
-              {appUpdate.error
-                ? "更新失败：" + appUpdate.error
-                : appUpdate.phase === "downloading"
-                  ? `已下载 ${formatSize(appUpdate.received)}${appUpdate.total ? " / " + formatSize(appUpdate.total) : ""}`
-                  : appUpdate.phase === "ready"
-                    ? "新版本已下载并通过校验。点“重启并完成更新”后软件会关闭，替换程序文件后自动重新打开；设置、预设和日志（data 文件夹）保留不动。"
-                    : update.canInstall
-                      ? "下载后先校验 SHA-256，再替换程序文件；data 文件夹保留不动，替换失败会自动还原旧版本。"
-                      : update.installBlocked ||
-                        "这个版本没有可自动安装的压缩包，请打开下载页手动更新。"}
-            </p>
-          )}
-        </section>
         {state.tools && (
           <section
             className="modal-section"

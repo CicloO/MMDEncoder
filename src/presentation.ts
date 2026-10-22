@@ -48,6 +48,15 @@ export const statusLabels: Record<string, string> = {
   failed: "失败",
   cancelled: "已取消",
 };
+// Audio fade-in / fade-out lengths, the same on every page (seconds).
+export const fadeOptions = [
+  { value: "0", label: "关闭" },
+  { value: "0.5", label: "0.5 秒" },
+  { value: "1", label: "1 秒" },
+  { value: "2", label: "2 秒" },
+];
+export const fadeHint =
+  "开头淡入、结尾淡出，从歌曲中间开始或结束的片段不会突然出声或戛然而止。";
 export const audioLabels: Record<string, string> = {
   aac: "AAC",
   flac: "FLAC",

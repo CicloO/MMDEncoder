@@ -124,11 +124,11 @@ test(
         svc.invoke("mmdExportSet", { maskMode: "maybe" }),
         /遮罩选项无效/,
       );
-      // The choice overrides the preset: a split-alpha preset set to "off"
-      // writes no mask. Picking a preset that writes a mask sets the choice.
+      // The choice outranks the preset: picking a split-alpha preset leaves
+      // it as it is, and set to "off" no mask is written.
       await svc.invoke("mmdExportSet", { presetId: "builtin-alpha-mask" });
       assert.equal(state().mmd.error, "");
-      assert.equal(state().mmd.maskMode, "with", "preset sets the default");
+      assert.equal(state().mmd.maskMode, "only", "preset does not change it");
       await svc.invoke("mmdExportSet", { maskMode: "off" });
       assert.equal(mx.plan(runtime).maskOutput, undefined);
       assert.ok(!mx.plan(runtime).output.endsWith("_alpha.mp4"));

@@ -36,6 +36,8 @@ export type Settings = {
   vsrQuality: number;
   vsrStrength: number;
   upscaler: "lanczos" | "artcnn";
+  artcnnModel: "C4F16" | "C4F32";
+  audioFade: number;
   vfg: boolean;
   vfgMultiplier: number;
   vfgMode: string;

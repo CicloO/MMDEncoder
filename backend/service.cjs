@@ -224,6 +224,8 @@ function createService({
                   ([k, v]) =>
                     !(
                       (["hiRes", "editFriendly"].includes(k) && v === false) ||
+                      (k === "audioFade" && v === 0) ||
+                      (k === "artcnnModel" && v === "C4F16") ||
                       (k === "upscaler" && v === "lanczos")
                     ),
                 ),
@@ -831,9 +833,13 @@ function createService({
       const data = JSON.parse(r.stdout);
       const v = data.streams?.find((s) => s.codec_type === "video");
       const a = data.streams?.find((s) => s.codec_type === "audio");
+      const seconds = (x) => Number(x) || Number(data.format?.duration) || 0;
       return {
         videoCodec: v?.codec_name,
         audioCodec: a?.codec_name,
+        // Stream lengths (for fades), falling back to the file's.
+        videoDuration: v ? seconds(v.duration) : 0,
+        audioDuration: a ? seconds(a.duration) : 0,
         audio: a ? core.audioInfo(a) : undefined,
         // Some containers only report the overall rate; use it for audio-only files.
         audioBitRate:
@@ -973,6 +979,9 @@ function createService({
         audioBitrate: Number(o.audioBitrate) || 0,
         shortest: o.shortest !== false,
         container: o.container === "mkv" ? "mkv" : "mp4",
+        fade: media.FADES.includes(Number(o.audioFade))
+          ? Number(o.audioFade)
+          : 0,
       };
       const source = await probeMedia(job.path);
       const audioSource =
@@ -984,6 +993,12 @@ function createService({
         bits: audioSource.audio?.bits,
         float: audioSource.audio?.float,
       };
+      // How long the output's audio runs, for the fade-out: the audio itself,
+      // or up to the video's end when a merge stops at the shorter stream.
+      p.fadeLength =
+        o.operation === "merge" && p.shortest && source.videoDuration
+          ? Math.min(audioSource.audioDuration, source.videoDuration)
+          : audioSource.audioDuration;
       let hiResNote = "";
       if (p.hiRes) {
         p.soxr = await hasSoxr();
@@ -2048,6 +2063,9 @@ function createService({
       kbps: Number(o.audio?.kbps) || 320,
       file: o.audio?.file,
       offset: Number(o.audio?.offset) || 0,
+      fade: media.FADES.includes(Number(o.audio?.fade))
+        ? Number(o.audio.fade)
+        : 0,
     };
     const output = trimOutputPath({ ...o, audio });
     fs.mkdirSync(path.dirname(output), { recursive: true });
@@ -2783,13 +2801,8 @@ function createService({
             !state.presets.some((p) => p.id === payload.presetId)
           )
             throw Error("未找到预设");
-          // A preset that writes a mask by itself sets the mask choice to
-          // match; it can still be changed afterwards.
-          const own = mmdExport.presetMask(
-            state.presets.find((p) => p.id === payload.presetId)?.settings,
-          );
-          if (own !== "off" && payload.presetId !== state.mmd.presetId)
-            state.mmd.maskMode = own;
+          // Every MMD export option outranks the preset: picking a preset
+          // leaves the mask choice (and the others) as they are.
           state.mmd.presetId = payload.presetId;
           state.mmd.test = null;
         }

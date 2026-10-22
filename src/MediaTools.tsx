@@ -28,6 +28,7 @@ import {
   PAGE_SIZE,
 } from "./components";
 import { MediaDetails } from "./MediaDetails";
+import { fadeOptions, fadeHint } from "./presentation";
 import { FileMeta, metaSummary } from "./FileMeta";
 import type { MediaJob, State } from "./types";
 
@@ -74,6 +75,8 @@ type Options = {
   shortest: boolean;
   // 24-bit, and twice the sample rate below 48 kHz (WAV / FLAC only).
   hiRes: boolean;
+  // Seconds of fade in / out (0 = off); not with a copied audio track.
+  audioFade: number;
   location: string;
   outputDir: string;
 };
@@ -84,6 +87,7 @@ const DEFAULT_OPTIONS: Options = {
   container: "mp4",
   shortest: true,
   hiRes: false,
+  audioFade: 0,
   location: "source",
   outputDir: "",
 };
@@ -568,6 +572,21 @@ export function MediaTools({
                   </span>
                 </label>
               )}
+              {o.operation !== "video" && (
+                <Select
+                  id="media-fade"
+                  label="音频淡入淡出"
+                  value={String(o.audioFormat === "copy" ? 0 : o.audioFade)}
+                  disabled={locked || o.audioFormat === "copy"}
+                  options={fadeOptions}
+                  hint={
+                    o.audioFormat === "copy"
+                      ? "复制原音轨时不能淡入淡出，请选择要重新编码的格式。"
+                      : fadeHint
+                  }
+                  onChange={(v) => set("audioFade", Number(v))}
+                />
+              )}
               {o.operation !== "video" && LOSSY.includes(o.audioFormat) && (
                 <Select
                   id="media-bitrate"
@@ -712,6 +731,7 @@ export function MediaTools({
                   container: o.container,
                   hiRes,
                   shortest: o.shortest,
+                  audioFade: o.audioFormat === "copy" ? 0 : o.audioFade,
                   location: o.location,
                   outputDir: o.outputDir,
                 })
