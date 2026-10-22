@@ -195,7 +195,7 @@ BUILTINS.splice(
   // smaller than 4444 and read by every editor.
   {
     id: "builtin-prores422",
-    name: "ProRes 422 HQ · 剪辑素材",
+    name: "剪辑素材 · ProRes 422 HQ",
     settings: {
       ...DEFAULTS,
       encoder: "prores_ks",
