@@ -1,0 +1,890 @@
+[
+  {
+    "lang": "zh",
+    "mode": "ai",
+    "violations": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#features > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#quality > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t36\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-alpha > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t37\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-cut > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#start > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#faq > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [".closing-massive"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 1.16 (foreground color: #e9edff, background color: #ffffff, font size: 192.0pt (256px), font weight: bold). Expected contrast ratio of 3:1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "lang": "zh",
+    "mode": "alpha",
+    "violations": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#features > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#quality > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t35\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.41 (foreground color: #8994ba, background color: #e2e6fb, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-ai > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.41 (foreground color: #8994ba, background color: #e2e6fb, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t37\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-cut > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#start > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#faq > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [".closing-massive"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 1.16 (foreground color: #e9edff, background color: #ffffff, font size: 192.0pt (256px), font weight: bold). Expected contrast ratio of 3:1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "lang": "zh",
+    "mode": "cut",
+    "violations": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#features > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#quality > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t35\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-ai > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t36\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.41 (foreground color: #8994ba, background color: #e2e6fb, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-alpha > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.41 (foreground color: #8994ba, background color: #e2e6fb, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#start > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#faq > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [".closing-massive"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 1.16 (foreground color: #e9edff, background color: #ffffff, font size: 192.0pt (256px), font weight: bold). Expected contrast ratio of 3:1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "lang": "en",
+    "mode": "ai",
+    "violations": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#features > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#quality > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t35\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.02 (foreground color: #ffffff, background color: #6275e7, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-ai > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.02 (foreground color: #ffffff, background color: #6275e7, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t36\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-alpha > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t37\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.01 (foreground color: #8994ba, background color: #cbd2f8, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-cut > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.01 (foreground color: #8994ba, background color: #cbd2f8, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#start > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#faq > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [".closing-massive"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 1.16 (foreground color: #e9edff, background color: #ffffff, font size: 192.0pt (256px), font weight: bold). Expected contrast ratio of 3:1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "lang": "en",
+    "mode": "alpha",
+    "violations": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#features > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#quality > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t35\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.23 (foreground color: #8994ba, background color: #d8ddfa, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-ai > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.23 (foreground color: #8994ba, background color: #d8ddfa, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t37\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-cut > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#start > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#faq > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [".closing-massive"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 1.16 (foreground color: #e9edff, background color: #ffffff, font size: 192.0pt (256px), font weight: bold). Expected contrast ratio of 3:1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "lang": "en",
+    "mode": "cut",
+    "violations": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#features > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#quality > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t35\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-ai > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t36\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.41 (foreground color: #8994ba, background color: #e2e6fb, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-alpha > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.41 (foreground color: #8994ba, background color: #e2e6fb, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#start > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#faq > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [".closing-massive"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 1.16 (foreground color: #e9edff, background color: #ffffff, font size: 192.0pt (256px), font weight: bold). Expected contrast ratio of 3:1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "lang": "ja",
+    "mode": "ai",
+    "violations": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#features > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#quality > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t35\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.02 (foreground color: #ffffff, background color: #6275e7, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-ai > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.02 (foreground color: #ffffff, background color: #6275e7, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t36\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-alpha > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t37\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.01 (foreground color: #8994ba, background color: #cbd2f8, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-cut > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.01 (foreground color: #8994ba, background color: #cbd2f8, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#start > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#faq > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [".closing-massive"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 1.16 (foreground color: #e9edff, background color: #ffffff, font size: 192.0pt (256px), font weight: bold). Expected contrast ratio of 3:1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "lang": "ja",
+    "mode": "alpha",
+    "violations": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#features > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#quality > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t35\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.01 (foreground color: #8994ba, background color: #cbd2f8, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-ai > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.01 (foreground color: #8994ba, background color: #cbd2f8, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t36\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.02 (foreground color: #ffffff, background color: #6275e7, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-alpha > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.02 (foreground color: #ffffff, background color: #6275e7, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t37\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-cut > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#start > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#faq > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [".closing-massive"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 1.16 (foreground color: #e9edff, background color: #ffffff, font size: 192.0pt (256px), font weight: bold). Expected contrast ratio of 3:1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "lang": "ja",
+    "mode": "cut",
+    "violations": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#features > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#features > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#quality > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#quality > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.04 (foreground color: #6679b5, background color: #f8faff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t35\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-ai > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.86 (foreground color: #8994ba, background color: #f8faff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["span[data-i18n=\"t36\"]"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.23 (foreground color: #8994ba, background color: #d8ddfa, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#tab-alpha > span:nth-child(2)"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.23 (foreground color: #8994ba, background color: #d8ddfa, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#start > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#start > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #6679b5, background color: #ffffff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": ["#faq > .chapter-ruler[aria-hidden=\"true\"] > b"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [
+              "#faq > .chapter-ruler[aria-hidden=\"true\"] > span:nth-child(5)"
+            ],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.81 (foreground color: #6679b5, background color: #f0f3ff, font size: 6.8pt (9px), font weight: normal). Expected contrast ratio of 4.5:1"
+          },
+          {
+            "target": [".closing-massive"],
+            "summary": "Fix any of the following:\n  Element has insufficient color contrast of 1.16 (foreground color: #e9edff, background color: #ffffff, font size: 192.0pt (256px), font weight: bold). Expected contrast ratio of 3:1"
+          }
+        ]
+      }
+    ]
+  }
+]

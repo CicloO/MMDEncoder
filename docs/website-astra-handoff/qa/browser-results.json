@@ -1,0 +1,84 @@
+{
+  "engine": "chromium",
+  "matrix": [
+    {
+      "lang": "zh",
+      "width": 320,
+      "overflow": false
+    },
+    {
+      "lang": "zh",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "lang": "zh",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "lang": "zh",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "lang": "ja",
+      "width": 320,
+      "overflow": false
+    },
+    {
+      "lang": "ja",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "lang": "ja",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "lang": "ja",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "lang": "en",
+      "width": 320,
+      "overflow": false
+    },
+    {
+      "lang": "en",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "lang": "en",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "lang": "en",
+      "width": 1440,
+      "overflow": false
+    }
+  ],
+  "checks": [
+    "mobile menu: open, Escape focus return, anchor close",
+    "manual locale persists across reload",
+    "tabs: click, arrows, Home/End; comparison: pointer drag and keyboard",
+    "FAQ keyboard disclosure",
+    "pause and reduced motion; full-page film removed",
+    "IP country mapping JP/CN/US",
+    "IP failure falls back to browser language",
+    "manual choice beats delayed geo result even when storage is blocked",
+    "no JS: content, navigation, FAQ, no overflow at 320px",
+    "IntersectionObserver absent: content remains visible"
+  ],
+  "errors": [],
+  "scrollSample": {
+    "medianMs": 16.699999999953434,
+    "p95Ms": 21.399999999906868,
+    "over50ms": 0,
+    "nodes": 732
+  }
+}
