@@ -84,6 +84,8 @@ export type Job = {
   output?: string;
   maskOutput?: string;
   settings?: Settings;
+  // "单独设置": this video's own settings (else the page's).
+  ownSettings?: Settings;
   // Replacement audio (as the media page's merge) and its parameters.
   audioPath?: string;
   audioMeta?: Meta["audio"];

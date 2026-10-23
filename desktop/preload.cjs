@@ -46,6 +46,7 @@ const allowed = new Set([
   "add",
   "remove",
   "setAudio",
+  "setJobSettings",
   "clearCompleted",
   "settings",
   "start",

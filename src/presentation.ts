@@ -1,3 +1,4 @@
+import type { Engine, Settings } from "./types";
 export function formatFPS(value?: number | string) {
   if (value === undefined || value === null || value === "") return "未知";
   const p = String(value).split("/").map(Number);
@@ -63,3 +64,11 @@ export const audioLabels: Record<string, string> = {
   libopus: "Opus",
   none: "不保留音频",
 };
+
+// What a set of settings makes, in a few words (queue tags, preset choices).
+export function targetLabel(s: Settings, engines: Engine[]) {
+  if (s.alphaMode === "mask")
+    return `Alpha 黑白遮罩 · ${s.container.toUpperCase()}`;
+  const encoder = engines.find((e) => e.id === s.encoder)?.label || s.encoder;
+  return `${encoder} · ${s.bitDepth}-bit · ${s.container.toUpperCase()}`;
+}

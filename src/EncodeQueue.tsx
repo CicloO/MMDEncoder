@@ -15,11 +15,16 @@ import {
 } from "lucide-react";
 import { Button, Select, useDragSort, PAGE_SIZE } from "./components";
 import { FileMeta, metaSummary } from "./FileMeta";
-import { formatDuration, statusLabels } from "./presentation";
+import { formatDuration, statusLabels, targetLabel } from "./presentation";
 import type { Job, Settings, State } from "./types";
 
 // Frame rates a PNG sequence can play at (backend SEQUENCE_RATES).
 const SEQUENCE_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120];
+// Time left from the pace so far, once there is enough to go on.
+const remaining = (j: Job) =>
+  j.progress >= 2 && (j.elapsed || 0) >= 5
+    ? ` · 剩余约 ${formatDuration(((j.elapsed || 0) * (100 - j.progress)) / j.progress)}`
+    : "";
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
 // 视频压制 page, left column: the queue, its pages, and the selected video.
@@ -162,14 +167,29 @@ export function EncodeQueue({
                         {j.meta ? metaSummary(j.meta) : "正在读取素材信息"}
                         {j.audioPath && ` · 音频：${baseName(j.audioPath)}`}
                       </span>
+                      {(() => {
+                        const own = j.ownSettings;
+                        return (
+                          own && (
+                            <span
+                              className="job-target"
+                              title={`单独设置${own.presetName ? "：" + own.presetName : ""}`}
+                            >
+                              → {targetLabel(own, state.engines)}
+                            </span>
+                          )
+                        );
+                      })()}
                       <span className={`job-status ${j.status}`}>
                         {j.status === "encoding" && (
                           <LoaderCircle size={12} className="spin" />
                         )}
                         {statusLabels[j.status] || j.status}
                         {j.status === "encoding"
-                          ? ` · ${Math.round(j.progress)}% · ${j.stage || "编码"} · ${formatDuration(j.elapsed || 0)}`
-                          : ""}
+                          ? ` · ${Math.round(j.progress)}% · ${j.stage || "编码"} · ${formatDuration(j.elapsed || 0)}${remaining(j)}`
+                          : j.status === "done" && j.elapsed
+                            ? ` · 用时 ${j.elapsed < 1 ? "不到 1 秒" : formatDuration(j.elapsed)}`
+                            : ""}
                       </span>
                     </span>
                   </button>
@@ -274,7 +294,11 @@ export function EncodeQueue({
               </Button>
               <Button
                 variant="ghost"
-                onClick={() => action("reveal", { path: job.path })}
+                // Before encoding: the source; once written: the result.
+                title={job.output ? "打开成片所在位置" : "打开源文件所在位置"}
+                onClick={() =>
+                  action("reveal", { path: job.output || job.path })
+                }
               >
                 <FolderOpen size={14} />
                 打开位置
@@ -379,15 +403,6 @@ export function EncodeQueue({
                   </Button>
                 )}
             </div>
-          )}
-          {job.output && (
-            <Button
-              variant="ghost"
-              onClick={() => action("reveal", { path: job.output })}
-            >
-              <FolderOpen size={15} />
-              查看输出文件
-            </Button>
           )}
         </section>
       )}

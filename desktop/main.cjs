@@ -403,6 +403,7 @@ else {
           "add",
           "remove",
           "setAudio",
+          "setJobSettings",
           "clearCompleted",
           "settings",
           "start",

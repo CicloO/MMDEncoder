@@ -1493,6 +1493,7 @@ function createService({
     commit,
     reorder,
     flushEvidence,
+    schema,
     tools,
     children,
     pendingLogs,
@@ -1785,9 +1786,14 @@ function createService({
         persist();
         break;
       case "savePreset": {
+        // payload.settings: a video's own settings ("单独设置"), saved
+        // without changing the page's.
+        const own = payload.settings
+          ? { ...state.settings, ...schema(payload.settings) }
+          : null;
         const valid = presetValid({
           name: payload.name,
-          settings: state.settings,
+          settings: own || state.settings,
         });
         if (
           state.presets.some(
@@ -1808,7 +1814,7 @@ function createService({
           });
           state.presets = state.presets.map((x) => (x.id === p.id ? valid : x));
         } else state.presets.push(valid);
-        state.settings.presetName = valid.name;
+        if (!own) state.settings.presetName = valid.name;
         persist();
         break;
       }

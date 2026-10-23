@@ -78,6 +78,17 @@ function mmdUnsupported(p: Preset) {
     return "NVEncC 暂不支持";
   return "";
 }
+// Which kind of encoder an id names, for encoders not detected here.
+const encoderBackend = (id: string) =>
+  id.startsWith("nvencc:")
+    ? "nvencc"
+    : id.endsWith("_nvenc")
+      ? "nvenc"
+      : id.endsWith("_qsv")
+        ? "qsv"
+        : id.endsWith("_amf")
+          ? "amf"
+          : "cpu";
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 export default function App() {
   // Light is the default. A new key so the old auto-saved "dark" default does not stick.
@@ -133,6 +144,8 @@ export default function App() {
     stateRef = useRef<State | null>(null),
     lastNotice = useRef(""),
     draftRef = useRef<Settings | null>(null),
+    // "" = the page's settings, else the id of the video being set on its own.
+    draftTarget = useRef(""),
     previewSequence = useRef(0),
     saveChain = useRef(Promise.resolve()),
     autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
@@ -270,17 +283,7 @@ export default function App() {
     s = draft,
     activePreset = state?.presets.find((p) => p.id === presetId),
     engine = state?.engines.find((e) => e.id === s?.encoder),
-    backend =
-      engine?.backend ||
-      (s?.encoder.startsWith("nvencc:")
-        ? "nvencc"
-        : s?.encoder.endsWith("_nvenc")
-          ? "nvenc"
-          : s?.encoder.endsWith("_qsv")
-            ? "qsv"
-            : s?.encoder.endsWith("_amf")
-              ? "amf"
-              : "cpu"),
+    backend = engine?.backend || encoderBackend(s?.encoder || ""),
     pageCount = Math.max(1, Math.ceil(jobs.length / PAGE_SIZE));
   const sortJob = useDragSort(
     jobs.map((j) => j.id),
@@ -364,10 +367,14 @@ export default function App() {
     if (typeof file === "string")
       action("setAudio", { id: j.id, path: file }, "已替换音频");
   }
-  function persist(settings: Settings) {
+  function persist(settings: Settings, to = draftTarget.current) {
     const task = saveChain.current
       .catch(() => {})
-      .then(() => window.encoder.invoke("settings", { patch: settings }))
+      .then(() =>
+        to
+          ? window.encoder.invoke("setJobSettings", { id: to, patch: settings })
+          : window.encoder.invoke("settings", { patch: settings }),
+      )
       .then((r: State) => {
         receive(r);
       });
@@ -416,6 +423,50 @@ export default function App() {
     state?.enhancements.verified,
     state?.enhancements.signature,
   ]);
+  // "单独设置": with it on for the selected video, the settings panel edits
+  // that video's own settings; otherwise the page's. Switching between them
+  // first saves what was being edited, then loads the other.
+  const target = job?.ownSettings ? job.id : "";
+  useEffect(() => {
+    if (!state || draftTarget.current === target) return;
+    if (autoSaveTimer.current) {
+      clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = null;
+      if (draftRef.current && stillEditable(draftTarget.current))
+        void persist(draftRef.current).catch(() => {});
+    }
+    draftTarget.current = target;
+    const next = (target && job?.ownSettings) || state.settings;
+    changed(next);
+    setPresetId(
+      state.presets.find((p) => p.name === next.presetName)?.id || "",
+    );
+    setCustomFPS(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target]);
+  // A video's own settings are saved only while it still has them.
+  function stillEditable(id: string) {
+    return (
+      !id || !!stateRef.current?.jobs.find((j) => j.id === id)?.ownSettings
+    );
+  }
+  async function setOwn(on: boolean) {
+    if (!job) return;
+    // Turning it off drops the video's settings, unsaved edits included.
+    if (!on && autoSaveTimer.current) {
+      clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = null;
+    }
+    try {
+      if (on && draftRef.current && !draftTarget.current)
+        await persist(draftRef.current);
+      await call(
+        "setJobSettings",
+        { id: job.id, own: on },
+        on ? "已为这个视频开启单独设置" : "已关闭单独设置，改回跟随压制设置",
+      );
+    } catch {}
+  }
   const modified = !!(
     s &&
     activePreset &&
@@ -444,8 +495,18 @@ export default function App() {
     try {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       await saveChain.current.catch(() => {});
-      const result: State = await call("applyPreset", { id: p.id });
-      changed(result.settings);
+      if (draftTarget.current) {
+        // A video's own settings: the preset replaces them, keeping where to save.
+        changed({
+          ...p.settings,
+          outputMode: draftRef.current?.outputMode ?? p.settings.outputMode,
+          outputDir: draftRef.current?.outputDir ?? p.settings.outputDir,
+          presetName: p.name,
+        });
+      } else {
+        const result: State = await call("applyPreset", { id: p.id });
+        changed(result.settings);
+      }
       setPresetId(p.id);
       setCustomFPS(false);
       setPendingPreset(null);
@@ -476,8 +537,13 @@ export default function App() {
       const r: State = await call("savePreset", {
         name: presetName.trim(),
         ...(saveId ? { id: saveId } : {}),
+        ...(draftTarget.current ? { settings: s } : {}),
       });
-      changed(r.settings);
+      changed(
+        draftTarget.current
+          ? { ...s, presetName: presetName.trim() }
+          : r.settings,
+      );
       setPresetId(
         r.presets.find((p) => p.name === presetName.trim())?.id || "",
       );
@@ -497,8 +563,13 @@ export default function App() {
       const r: State = await call("savePreset", {
         id: activePreset.id,
         name: activePreset.name,
+        ...(draftTarget.current ? { settings: s } : {}),
       });
-      changed(r.settings);
+      changed(
+        draftTarget.current
+          ? { ...s, presetName: activePreset.name }
+          : r.settings,
+      );
       setPresetId(activePreset.id);
       notify(`已保存到“${activePreset.name}”`);
     } catch {
@@ -757,9 +828,34 @@ export default function App() {
                   <span className="eyebrow">输出控制</span>
                   <h2>压制设置</h2>
                 </div>
-                <SlidersHorizontal size={20} className="muted" />
+                <label
+                  className="job-own-toggle"
+                  title="开启后，下面的设置只用于当前选中的视频"
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!job?.ownSettings}
+                    disabled={
+                      !job ||
+                      job.status === "encoding" ||
+                      (state.running && !!job.settings)
+                    }
+                    onChange={(e) => void setOwn(e.target.checked)}
+                  />
+                  <SlidersHorizontal size={16} />
+                  单独设置
+                </label>
               </div>
               <div className="settings-panel">
+                {job?.ownSettings && (
+                  <div className="job-preset-note" role="status">
+                    <Info size={16} />
+                    <p>
+                      正在单独设置“{job.name}
+                      ”：这里的修改只用于这个视频；关闭“单独设置”后这些修改会清除。
+                    </p>
+                  </div>
+                )}
                 <div className="preset-bar">
                   <Select
                     id="preset-select"

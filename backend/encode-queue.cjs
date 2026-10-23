@@ -217,7 +217,14 @@ function createEncodeQueue(ctx) {
     if (!j) throw Error("未找到此任务");
     return j;
   }
-  function preview(job, s = state.settings) {
+  // The settings a job encodes with: its own when "单独设置" is on for it
+  // (job.ownSettings), otherwise the page's.
+  function settingsFor(job) {
+    return job.ownSettings
+      ? { ...state.settings, ...job.ownSettings }
+      : state.settings;
+  }
+  function preview(job, s = settingsFor(job)) {
     const errors = core.validate(s, job.meta);
     if (
       (s.vsr || s.vfg) &&
@@ -444,7 +451,7 @@ function createEncodeQueue(ctx) {
     // Validate the frozen per-job settings first; a bad alpha source must not
     // prevent valid items from continuing, or be mislabeled as an engine fault.
     jobs = jobs.filter((j) => {
-      j.settings = clone(j._retrySettings || state.settings);
+      j.settings = clone(j._retrySettings || settingsFor(j));
       const errors = core.validate(j.settings, j.meta);
       if (!errors.length) return true;
       j.status = "invalid";
@@ -562,7 +569,7 @@ function createEncodeQueue(ctx) {
       if (!["failed", "partial", "cancelled", "invalid"].includes(j.status))
         throw Error("此任务不需要重试");
       if (!j.meta) throw Error("素材探测失败，请重新添加");
-      let s = clone(j.settings || state.settings);
+      let s = clone(j.settings || settingsFor(j));
       if (payload.software) {
         if (s.vsr || s.vfg)
           throw Error(
@@ -587,12 +594,26 @@ function createEncodeQueue(ctx) {
         s.lookahead = 0;
         s.lookaheadLevel = 0;
         state.notice = "软件重试使用 CRF 18；CQ 与 CRF 数值不等效";
-      } else if (j.status !== "partial") s = clone(state.settings);
+      } else if (j.status !== "partial") s = clone(settingsFor(j));
       const errors = core.validate(s, j.meta);
       if (errors.length) throw Error(errors.join("；"));
       j._retrySettings = s;
       await queue([j]);
       delete j._retrySettings;
+    },
+    // "单独设置" for one video: own: true starts from the page's settings,
+    // own: false drops them (changes made there are not kept); patch edits
+    // the video's own settings.
+    setJobSettings(payload) {
+      const job = requireJob(payload?.id);
+      if (job.status === "encoding" || (state.running && job.settings))
+        throw Error("已提交任务不能更改设置");
+      if (payload.own === false) delete job.ownSettings;
+      else if (payload.own === true) job.ownSettings = clone(state.settings);
+      if (payload.patch) {
+        if (!job.ownSettings) throw Error("这个视频没有开启单独设置");
+        job.ownSettings = { ...job.ownSettings, ...ctx.schema(payload.patch) };
+      }
     },
     reorderJobs(payload) {
       state.jobs = ctx.reorder(state.jobs, payload.ids);
