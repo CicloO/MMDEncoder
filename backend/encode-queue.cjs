@@ -269,7 +269,9 @@ function createEncodeQueue(ctx) {
         fs.existsSync,
       );
       if (job.meta && errors.length === 0)
-        commands = core.buildCommands(job, s, state.engineInfo, paths);
+        commands = core.singlePass(
+          core.buildCommands(job, s, state.engineInfo, paths),
+        );
     } catch (e) {
       errors.push(e.message);
     }
@@ -300,7 +302,9 @@ function createEncodeQueue(ctx) {
     pieces.push(text);
     ctx.pendingLogs.set(job.id, pieces);
   }
-  async function encode(job) {
+  // gpuMask: the Alpha mask may go to NVENC (see core.maskOnNvenc); a run
+  // where that fails is done again once with the mask on the CPU.
+  async function encode(job, gpuMask = true) {
     const s = job.settings;
     const maskOnly =
       job.status === "partial" && job.output && fs.existsSync(job.output);
@@ -310,7 +314,9 @@ function createEncodeQueue(ctx) {
     job.startedAt = Date.now();
     job.stage = maskOnly ? "重试 Alpha 遮罩" : "准备";
     emit();
-    let tempDir;
+    let tempDir,
+      gpuMaskUsed = false,
+      again = false;
     try {
       const errors = core.validate(s, job.meta);
       if (
@@ -358,8 +364,19 @@ function createEncodeQueue(ctx) {
           ? path.join(tempDir, "mask." + s.container)
           : undefined,
       };
-      let commands = core.buildCommands(job, s, state.engineInfo, temps);
-      if (maskOnly) commands = commands.filter((c) => c.mask);
+      let commands = core.buildCommands(
+        job,
+        s,
+        gpuMask
+          ? state.engineInfo
+          : { ...state.engineInfo, nvencLossless: false },
+        temps,
+      );
+      gpuMaskUsed = gpuMask && JSON.stringify(commands).includes('"lossless"');
+      // Colour and mask in one pass; redoing just the mask keeps its own run.
+      commands = maskOnly
+        ? commands.filter((c) => c.mask)
+        : core.singlePass(commands);
       job.output = maskOnly ? job.output : undefined;
       job.maskOutput = paths.maskOutput;
       for (let i = 0; i < commands.length; i++) {
@@ -423,6 +440,13 @@ function createEncodeQueue(ctx) {
       job.stage = "完成";
     } catch (e) {
       append(job, "\n" + e.message + "\n");
+      // The GPU mask failed (an encoder session limit, an older GPU…) before
+      // anything was kept: once more with the mask on the CPU.
+      if (gpuMaskUsed && !ctx.stopped && !job.output) {
+        append(job, "\n显卡无损遮罩未能完成，改用 CPU（x264）重新压制。\n");
+        again = true;
+        return;
+      }
       job.status =
         job.output && fs.existsSync(job.output)
           ? "partial"
@@ -441,6 +465,7 @@ function createEncodeQueue(ctx) {
         }
       job.elapsed = (Date.now() - job.startedAt) / 1000;
       emit();
+      if (again) await encode(job, false);
     }
   }
   async function queue(jobs) {

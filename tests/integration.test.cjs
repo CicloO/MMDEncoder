@@ -369,7 +369,8 @@ test(
       dataDir: path.join(dir, "data"),
       onUpdate: (st) => {
         const j = st.jobs.find(
-          (j) => j.status === "encoding" && j.stage === "Alpha 遮罩",
+          // Colour and mask run in one pass ("… + Alpha 遮罩").
+          (j) => j.status === "encoding" && j.stage?.includes("Alpha 遮罩"),
         );
         if (j && blockMask) {
           blockMask = false;

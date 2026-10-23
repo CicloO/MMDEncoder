@@ -880,6 +880,49 @@ function createService({
     placeboCache = { key, value };
     return value;
   }
+  // Whether this machine's NVENC encodes lossless H.264 (the GPU Alpha
+  // mask): a tiny real run, kept with the encoder detection like Vulkan.
+  let nvencLosslessCache = { key: "", value: false };
+  async function hasNvencLossless(force = false) {
+    const ff = state.engineInfo.ffmpeg;
+    let key = ff;
+    try {
+      const st = fs.statSync(ff);
+      key += "|" + st.size + "|" + st.mtimeMs;
+    } catch {}
+    if (!force && nvencLosslessCache.key === key)
+      return nvencLosslessCache.value;
+    let value = false;
+    try {
+      await run(
+        ff,
+        [
+          "-hide_banner",
+          "-v",
+          "error",
+          "-f",
+          "lavfi",
+          "-i",
+          "color=white:s=256x256:d=0.2",
+          "-c:v",
+          "h264_nvenc",
+          "-preset",
+          "p1",
+          "-tune",
+          "lossless",
+          "-pix_fmt",
+          "yuv420p",
+          "-f",
+          "null",
+          "-",
+        ],
+        { timeout: 20000 },
+      );
+      value = true;
+    } catch {}
+    nvencLosslessCache = { key, value };
+    return value;
+  }
   // Detection runs real trial encodes, so its result is cached in dataDir and
   // reused until the tools, the display adapters/drivers or the engine list change.
   const cacheFile = () => path.join(dataDir, "engine-cache.json");
@@ -951,6 +994,7 @@ function createService({
             detectedAt: new Date().toISOString(),
             engines: state.engines,
             libplacebo: !!state.engineInfo.libplacebo,
+            nvencLossless: !!state.engineInfo.nvencLossless,
             log,
           },
           null,
@@ -982,10 +1026,18 @@ function createService({
         typeof cached?.libplacebo === "boolean"
           ? cached.libplacebo
           : await hasLibplacebo(force);
+      // The Alpha mask goes to NVENC when it encodes lossless.
+      state.engineInfo.nvencLossless =
+        typeof cached?.nvencLossless === "boolean"
+          ? cached.nvencLossless
+          : await hasNvencLossless(force);
       if (cached) {
         state.engines = cached.engines;
-        // A cache from before the Vulkan check: add its result.
-        if (typeof cached.libplacebo !== "boolean")
+        // A cache from before the Vulkan / NVENC lossless checks: add them.
+        if (
+          typeof cached.libplacebo !== "boolean" ||
+          typeof cached.nvencLossless !== "boolean"
+        )
           writeDetectionCache(key, cached.log || "");
         state.detectionLog +=
           (cached.log || "") +

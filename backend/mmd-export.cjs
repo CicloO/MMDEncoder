@@ -318,7 +318,8 @@ function plan(runtime, config = readConfig()) {
   const commands = core.buildCommands(
     job,
     { ...out, audio: "none", hiRes: false },
-    config.engines,
+    // The plugin keeps its x264 mask (the GPU one is for the video page).
+    { ...config.engines, nvencLossless: false },
     {
       output: temp,
       maskOutput: mask ? maskTemp(temp) : undefined,
@@ -342,24 +343,7 @@ function plan(runtime, config = readConfig()) {
     const [video, matte] = commands.map((c) =>
       fromPipe(c.args, runtime, rate, alpha),
     );
-    const outputOf = (a) => {
-      const m = a.indexOf("-map");
-      if (a[m + 2] !== "-vf") throw Error("无法组合遮罩命令");
-      return { filter: a[m + 3], rest: a.slice(m + 4) };
-    };
-    const v = outputOf(video),
-      k = outputOf(matte);
-    args = [
-      ...video.slice(0, video.indexOf("-map")),
-      "-filter_complex",
-      `[0:v]${flip}split=2[c][k];[c]${v.filter}[vc];[k]${k.filter}[vk]`,
-      "-map",
-      "[vc]",
-      ...v.rest,
-      "-map",
-      "[vk]",
-      ...k.rest,
-    ];
+    args = core.joinMask(video, matte, flip);
   }
   const command = commands[0];
   const result = {
