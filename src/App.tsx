@@ -6,16 +6,12 @@ import {
   ArrowDownToLine,
   Plus,
   FolderOpen,
-  Film,
   Layers,
   Settings2,
   SlidersHorizontal,
   Copy,
   Check,
-  ChevronLeft,
-  ChevronRight,
   Trash2,
-  FileVideo,
   RefreshCw,
   Play,
   Square,
@@ -24,16 +20,13 @@ import {
   Cpu,
   X,
   LoaderCircle,
-  Terminal,
   Folder,
   Save,
   FilePlus2,
-  ExternalLink,
   Clapperboard,
   Eye,
   EyeOff,
   GripVertical,
-  Music,
 } from "lucide-react";
 import {
   Button,
@@ -45,15 +38,13 @@ import {
 } from "./components";
 import { MediaTools } from "./MediaTools";
 import { TrimTools } from "./TrimTools";
+import { EncodeQueue } from "./EncodeQueue";
 import { MediaDetails } from "./MediaDetails";
-import { FileMeta, metaSummary } from "./FileMeta";
 import { RtxSettings } from "./RtxSettings";
 import { AboutDialog } from "./AboutDialog";
 import {
   formatFPS,
-  formatDuration,
   formatSize,
-  statusLabels,
   audioLabels,
   compatibilityErrors,
   fadeOptions,
@@ -302,8 +293,6 @@ export default function App() {
     true,
     { handle: true },
   );
-  // Frame rates a PNG sequence can play at (backend SEQUENCE_RATES).
-  const SEQUENCE_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120];
   // Every preset shows unless the user hid it with the hide / show button.
   const presetHidden = (p: Preset) => p.hidden ?? false;
   useEffect(() => {
@@ -613,16 +602,6 @@ export default function App() {
       (j) => j.status === "ready" || (j.status === "invalid" && j.meta),
     ).length,
     doneCount = jobs.filter((j) => j.status === "done").length;
-  const renderMeta = () =>
-    job?.meta ? (
-      <FileMeta meta={job.meta} />
-    ) : (
-      <p className="muted">
-        {job?.status === "probing"
-          ? "正在读取视频信息…"
-          : "选中视频后显示分辨率、帧率与音轨信息。"}
-      </p>
-    );
   return (
     <div
       className="app-shell"
@@ -747,345 +726,31 @@ export default function App() {
       <div className="page" hidden={workspace !== "encode"}>
         <div className="page-scroll">
           <main className="workspace">
-            <section className="queue-column" aria-label="视频队列">
-              <div className="section-heading">
-                <div>
-                  <span className="eyebrow">工作区</span>
-                  <h2>
-                    视频队列 <span className="count">{jobs.length}</span>
-                  </h2>
-                </div>
-                <Button variant="primary" onClick={add} disabled={busy}>
-                  <Plus size={17} />
-                  添加视频
-                </Button>
-              </div>
-              <div className={`queue-panel ${drag ? "dragging" : ""}`}>
-                <div className="queue-toolbar">
-                  <span>
-                    <FileVideo size={15} /> 源文件
-                  </span>
-                  <Button
-                    variant="ghost"
-                    disabled={!doneCount}
-                    onClick={() =>
-                      action(
-                        "clearCompleted",
-                        undefined,
-                        "已移除完成项，输出文件保留",
-                      )
-                    }
-                  >
-                    清除已完成
-                  </Button>
-                </div>
-                {!jobs.length ? (
-                  <div className="empty-queue">
-                    <div className="film-emblem">
-                      <Film size={42} />
-                      <div className="frame-ticks" />
-                    </div>
-                    <h3>把视频放进来</h3>
-                    <p>
-                      拖入多个视频，或从文件夹中选择
-                      <br />
-                      PNG 序列：拖入文件夹，或选其中任意一张。
-                    </p>
-                    <Button onClick={add} disabled={busy}>
-                      <FolderOpen size={17} />
-                      选择视频文件
-                    </Button>
-                    <small>AVI · MOV · MP4 · MKV · WebM 等常见视频格式</small>
-                  </div>
-                ) : (
-                  <ol className="job-list">
-                    {jobs
-                      .slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
-                      .map((j, i) => (
-                        <li
-                          key={j.id}
-                          className={`job-row ${j.id === job?.id ? "selected" : ""}`}
-                          {...sortJob(j.id)}
-                        >
-                          <button
-                            className="job-select"
-                            onClick={() => setSelected(j.id)}
-                            aria-pressed={j.id === job?.id}
-                          >
-                            <span
-                              className={`file-tile ${j.status === "done" ? "complete" : ""}`}
-                            >
-                              {j.status === "done" ? (
-                                <Check size={22} />
-                              ) : (
-                                <FileVideo size={23} />
-                              )}
-                              <small>
-                                {j.name
-                                  .split(".")
-                                  .pop()
-                                  ?.slice(0, 5)
-                                  .toUpperCase()}
-                              </small>
-                            </span>
-                            <span className="job-copy">
-                              <strong title={j.name}>{j.name}</strong>
-                              <span className="job-sub">
-                                {j.meta
-                                  ? metaSummary(j.meta)
-                                  : "正在读取素材信息"}
-                                {j.audioPath &&
-                                  ` · 音频：${baseName(j.audioPath)}`}
-                              </span>
-                              <span className={`job-status ${j.status}`}>
-                                {j.status === "encoding" && (
-                                  <LoaderCircle size={12} className="spin" />
-                                )}
-                                {statusLabels[j.status] || j.status}
-                                {j.status === "encoding"
-                                  ? ` · ${Math.round(j.progress)}% · ${j.stage || "编码"} · ${formatDuration(j.elapsed || 0)}`
-                                  : ""}
-                              </span>
-                            </span>
-                          </button>
-                          {!["encoding", "done"].includes(j.status) && (
-                            <Button
-                              variant="ghost icon"
-                              aria-label={`为 ${j.name} 选择音频`}
-                              title="替换音频"
-                              disabled={state.running}
-                              onClick={() => pickAudio(j)}
-                            >
-                              <Music size={16} />
-                            </Button>
-                          )}
-                          {["done", "cancelled"].includes(j.status) && (
-                            <Button
-                              variant="ghost icon"
-                              aria-label={`重新导出 ${j.name}`}
-                              title="重新导出：放回队列，按当前设置压制，已有文件不覆盖"
-                              disabled={state.running}
-                              onClick={() =>
-                                action(
-                                  "requeue",
-                                  { id: j.id },
-                                  "已放回队列，开始压制时使用当前设置",
-                                )
-                              }
-                            >
-                              <RefreshCw size={16} />
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost icon"
-                            aria-label={`移除 ${j.name}`}
-                            title="从队列移除"
-                            disabled={j.status === "encoding" || state.running}
-                            onClick={() => action("remove", { id: j.id })}
-                          >
-                            <X size={16} />
-                          </Button>
-                          <span className="row-index">
-                            {String(page * PAGE_SIZE + i + 1).padStart(2, "0")}
-                          </span>
-                          {j.status === "encoding" && (
-                            <progress
-                              max={100}
-                              value={j.progress}
-                              aria-label={`${j.name} 压制进度`}
-                            />
-                          )}
-                        </li>
-                      ))}
-                  </ol>
-                )}
-                {jobs.length > 0 && (
-                  <div className="queue-pagination">
-                    <span>
-                      {page * PAGE_SIZE + 1}–
-                      {Math.min((page + 1) * PAGE_SIZE, jobs.length)} /{" "}
-                      {jobs.length} 个视频
-                    </span>
-                    <div>
-                      <Button
-                        aria-label="上一页"
-                        disabled={page === 0}
-                        onClick={() => setPage(page - 1)}
-                      >
-                        <ChevronLeft size={16} />
-                      </Button>
-                      <Button
-                        aria-label="下一页"
-                        disabled={page + 1 >= pageCount}
-                        onClick={() => setPage(page + 1)}
-                      >
-                        <ChevronRight size={16} />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              {job && (
-                <section className="detail-card">
-                  <div className="detail-title">
-                    <span className="eyebrow">当前素材</span>
-                    <div className="detail-actions">
-                      <Button
-                        variant="ghost"
-                        title="转换前 / 后的 ffprobe 参数"
-                        disabled={!!state.tools?.busy}
-                        onClick={async () => {
-                          setDetails(null);
-                          setModal("details");
-                          try {
-                            setDetails(await call("details", { id: job.id }));
-                          } catch (e) {
-                            setError((e as Error).message);
-                          }
-                        }}
-                      >
-                        <Info size={14} />
-                        文件详情
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        onClick={() => action("reveal", { path: job.path })}
-                      >
-                        <FolderOpen size={14} />
-                        打开位置
-                      </Button>
-                    </div>
-                  </div>
-                  <h3 title={job.name}>{job.name}</h3>
-                  {renderMeta()}
-                  {job.sequence && (
-                    // Pictures carry no frame rate: the user says how fast they play.
-                    <div className="sequence-rate">
-                      <Select
-                        id="sequence-fps"
-                        label="序列帧率"
-                        value={String(job.sequence.fps)}
-                        disabled={
-                          state.running ||
-                          ![
-                            "ready",
-                            "invalid",
-                            "done",
-                            "failed",
-                            "cancelled",
-                            "partial",
-                          ].includes(job.status)
-                        }
-                        hint={`${job.sequence.count} 张图片按这个帧率播放，时长随之改变。`}
-                        options={SEQUENCE_RATES.map((r) => ({
-                          value: String(r),
-                          label: `${r} FPS`,
-                        }))}
-                        onChange={(v) =>
-                          action("setSequenceFps", {
-                            id: job.id,
-                            fps: Number(v),
-                          })
-                        }
-                      />
-                    </div>
-                  )}
-                  <p
-                    className="path-text"
-                    title={job.sequence ? job.sequence.pattern : job.path}
-                  >
-                    {job.sequence
-                      ? job.sequence.pattern.replace(/%%/g, "%")
-                      : job.path}
-                  </p>
-                  {job.audioPath && (
-                    <div className="replace-audio">
-                      <Music size={14} />
-                      <span className="path-text" title={job.audioPath}>
-                        替换音频：{job.audioPath}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        disabled={state.running}
-                        onClick={() =>
-                          action("setAudio", { id: job.id, path: "" })
-                        }
-                      >
-                        改回原音轨
-                      </Button>
-                    </div>
-                  )}
-                  {job.error && (
-                    <div className="inline-error" role="alert">
-                      {job.error}
-                    </div>
-                  )}
-                  {["failed", "partial", "cancelled", "invalid"].includes(
-                    job.status,
-                  ) && (
-                    <div className="recovery">
-                      <Button onClick={() => openLog(job)}>
-                        <Terminal size={14} />
-                        查看日志
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          setTab("encoding");
-                          document.getElementById("encoder")?.focus();
-                        }}
-                      >
-                        调整参数
-                      </Button>
-                      <Button
-                        disabled={state.running}
-                        onClick={() => {
-                          if (s)
-                            persist(s)
-                              .then(() => call("retry", { id: job.id }))
-                              .catch((e) => setError(e.message));
-                        }}
-                      >
-                        重试
-                      </Button>
-                      {job.status === "failed" &&
-                        !/磁盘|空间|权限|ENOENT|EACCES|ENOSPC/.test(
-                          job.error || "",
-                        ) &&
-                        /nvenc|qsv|amf/.test(
-                          job.settings?.encoder || s.encoder,
-                        ) && (
-                          <Button
-                            disabled={state.running}
-                            onClick={() => setFallback(job)}
-                          >
-                            改用软件编码重试
-                          </Button>
-                        )}
-                    </div>
-                  )}
-                  {job.output && (
-                    <Button
-                      variant="ghost"
-                      onClick={() => action("reveal", { path: job.output })}
-                    >
-                      <FolderOpen size={15} />
-                      查看输出文件
-                    </Button>
-                  )}
-                </section>
-              )}
-              <div className="workflow-note">
-                <span className="note-icon">
-                  <Info size={17} />
-                </span>
-                <div>
-                  <strong>从素材到成片，路径清晰可见</strong>
-                  <p>
-                    原视频始终保留。同名输出自动编号，每个任务独立记录结果。
-                  </p>
-                </div>
-              </div>
-            </section>
+            <EncodeQueue
+              state={state}
+              jobs={jobs}
+              job={job}
+              s={s}
+              page={page}
+              setPage={setPage}
+              pageCount={pageCount}
+              setSelected={setSelected}
+              drag={drag}
+              busy={busy}
+              doneCount={doneCount}
+              sortJob={sortJob}
+              add={add}
+              call={call}
+              action={action}
+              pickAudio={pickAudio}
+              persist={persist}
+              openLog={openLog}
+              setDetails={setDetails}
+              setModal={setModal}
+              setError={setError}
+              setTab={setTab}
+              setFallback={setFallback}
+            />
             <aside className="settings-column" aria-label="压制设置">
               <div className="section-heading">
                 <div>
