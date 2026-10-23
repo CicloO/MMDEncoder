@@ -33,6 +33,7 @@ import {
   Eye,
   EyeOff,
   GripVertical,
+  Music,
 } from "lucide-react";
 import {
   Button,
@@ -367,6 +368,12 @@ export default function App() {
   }, [modal]);
   function action(actionName: string, payload?: unknown, message?: string) {
     void call(actionName, payload, message).catch(() => {});
+  }
+  // Replace one video's audio, as the media page's merge does.
+  async function pickAudio(j: Job) {
+    const file = await call("pickMedia", { multiple: false }).catch(() => null);
+    if (typeof file === "string")
+      action("setAudio", { id: j.id, path: file }, "已替换音频");
   }
   function persist(settings: Settings) {
     const task = saveChain.current
@@ -738,1067 +745,1128 @@ export default function App() {
         </div>
       )}
       <div className="page" hidden={workspace !== "encode"}>
-        <main className="workspace">
-          <section className="queue-column" aria-label="视频队列">
-            <div className="section-heading">
-              <div>
-                <span className="eyebrow">工作区</span>
-                <h2>
-                  视频队列 <span className="count">{jobs.length}</span>
-                </h2>
-              </div>
-              <Button variant="primary" onClick={add} disabled={busy}>
-                <Plus size={17} />
-                添加视频
-              </Button>
-            </div>
-            <div className={`queue-panel ${drag ? "dragging" : ""}`}>
-              <div className="queue-toolbar">
-                <span>
-                  <FileVideo size={15} /> 源文件
-                </span>
-                <Button
-                  variant="ghost"
-                  disabled={!doneCount}
-                  onClick={() =>
-                    action(
-                      "clearCompleted",
-                      undefined,
-                      "已移除完成项，输出文件保留",
-                    )
-                  }
-                >
-                  清除已完成
+        <div className="page-scroll">
+          <main className="workspace">
+            <section className="queue-column" aria-label="视频队列">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">工作区</span>
+                  <h2>
+                    视频队列 <span className="count">{jobs.length}</span>
+                  </h2>
+                </div>
+                <Button variant="primary" onClick={add} disabled={busy}>
+                  <Plus size={17} />
+                  添加视频
                 </Button>
               </div>
-              {!jobs.length ? (
-                <div className="empty-queue">
-                  <div className="film-emblem">
-                    <Film size={42} />
-                    <div className="frame-ticks" />
-                  </div>
-                  <h3>把视频放进来</h3>
-                  <p>
-                    拖入多个视频，或从文件夹中选择
-                    <br />
-                    PNG 序列：拖入文件夹，或选其中任意一张。
-                  </p>
-                  <Button onClick={add} disabled={busy}>
-                    <FolderOpen size={17} />
-                    选择视频文件
-                  </Button>
-                  <small>AVI · MOV · MP4 · MKV · WebM 等常见视频格式</small>
-                </div>
-              ) : (
-                <ol className="job-list">
-                  {jobs
-                    .slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
-                    .map((j, i) => (
-                      <li
-                        key={j.id}
-                        className={`job-row ${j.id === job?.id ? "selected" : ""}`}
-                        {...sortJob(j.id)}
-                      >
-                        <button
-                          className="job-select"
-                          onClick={() => setSelected(j.id)}
-                          aria-pressed={j.id === job?.id}
-                        >
-                          <span
-                            className={`file-tile ${j.status === "done" ? "complete" : ""}`}
-                          >
-                            {j.status === "done" ? (
-                              <Check size={22} />
-                            ) : (
-                              <FileVideo size={23} />
-                            )}
-                            <small>
-                              {j.name
-                                .split(".")
-                                .pop()
-                                ?.slice(0, 5)
-                                .toUpperCase()}
-                            </small>
-                          </span>
-                          <span className="job-copy">
-                            <strong title={j.name}>{j.name}</strong>
-                            <span className="job-sub">
-                              {j.meta
-                                ? metaSummary(j.meta)
-                                : "正在读取素材信息"}
-                            </span>
-                            <span className={`job-status ${j.status}`}>
-                              {j.status === "encoding" && (
-                                <LoaderCircle size={12} className="spin" />
-                              )}
-                              {statusLabels[j.status] || j.status}
-                              {j.status === "encoding"
-                                ? ` · ${Math.round(j.progress)}% · ${j.stage || "编码"} · ${formatDuration(j.elapsed || 0)}`
-                                : ""}
-                            </span>
-                          </span>
-                        </button>
-                        {["done", "cancelled"].includes(j.status) && (
-                          <Button
-                            variant="ghost icon"
-                            aria-label={`重新导出 ${j.name}`}
-                            title="重新导出：放回队列，按当前设置压制，已有文件不覆盖"
-                            disabled={state.running}
-                            onClick={() =>
-                              action(
-                                "requeue",
-                                { id: j.id },
-                                "已放回队列，开始压制时使用当前设置",
-                              )
-                            }
-                          >
-                            <RefreshCw size={16} />
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost icon"
-                          aria-label={`移除 ${j.name}`}
-                          title="从队列移除"
-                          disabled={j.status === "encoding" || state.running}
-                          onClick={() => action("remove", { id: j.id })}
-                        >
-                          <X size={16} />
-                        </Button>
-                        <span className="row-index">
-                          {String(page * PAGE_SIZE + i + 1).padStart(2, "0")}
-                        </span>
-                        {j.status === "encoding" && (
-                          <progress
-                            max={100}
-                            value={j.progress}
-                            aria-label={`${j.name} 压制进度`}
-                          />
-                        )}
-                      </li>
-                    ))}
-                </ol>
-              )}
-              {jobs.length > 0 && (
-                <div className="queue-pagination">
+              <div className={`queue-panel ${drag ? "dragging" : ""}`}>
+                <div className="queue-toolbar">
                   <span>
-                    {page * PAGE_SIZE + 1}–
-                    {Math.min((page + 1) * PAGE_SIZE, jobs.length)} /{" "}
-                    {jobs.length} 个视频
+                    <FileVideo size={15} /> 源文件
                   </span>
-                  <div>
-                    <Button
-                      aria-label="上一页"
-                      disabled={page === 0}
-                      onClick={() => setPage(page - 1)}
-                    >
-                      <ChevronLeft size={16} />
-                    </Button>
-                    <Button
-                      aria-label="下一页"
-                      disabled={page + 1 >= pageCount}
-                      onClick={() => setPage(page + 1)}
-                    >
-                      <ChevronRight size={16} />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-            {job && (
-              <section className="detail-card">
-                <div className="detail-title">
-                  <span className="eyebrow">当前素材</span>
-                  <div className="detail-actions">
-                    <Button
-                      variant="ghost"
-                      title="转换前 / 后的 ffprobe 参数"
-                      disabled={!!state.tools?.busy}
-                      onClick={async () => {
-                        setDetails(null);
-                        setModal("details");
-                        try {
-                          setDetails(await call("details", { id: job.id }));
-                        } catch (e) {
-                          setError((e as Error).message);
-                        }
-                      }}
-                    >
-                      <Info size={14} />
-                      文件详情
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() => action("reveal", { path: job.path })}
-                    >
-                      <FolderOpen size={14} />
-                      打开位置
-                    </Button>
-                  </div>
-                </div>
-                <h3 title={job.name}>{job.name}</h3>
-                {renderMeta()}
-                {job.sequence && (
-                  // Pictures carry no frame rate: the user says how fast they play.
-                  <div className="sequence-rate">
-                    <Select
-                      id="sequence-fps"
-                      label="序列帧率"
-                      value={String(job.sequence.fps)}
-                      disabled={
-                        state.running ||
-                        ![
-                          "ready",
-                          "invalid",
-                          "done",
-                          "failed",
-                          "cancelled",
-                          "partial",
-                        ].includes(job.status)
-                      }
-                      hint={`${job.sequence.count} 张图片按这个帧率播放，时长随之改变。`}
-                      options={SEQUENCE_RATES.map((r) => ({
-                        value: String(r),
-                        label: `${r} FPS`,
-                      }))}
-                      onChange={(v) =>
-                        action("setSequenceFps", { id: job.id, fps: Number(v) })
-                      }
-                    />
-                  </div>
-                )}
-                <p
-                  className="path-text"
-                  title={job.sequence ? job.sequence.pattern : job.path}
-                >
-                  {job.sequence
-                    ? job.sequence.pattern.replace(/%%/g, "%")
-                    : job.path}
-                </p>
-                {job.error && (
-                  <div className="inline-error" role="alert">
-                    {job.error}
-                  </div>
-                )}
-                {["failed", "partial", "cancelled", "invalid"].includes(
-                  job.status,
-                ) && (
-                  <div className="recovery">
-                    <Button onClick={() => openLog(job)}>
-                      <Terminal size={14} />
-                      查看日志
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setTab("encoding");
-                        document.getElementById("encoder")?.focus();
-                      }}
-                    >
-                      调整参数
-                    </Button>
-                    <Button
-                      disabled={state.running}
-                      onClick={() => {
-                        if (s)
-                          persist(s)
-                            .then(() => call("retry", { id: job.id }))
-                            .catch((e) => setError(e.message));
-                      }}
-                    >
-                      重试
-                    </Button>
-                    {job.status === "failed" &&
-                      !/磁盘|空间|权限|ENOENT|EACCES|ENOSPC/.test(
-                        job.error || "",
-                      ) &&
-                      /nvenc|qsv|amf/.test(
-                        job.settings?.encoder || s.encoder,
-                      ) && (
-                        <Button
-                          disabled={state.running}
-                          onClick={() => setFallback(job)}
-                        >
-                          改用软件编码重试
-                        </Button>
-                      )}
-                  </div>
-                )}
-                {job.output && (
                   <Button
                     variant="ghost"
-                    onClick={() => action("reveal", { path: job.output })}
+                    disabled={!doneCount}
+                    onClick={() =>
+                      action(
+                        "clearCompleted",
+                        undefined,
+                        "已移除完成项，输出文件保留",
+                      )
+                    }
                   >
-                    <FolderOpen size={15} />
-                    查看输出文件
+                    清除已完成
                   </Button>
-                )}
-              </section>
-            )}
-            <div className="workflow-note">
-              <span className="note-icon">
-                <Info size={17} />
-              </span>
-              <div>
-                <strong>从素材到成片，路径清晰可见</strong>
-                <p>原视频始终保留。同名输出自动编号，每个任务独立记录结果。</p>
-              </div>
-            </div>
-          </section>
-          <aside className="settings-column" aria-label="压制设置">
-            <div className="section-heading">
-              <div>
-                <span className="eyebrow">输出控制</span>
-                <h2>压制设置</h2>
-              </div>
-              <SlidersHorizontal size={20} className="muted" />
-            </div>
-            <div className="settings-panel">
-              <div className="preset-bar">
-                <Select
-                  id="preset-select"
-                  label={`编码预设${modified ? " · 已修改" : ""}`}
-                  value={presetId}
-                  options={[
-                    { value: "", label: "自定义设置" },
-                    ...presets
-                      .filter((p) => !presetHidden(p) || p.id === presetId)
-                      .map((p) => ({
-                        value: p.id,
-                        label: p.name,
-                      })),
-                  ]}
-                  onChange={(id) => {
-                    const p = state.presets.find((p) => p.id === id);
-                    if (p) {
-                      if (modified) setPendingPreset(p);
-                      else void applyPreset(p);
-                    } else setPresetId("");
-                  }}
-                />
-                <Button
-                  title={
-                    activePreset
-                      ? `保存（覆盖“${activePreset.name}”）`
-                      : "保存（先选择一个预设）"
-                  }
-                  aria-label="保存到当前预设"
-                  disabled={busy || !activePreset || !modified}
-                  onClick={() => void overwritePreset()}
-                >
-                  <Save size={17} />
-                </Button>
-                <Button
-                  title="另存为预设"
-                  aria-label="另存为预设"
-                  onClick={() => {
-                    setSaveId("");
-                    setPresetName("");
-                    setModal("save");
-                  }}
-                >
-                  <FilePlus2 size={17} />
-                </Button>
-              </div>
-              <div className="setting-tabs" role="group" aria-label="设置分类">
-                {[
-                  { id: "encoding", name: "画质" },
-                  { id: "audio", name: "音频" },
-                  { id: "alpha", name: "透明通道" },
-                  { id: "rtx", name: "超分补帧" },
-                  { id: "output", name: "输出" },
-                  { id: "advanced", name: "高级" },
-                ].map((t) => (
-                  <button
-                    key={t.id}
-                    aria-pressed={tab === t.id}
-                    className={tab === t.id ? "active" : ""}
-                    onClick={() => setTab(t.id)}
-                  >
-                    {t.name}
-                  </button>
-                ))}
-              </div>
-              <form
-                noValidate
-                onSubmit={(e) => e.preventDefault()}
-                className="settings-body"
-              >
-                {tab === "encoding" && (
-                  <>
-                    <div className="form-row">
-                      <Select
-                        id="container"
-                        label="封装格式"
-                        value={s.container}
-                        options={options(["mp4", "mkv", "mov", "webm"]).map(
-                          (o) => ({ ...o, label: o.label.toUpperCase() }),
-                        )}
-                        onChange={(v) => set("container", v)}
-                      />
-                      <Select
-                        id="bitDepth"
-                        label="色彩位深"
-                        value={s.bitDepth}
-                        options={[
-                          { value: 8, label: "8-bit" },
-                          { value: 10, label: "10-bit" },
-                        ]}
-                        onChange={(v) => set("bitDepth", Number(v))}
-                      />
+                </div>
+                {!jobs.length ? (
+                  <div className="empty-queue">
+                    <div className="film-emblem">
+                      <Film size={42} />
+                      <div className="frame-ticks" />
                     </div>
-                    <Select
-                      id="encoder"
-                      label="视频编码器"
-                      value={s.encoder}
-                      options={[
-                        ...(!engine
-                          ? [
-                              {
-                                value: s.encoder,
-                                label: `${s.encoder} · ${state.detecting ? "检测中" : "不可用"}`,
-                              },
-                            ]
-                          : []),
-                        ...state.engines.map((e) => ({
-                          value: e.id,
-                          label: e.label,
-                        })),
-                      ]}
-                      onChange={(v) => {
-                        const en = state.engines.find((e) => e.id === v);
-                        changed({
-                          ...s,
-                          encoder: v,
-                          // ProRes takes a quantizer, not a CRF; start at 16 (the built-in value).
-                          ...(v === "prores_ks" && s.encoder !== "prores_ks"
-                            ? { quality: 12, rateControl: "quality" }
-                            : {}),
-                          preset:
-                            en?.backend === "cpu"
-                              ? v === "libsvtav1"
-                                ? "6"
-                                : "medium"
-                              : en?.backend === "qsv"
-                                ? "medium"
-                                : en?.backend === "amf"
-                                  ? "balanced"
-                                  : "p7",
-                        });
-                      }}
-                      hint={
-                        state.detecting
-                          ? "正在试编码，完成后显示当前电脑可用的编码器。"
-                          : "只显示已通过本机试编码的编码器。"
-                      }
-                    />
-                    <div className="form-row">
-                      <Select
-                        id="rateControl"
-                        disabled={s.encoder === "prores_ks"}
-                        label="码率控制"
-                        value={s.rateControl}
-                        options={[
-                          {
-                            value: "quality",
-                            label:
-                              backend === "cpu"
-                                ? "恒定质量 · CRF"
-                                : "目标质量 · CQ",
-                          },
-                          { value: "qp", label: "固定量化 · QP" },
-                          { value: "bitrate", label: "目标码率" },
-                        ]}
-                        onChange={(v) => set("rateControl", v)}
-                      />
-                      {s.rateControl === "bitrate"
-                        ? fieldNumber("bitrate", "码率 · kbps", 100, 1000000)
-                        : fieldNumber(
-                            "quality",
-                            s.encoder === "prores_ks"
-                              ? "画质 · 量化"
-                              : `画质 · ${s.rateControl === "qp" ? "QP" : backend === "cpu" ? "CRF" : "CQ"}`,
-                            0,
-                            s.encoder === "prores_ks"
-                              ? 64
-                              : ["h264", "hevc"].includes(engine?.codec || "")
-                                ? 51
-                                : 63,
+                    <h3>把视频放进来</h3>
+                    <p>
+                      拖入多个视频，或从文件夹中选择
+                      <br />
+                      PNG 序列：拖入文件夹，或选其中任意一张。
+                    </p>
+                    <Button onClick={add} disabled={busy}>
+                      <FolderOpen size={17} />
+                      选择视频文件
+                    </Button>
+                    <small>AVI · MOV · MP4 · MKV · WebM 等常见视频格式</small>
+                  </div>
+                ) : (
+                  <ol className="job-list">
+                    {jobs
+                      .slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
+                      .map((j, i) => (
+                        <li
+                          key={j.id}
+                          className={`job-row ${j.id === job?.id ? "selected" : ""}`}
+                          {...sortJob(j.id)}
+                        >
+                          <button
+                            className="job-select"
+                            onClick={() => setSelected(j.id)}
+                            aria-pressed={j.id === job?.id}
+                          >
+                            <span
+                              className={`file-tile ${j.status === "done" ? "complete" : ""}`}
+                            >
+                              {j.status === "done" ? (
+                                <Check size={22} />
+                              ) : (
+                                <FileVideo size={23} />
+                              )}
+                              <small>
+                                {j.name
+                                  .split(".")
+                                  .pop()
+                                  ?.slice(0, 5)
+                                  .toUpperCase()}
+                              </small>
+                            </span>
+                            <span className="job-copy">
+                              <strong title={j.name}>{j.name}</strong>
+                              <span className="job-sub">
+                                {j.meta
+                                  ? metaSummary(j.meta)
+                                  : "正在读取素材信息"}
+                                {j.audioPath &&
+                                  ` · 音频：${baseName(j.audioPath)}`}
+                              </span>
+                              <span className={`job-status ${j.status}`}>
+                                {j.status === "encoding" && (
+                                  <LoaderCircle size={12} className="spin" />
+                                )}
+                                {statusLabels[j.status] || j.status}
+                                {j.status === "encoding"
+                                  ? ` · ${Math.round(j.progress)}% · ${j.stage || "编码"} · ${formatDuration(j.elapsed || 0)}`
+                                  : ""}
+                              </span>
+                            </span>
+                          </button>
+                          {!["encoding", "done"].includes(j.status) && (
+                            <Button
+                              variant="ghost icon"
+                              aria-label={`为 ${j.name} 选择音频`}
+                              title="替换音频"
+                              disabled={state.running}
+                              onClick={() => pickAudio(j)}
+                            >
+                              <Music size={16} />
+                            </Button>
                           )}
-                    </div>
-                    <p className="hint quality-hint">
-                      {s.encoder === "prores_ks"
-                        ? "ProRes 量化 1–64：数值越小质量越高、文件越大；0 为编码器默认（实测约为量化 12 的 4 倍大小）。4:2:2 对应 HQ，4:4:4 对应 4444。"
-                        : s.rateControl === "bitrate"
-                          ? "目标平均码率（kbps）：数值越大通常质量越高、文件越大；单遍 VBR 实际码率会波动，不保证文件大小。"
-                          : s.rateControl === "qp"
-                            ? "QP 固定量化：数值越小压缩越少；复杂场景使用相同量化，质量和码率会波动。"
-                            : backend === "cpu"
-                              ? "CRF 恒定质量：数值越小质量越高；码率随画面复杂度变化，不同软件编码器的 CRF 不可直接比较。"
-                              : "CQ 目标质量：硬件按画面分配码率，数值越小通常质量越高；CQ 与 CRF 不在相同尺度。"}
-                    </p>
-                    <Select
-                      id="speed"
-                      label="编码预设 · 速度与压缩效率"
-                      value={s.preset}
-                      disabled={s.encoder === "prores_ks"}
-                      options={options(
-                        backend === "qsv"
-                          ? [
-                              "veryfast",
-                              "faster",
-                              "fast",
-                              "medium",
-                              "slow",
-                              "slower",
-                              "veryslow",
-                            ]
-                          : backend === "amf"
-                            ? ["speed", "balanced", "quality"]
-                            : backend === "cpu"
-                              ? s.encoder === "libsvtav1"
-                                ? ["0", "2", "4", "6", "8", "10", "12"]
-                                : [
-                                    "ultrafast",
-                                    "fast",
-                                    "medium",
-                                    "slow",
-                                    "veryslow",
-                                  ]
-                              : ["p1", "p2", "p3", "p4", "p5", "p6", "p7"],
-                      )}
-                      onChange={(v) => set("preset", v)}
-                      hint={
-                        s.encoder === "prores_ks"
-                          ? "ProRes 使用 Profile 决定压缩配置。"
-                          : backend === "nvenc" || backend === "nvencc"
-                            ? "p1 最快，p7 压缩效率优先；具体速度依显卡和处理链。"
-                            : s.encoder === "libsvtav1"
-                              ? "AV1 数字越小越慢、效率通常越高；数字越大越快。"
-                              : backend === "amf"
-                                ? "speed 优先速度，quality 优先压缩效率，balanced 折中。"
-                                : "veryfast / ultrafast 更快；slow / veryslow 更慢、压缩效率通常更高。"
-                      }
-                    />
-                    <div className="divider" />
-                    <Select
-                      id="resizeMode"
-                      label="输出分辨率"
-                      value={s.resizeMode || "source"}
-                      options={[
-                        { value: "source", label: "保持源分辨率" },
-                        {
-                          value: "long",
-                          label: "按长边缩放 · 自动识别横竖屏",
-                        },
-                        { value: "custom", label: "自定义分辨率" },
-                      ]}
-                      onChange={(v) => set("resizeMode", v)}
-                    />
-                    {s.resizeMode === "long" &&
-                      fieldNumber(
-                        "width",
-                        "长边 · px",
-                        2,
-                        16384,
-                        "横屏视频用作宽度，竖屏视频用作高度，另一边按原比例计算。",
-                      )}
-                    {s.resizeMode === "custom" && (
-                      <>
-                        <div className="form-row">
-                          {(["width", "height"] as const).map((axis) => {
-                            const derived =
-                              s.keepAspect &&
-                              s.resizeAxis !== axis &&
-                              job?.meta;
-                            const value = derived
-                              ? Math.max(
-                                  2,
-                                  Math.round(
-                                    (s[s.resizeAxis as "width" | "height"] *
-                                      job.meta![axis]) /
-                                      job.meta![
-                                        s.resizeAxis as "width" | "height"
-                                      ] /
-                                      2,
-                                  ) * 2,
+                          {["done", "cancelled"].includes(j.status) && (
+                            <Button
+                              variant="ghost icon"
+                              aria-label={`重新导出 ${j.name}`}
+                              title="重新导出：放回队列，按当前设置压制，已有文件不覆盖"
+                              disabled={state.running}
+                              onClick={() =>
+                                action(
+                                  "requeue",
+                                  { id: j.id },
+                                  "已放回队列，开始压制时使用当前设置",
                                 )
-                              : s[axis];
-                            const invalid =
-                              !Number.isInteger(value) ||
-                              value < 2 ||
-                              value > 16384;
-                            return (
-                              <Field
-                                key={axis}
-                                id={axis}
-                                label={
-                                  axis === "width" ? "宽度 · px" : "高度 · px"
-                                }
-                                error={
-                                  invalid ? "请输入 2–16384 的整数" : undefined
-                                }
-                              >
-                                <input
-                                  id={axis}
-                                  type="number"
-                                  min={2}
-                                  max={16384}
-                                  step={1}
-                                  value={value || ""}
-                                  aria-invalid={invalid}
-                                  aria-describedby={
-                                    invalid ? `${axis}-error` : undefined
-                                  }
-                                  onChange={(e) =>
-                                    changed({
-                                      ...s,
-                                      [axis]: Number(e.target.value),
-                                      resizeAxis: axis,
-                                    })
-                                  }
-                                />
-                              </Field>
-                            );
-                          })}
-                        </div>
-                        <label className="check-card">
-                          <input
-                            type="checkbox"
-                            checked={s.keepAspect}
-                            onChange={(e) =>
-                              changed({
-                                ...s,
-                                keepAspect: e.target.checked,
-                                ...(e.target.checked
-                                  ? {}
-                                  : job?.meta
-                                    ? s.resizeAxis === "height"
-                                      ? {
-                                          width: Math.max(
-                                            2,
-                                            Math.round(
-                                              (s.height * job.meta.width) /
-                                                job.meta.height /
-                                                2,
-                                            ) * 2,
-                                          ),
-                                        }
-                                      : {
-                                          height: Math.max(
-                                            2,
-                                            Math.round(
-                                              (s.width * job.meta.height) /
-                                                job.meta.width /
-                                                2,
-                                            ) * 2,
-                                          ),
-                                        }
-                                    : {}),
-                              })
-                            }
-                          />
-                          <span>
-                            <strong>保持宽高比</strong>
-                            <small>
-                              默认开启；按每个源视频的比例计算另一边，取最接近的偶数像素。
-                            </small>
+                              }
+                            >
+                              <RefreshCw size={16} />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost icon"
+                            aria-label={`移除 ${j.name}`}
+                            title="从队列移除"
+                            disabled={j.status === "encoding" || state.running}
+                            onClick={() => action("remove", { id: j.id })}
+                          >
+                            <X size={16} />
+                          </Button>
+                          <span className="row-index">
+                            {String(page * PAGE_SIZE + i + 1).padStart(2, "0")}
                           </span>
-                        </label>
-                        {!job?.meta && s.keepAspect && (
-                          <p className="hint">添加视频后自动计算另一边尺寸。</p>
-                        )}
-                      </>
-                    )}
-                    <Select
-                      id="fps"
-                      label="输出帧率"
-                      value={
-                        customFPS ||
-                        !frameOptions.some((o) => o.value === s.fps)
-                          ? "custom"
-                          : s.fps
-                      }
-                      options={frameOptions}
-                      onChange={(v) => {
-                        setCustomFPS(v === "custom");
-                        if (v !== "custom") set("fps", v);
-                      }}
-                    />
-                    {(customFPS ||
-                      !frameOptions.some((o) => o.value === s.fps)) && (
-                      <Field
-                        id="custom-fps"
-                        label="自定义 FPS"
-                        hint="1–240，可输入 30 或 30000/1001"
-                      >
-                        <input
-                          id="custom-fps"
-                          value={s.fps === "source" ? "" : s.fps}
-                          onChange={(e) => set("fps", e.target.value)}
-                        />
-                      </Field>
-                    )}
-                    <p className="hint">
-                      降帧率保持时长与音画同步；提高帧率使用重复帧，不生成运动细节。
-                    </p>
-                  </>
+                          {j.status === "encoding" && (
+                            <progress
+                              max={100}
+                              value={j.progress}
+                              aria-label={`${j.name} 压制进度`}
+                            />
+                          )}
+                        </li>
+                      ))}
+                  </ol>
                 )}
-                {tab === "audio" && (
-                  <>
-                    <Select
-                      id="audio"
-                      label="音频编码"
-                      value={s.audio}
-                      options={Object.entries(audioLabels).map(
-                        ([value, label]) => ({ value, label }),
-                      )}
-                      onChange={(v) => set("audio", v)}
-                    />
-                    <Select
-                      id="audioBitrate"
-                      label="音频码率"
-                      value={s.audioBitrate ?? 0}
-                      options={[
-                        {
-                          value: 0,
-                          label:
-                            s.audio === "aac"
-                              ? "默认 · 192 kbps"
-                              : "默认 · 编码器自动",
-                        },
-                        ...[64, 96, 128, 160, 192, 256, 320, 384, 512].map(
-                          (value) => ({ value, label: `${value} kbps` }),
-                        ),
-                      ]}
-                      onChange={(v) => set("audioBitrate", Number(v))}
-                      disabled={!["aac", "libopus"].includes(s.audio)}
-                      hint={
-                        s.audio === "none"
-                          ? "不保留音频，无需设置码率。"
-                          : ["flac", "pcm_s16le"].includes(s.audio)
-                            ? "无损或未压缩音频不使用目标码率。"
-                            : "目标码率；实际码率会随编码器和声音内容变化。"
-                      }
-                    />
-                    <Select
-                      id="audioFade"
-                      label="音频淡入淡出"
-                      value={String(s.audioFade ?? 0)}
-                      options={fadeOptions}
-                      disabled={s.audio === "none"}
-                      hint={
-                        s.audio === "none"
-                          ? "不保留音频，无需淡入淡出。"
-                          : fadeHint
-                      }
-                      onChange={(v) => set("audioFade", Number(v))}
-                    />
-                    <label className="checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={!!s.hiRes}
-                        disabled={!["flac", "pcm_s16le"].includes(s.audio)}
-                        onChange={(e) =>
-                          // FLAC / PCM do not fit MP4: switch to MKV with it.
+                {jobs.length > 0 && (
+                  <div className="queue-pagination">
+                    <span>
+                      {page * PAGE_SIZE + 1}–
+                      {Math.min((page + 1) * PAGE_SIZE, jobs.length)} /{" "}
+                      {jobs.length} 个视频
+                    </span>
+                    <div>
+                      <Button
+                        aria-label="上一页"
+                        disabled={page === 0}
+                        onClick={() => setPage(page - 1)}
+                      >
+                        <ChevronLeft size={16} />
+                      </Button>
+                      <Button
+                        aria-label="下一页"
+                        disabled={page + 1 >= pageCount}
+                        onClick={() => setPage(page + 1)}
+                      >
+                        <ChevronRight size={16} />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {job && (
+                <section className="detail-card">
+                  <div className="detail-title">
+                    <span className="eyebrow">当前素材</span>
+                    <div className="detail-actions">
+                      <Button
+                        variant="ghost"
+                        title="转换前 / 后的 ffprobe 参数"
+                        disabled={!!state.tools?.busy}
+                        onClick={async () => {
+                          setDetails(null);
+                          setModal("details");
+                          try {
+                            setDetails(await call("details", { id: job.id }));
+                          } catch (e) {
+                            setError((e as Error).message);
+                          }
+                        }}
+                      >
+                        <Info size={14} />
+                        文件详情
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => action("reveal", { path: job.path })}
+                      >
+                        <FolderOpen size={14} />
+                        打开位置
+                      </Button>
+                    </div>
+                  </div>
+                  <h3 title={job.name}>{job.name}</h3>
+                  {renderMeta()}
+                  {job.sequence && (
+                    // Pictures carry no frame rate: the user says how fast they play.
+                    <div className="sequence-rate">
+                      <Select
+                        id="sequence-fps"
+                        label="序列帧率"
+                        value={String(job.sequence.fps)}
+                        disabled={
+                          state.running ||
+                          ![
+                            "ready",
+                            "invalid",
+                            "done",
+                            "failed",
+                            "cancelled",
+                            "partial",
+                          ].includes(job.status)
+                        }
+                        hint={`${job.sequence.count} 张图片按这个帧率播放，时长随之改变。`}
+                        options={SEQUENCE_RATES.map((r) => ({
+                          value: String(r),
+                          label: `${r} FPS`,
+                        }))}
+                        onChange={(v) =>
+                          action("setSequenceFps", {
+                            id: job.id,
+                            fps: Number(v),
+                          })
+                        }
+                      />
+                    </div>
+                  )}
+                  <p
+                    className="path-text"
+                    title={job.sequence ? job.sequence.pattern : job.path}
+                  >
+                    {job.sequence
+                      ? job.sequence.pattern.replace(/%%/g, "%")
+                      : job.path}
+                  </p>
+                  {job.audioPath && (
+                    <div className="replace-audio">
+                      <Music size={14} />
+                      <span className="path-text" title={job.audioPath}>
+                        替换音频：{job.audioPath}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        disabled={state.running}
+                        onClick={() =>
+                          action("setAudio", { id: job.id, path: "" })
+                        }
+                      >
+                        改回原音轨
+                      </Button>
+                    </div>
+                  )}
+                  {job.error && (
+                    <div className="inline-error" role="alert">
+                      {job.error}
+                    </div>
+                  )}
+                  {["failed", "partial", "cancelled", "invalid"].includes(
+                    job.status,
+                  ) && (
+                    <div className="recovery">
+                      <Button onClick={() => openLog(job)}>
+                        <Terminal size={14} />
+                        查看日志
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          setTab("encoding");
+                          document.getElementById("encoder")?.focus();
+                        }}
+                      >
+                        调整参数
+                      </Button>
+                      <Button
+                        disabled={state.running}
+                        onClick={() => {
+                          if (s)
+                            persist(s)
+                              .then(() => call("retry", { id: job.id }))
+                              .catch((e) => setError(e.message));
+                        }}
+                      >
+                        重试
+                      </Button>
+                      {job.status === "failed" &&
+                        !/磁盘|空间|权限|ENOENT|EACCES|ENOSPC/.test(
+                          job.error || "",
+                        ) &&
+                        /nvenc|qsv|amf/.test(
+                          job.settings?.encoder || s.encoder,
+                        ) && (
+                          <Button
+                            disabled={state.running}
+                            onClick={() => setFallback(job)}
+                          >
+                            改用软件编码重试
+                          </Button>
+                        )}
+                    </div>
+                  )}
+                  {job.output && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => action("reveal", { path: job.output })}
+                    >
+                      <FolderOpen size={15} />
+                      查看输出文件
+                    </Button>
+                  )}
+                </section>
+              )}
+              <div className="workflow-note">
+                <span className="note-icon">
+                  <Info size={17} />
+                </span>
+                <div>
+                  <strong>从素材到成片，路径清晰可见</strong>
+                  <p>
+                    原视频始终保留。同名输出自动编号，每个任务独立记录结果。
+                  </p>
+                </div>
+              </div>
+            </section>
+            <aside className="settings-column" aria-label="压制设置">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">输出控制</span>
+                  <h2>压制设置</h2>
+                </div>
+                <SlidersHorizontal size={20} className="muted" />
+              </div>
+              <div className="settings-panel">
+                <div className="preset-bar">
+                  <Select
+                    id="preset-select"
+                    label={`编码预设${modified ? " · 已修改" : ""}`}
+                    value={presetId}
+                    options={[
+                      { value: "", label: "自定义设置" },
+                      ...presets
+                        .filter((p) => !presetHidden(p) || p.id === presetId)
+                        .map((p) => ({
+                          value: p.id,
+                          label: p.name,
+                        })),
+                    ]}
+                    onChange={(id) => {
+                      const p = state.presets.find((p) => p.id === id);
+                      if (p) {
+                        if (modified) setPendingPreset(p);
+                        else void applyPreset(p);
+                      } else setPresetId("");
+                    }}
+                  />
+                  <Button
+                    title={
+                      activePreset
+                        ? `保存（覆盖“${activePreset.name}”）`
+                        : "保存（先选择一个预设）"
+                    }
+                    aria-label="保存到当前预设"
+                    disabled={busy || !activePreset || !modified}
+                    onClick={() => void overwritePreset()}
+                  >
+                    <Save size={17} />
+                  </Button>
+                  <Button
+                    title="另存为预设"
+                    aria-label="另存为预设"
+                    onClick={() => {
+                      setSaveId("");
+                      setPresetName("");
+                      setModal("save");
+                    }}
+                  >
+                    <FilePlus2 size={17} />
+                  </Button>
+                </div>
+                <div
+                  className="setting-tabs"
+                  role="group"
+                  aria-label="设置分类"
+                >
+                  {[
+                    { id: "encoding", name: "画质" },
+                    { id: "audio", name: "音频" },
+                    { id: "alpha", name: "透明通道" },
+                    { id: "rtx", name: "超分补帧" },
+                    { id: "output", name: "输出" },
+                    { id: "advanced", name: "高级" },
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      aria-pressed={tab === t.id}
+                      className={tab === t.id ? "active" : ""}
+                      onClick={() => setTab(t.id)}
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+                <form
+                  noValidate
+                  onSubmit={(e) => e.preventDefault()}
+                  className="settings-body"
+                >
+                  {tab === "encoding" && (
+                    <>
+                      <div className="form-row">
+                        <Select
+                          id="container"
+                          label="封装格式"
+                          value={s.container}
+                          options={options(["mp4", "mkv", "mov", "webm"]).map(
+                            (o) => ({ ...o, label: o.label.toUpperCase() }),
+                          )}
+                          onChange={(v) => set("container", v)}
+                        />
+                        <Select
+                          id="bitDepth"
+                          label="色彩位深"
+                          value={s.bitDepth}
+                          options={[
+                            { value: 8, label: "8-bit" },
+                            { value: 10, label: "10-bit" },
+                          ]}
+                          onChange={(v) => set("bitDepth", Number(v))}
+                        />
+                      </div>
+                      <Select
+                        id="encoder"
+                        label="视频编码器"
+                        value={s.encoder}
+                        options={[
+                          ...(!engine
+                            ? [
+                                {
+                                  value: s.encoder,
+                                  label: `${s.encoder} · ${state.detecting ? "检测中" : "不可用"}`,
+                                },
+                              ]
+                            : []),
+                          ...state.engines.map((e) => ({
+                            value: e.id,
+                            label: e.label,
+                          })),
+                        ]}
+                        onChange={(v) => {
+                          const en = state.engines.find((e) => e.id === v);
                           changed({
                             ...s,
-                            hiRes: e.target.checked,
-                            ...(e.target.checked && s.container === "mp4"
-                              ? { container: "mkv" }
+                            encoder: v,
+                            // ProRes takes a quantizer, not a CRF; start at 16 (the built-in value).
+                            ...(v === "prores_ks" && s.encoder !== "prores_ks"
+                              ? { quality: 12, rateControl: "quality" }
+                              : {}),
+                            preset:
+                              en?.backend === "cpu"
+                                ? v === "libsvtav1"
+                                  ? "6"
+                                  : "medium"
+                                : en?.backend === "qsv"
+                                  ? "medium"
+                                  : en?.backend === "amf"
+                                    ? "balanced"
+                                    : "p7",
+                          });
+                        }}
+                        hint={
+                          state.detecting
+                            ? "正在试编码，完成后显示当前电脑可用的编码器。"
+                            : "只显示已通过本机试编码的编码器。"
+                        }
+                      />
+                      <div className="form-row">
+                        <Select
+                          id="rateControl"
+                          disabled={s.encoder === "prores_ks"}
+                          label="码率控制"
+                          value={s.rateControl}
+                          options={[
+                            {
+                              value: "quality",
+                              label:
+                                backend === "cpu"
+                                  ? "恒定质量 · CRF"
+                                  : "目标质量 · CQ",
+                            },
+                            { value: "qp", label: "固定量化 · QP" },
+                            { value: "bitrate", label: "目标码率" },
+                          ]}
+                          onChange={(v) => set("rateControl", v)}
+                        />
+                        {s.rateControl === "bitrate"
+                          ? fieldNumber("bitrate", "码率 · kbps", 100, 1000000)
+                          : fieldNumber(
+                              "quality",
+                              s.encoder === "prores_ks"
+                                ? "画质 · 量化"
+                                : `画质 · ${s.rateControl === "qp" ? "QP" : backend === "cpu" ? "CRF" : "CQ"}`,
+                              0,
+                              s.encoder === "prores_ks"
+                                ? 64
+                                : ["h264", "hevc"].includes(engine?.codec || "")
+                                  ? 51
+                                  : 63,
+                            )}
+                      </div>
+                      <p className="hint quality-hint">
+                        {s.encoder === "prores_ks"
+                          ? "ProRes 量化 1–64：数值越小质量越高、文件越大；0 为编码器默认（实测约为量化 12 的 4 倍大小）。4:2:2 对应 HQ，4:4:4 对应 4444。"
+                          : s.rateControl === "bitrate"
+                            ? "目标平均码率（kbps）：数值越大通常质量越高、文件越大；单遍 VBR 实际码率会波动，不保证文件大小。"
+                            : s.rateControl === "qp"
+                              ? "QP 固定量化：数值越小压缩越少；复杂场景使用相同量化，质量和码率会波动。"
+                              : backend === "cpu"
+                                ? "CRF 恒定质量：数值越小质量越高；码率随画面复杂度变化，不同软件编码器的 CRF 不可直接比较。"
+                                : "CQ 目标质量：硬件按画面分配码率，数值越小通常质量越高；CQ 与 CRF 不在相同尺度。"}
+                      </p>
+                      <Select
+                        id="speed"
+                        label="编码预设 · 速度与压缩效率"
+                        value={s.preset}
+                        disabled={s.encoder === "prores_ks"}
+                        options={options(
+                          backend === "qsv"
+                            ? [
+                                "veryfast",
+                                "faster",
+                                "fast",
+                                "medium",
+                                "slow",
+                                "slower",
+                                "veryslow",
+                              ]
+                            : backend === "amf"
+                              ? ["speed", "balanced", "quality"]
+                              : backend === "cpu"
+                                ? s.encoder === "libsvtav1"
+                                  ? ["0", "2", "4", "6", "8", "10", "12"]
+                                  : [
+                                      "ultrafast",
+                                      "fast",
+                                      "medium",
+                                      "slow",
+                                      "veryslow",
+                                    ]
+                                : ["p1", "p2", "p3", "p4", "p5", "p6", "p7"],
+                        )}
+                        onChange={(v) => set("preset", v)}
+                        hint={
+                          s.encoder === "prores_ks"
+                            ? "ProRes 使用 Profile 决定压缩配置。"
+                            : backend === "nvenc" || backend === "nvencc"
+                              ? "p1 最快，p7 压缩效率优先；具体速度依显卡和处理链。"
+                              : s.encoder === "libsvtav1"
+                                ? "AV1 数字越小越慢、效率通常越高；数字越大越快。"
+                                : backend === "amf"
+                                  ? "speed 优先速度，quality 优先压缩效率，balanced 折中。"
+                                  : "veryfast / ultrafast 更快；slow / veryslow 更慢、压缩效率通常更高。"
+                        }
+                      />
+                      <div className="divider" />
+                      <Select
+                        id="resizeMode"
+                        label="输出分辨率"
+                        value={s.resizeMode || "source"}
+                        options={[
+                          { value: "source", label: "保持源分辨率" },
+                          {
+                            value: "long",
+                            label: "按长边缩放 · 自动识别横竖屏",
+                          },
+                          { value: "custom", label: "自定义分辨率" },
+                        ]}
+                        onChange={(v) => set("resizeMode", v)}
+                      />
+                      {s.resizeMode === "long" &&
+                        fieldNumber(
+                          "width",
+                          "长边 · px",
+                          2,
+                          16384,
+                          "横屏视频用作宽度，竖屏视频用作高度，另一边按原比例计算。",
+                        )}
+                      {s.resizeMode === "custom" && (
+                        <>
+                          <div className="form-row">
+                            {(["width", "height"] as const).map((axis) => {
+                              const derived =
+                                s.keepAspect &&
+                                s.resizeAxis !== axis &&
+                                job?.meta;
+                              const value = derived
+                                ? Math.max(
+                                    2,
+                                    Math.round(
+                                      (s[s.resizeAxis as "width" | "height"] *
+                                        job.meta![axis]) /
+                                        job.meta![
+                                          s.resizeAxis as "width" | "height"
+                                        ] /
+                                        2,
+                                    ) * 2,
+                                  )
+                                : s[axis];
+                              const invalid =
+                                !Number.isInteger(value) ||
+                                value < 2 ||
+                                value > 16384;
+                              return (
+                                <Field
+                                  key={axis}
+                                  id={axis}
+                                  label={
+                                    axis === "width" ? "宽度 · px" : "高度 · px"
+                                  }
+                                  error={
+                                    invalid
+                                      ? "请输入 2–16384 的整数"
+                                      : undefined
+                                  }
+                                >
+                                  <input
+                                    id={axis}
+                                    type="number"
+                                    min={2}
+                                    max={16384}
+                                    step={1}
+                                    value={value || ""}
+                                    aria-invalid={invalid}
+                                    aria-describedby={
+                                      invalid ? `${axis}-error` : undefined
+                                    }
+                                    onChange={(e) =>
+                                      changed({
+                                        ...s,
+                                        [axis]: Number(e.target.value),
+                                        resizeAxis: axis,
+                                      })
+                                    }
+                                  />
+                                </Field>
+                              );
+                            })}
+                          </div>
+                          <label className="check-card">
+                            <input
+                              type="checkbox"
+                              checked={s.keepAspect}
+                              onChange={(e) =>
+                                changed({
+                                  ...s,
+                                  keepAspect: e.target.checked,
+                                  ...(e.target.checked
+                                    ? {}
+                                    : job?.meta
+                                      ? s.resizeAxis === "height"
+                                        ? {
+                                            width: Math.max(
+                                              2,
+                                              Math.round(
+                                                (s.height * job.meta.width) /
+                                                  job.meta.height /
+                                                  2,
+                                              ) * 2,
+                                            ),
+                                          }
+                                        : {
+                                            height: Math.max(
+                                              2,
+                                              Math.round(
+                                                (s.width * job.meta.height) /
+                                                  job.meta.width /
+                                                  2,
+                                              ) * 2,
+                                            ),
+                                          }
+                                      : {}),
+                                })
+                              }
+                            />
+                            <span>
+                              <strong>保持宽高比</strong>
+                              <small>
+                                默认开启；按每个源视频的比例计算另一边，取最接近的偶数像素。
+                              </small>
+                            </span>
+                          </label>
+                          {!job?.meta && s.keepAspect && (
+                            <p className="hint">
+                              添加视频后自动计算另一边尺寸。
+                            </p>
+                          )}
+                        </>
+                      )}
+                      <Select
+                        id="fps"
+                        label="输出帧率"
+                        value={
+                          customFPS ||
+                          !frameOptions.some((o) => o.value === s.fps)
+                            ? "custom"
+                            : s.fps
+                        }
+                        options={frameOptions}
+                        onChange={(v) => {
+                          setCustomFPS(v === "custom");
+                          if (v !== "custom") set("fps", v);
+                        }}
+                      />
+                      {(customFPS ||
+                        !frameOptions.some((o) => o.value === s.fps)) && (
+                        <Field
+                          id="custom-fps"
+                          label="自定义 FPS"
+                          hint="1–240，可输入 30 或 30000/1001"
+                        >
+                          <input
+                            id="custom-fps"
+                            value={s.fps === "source" ? "" : s.fps}
+                            onChange={(e) => set("fps", e.target.value)}
+                          />
+                        </Field>
+                      )}
+                      <p className="hint">
+                        降帧率保持时长与音画同步；提高帧率使用重复帧，不生成运动细节。
+                      </p>
+                    </>
+                  )}
+                  {tab === "audio" && (
+                    <>
+                      <Select
+                        id="audio"
+                        label="音频编码"
+                        value={s.audio}
+                        options={Object.entries(audioLabels).map(
+                          ([value, label]) => ({ value, label }),
+                        )}
+                        onChange={(v) => set("audio", v)}
+                      />
+                      <Select
+                        id="audioBitrate"
+                        label="音频码率"
+                        value={s.audioBitrate ?? 0}
+                        options={[
+                          {
+                            value: 0,
+                            label:
+                              s.audio === "aac"
+                                ? "默认 · 192 kbps"
+                                : "默认 · 编码器自动",
+                          },
+                          ...[64, 96, 128, 160, 192, 256, 320, 384, 512].map(
+                            (value) => ({ value, label: `${value} kbps` }),
+                          ),
+                        ]}
+                        onChange={(v) => set("audioBitrate", Number(v))}
+                        disabled={!["aac", "libopus"].includes(s.audio)}
+                        hint={
+                          s.audio === "none"
+                            ? "不保留音频，无需设置码率。"
+                            : ["flac", "pcm_s16le"].includes(s.audio)
+                              ? "无损或未压缩音频不使用目标码率。"
+                              : "目标码率；实际码率会随编码器和声音内容变化。"
+                        }
+                      />
+                      <Select
+                        id="audioFade"
+                        label="音频淡入淡出"
+                        value={String(s.audioFade ?? 0)}
+                        options={fadeOptions}
+                        disabled={s.audio === "none"}
+                        hint={
+                          s.audio === "none"
+                            ? "不保留音频，无需淡入淡出。"
+                            : fadeHint
+                        }
+                        onChange={(v) => set("audioFade", Number(v))}
+                      />
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={!!s.hiRes}
+                          disabled={!["flac", "pcm_s16le"].includes(s.audio)}
+                          onChange={(e) =>
+                            // FLAC / PCM do not fit MP4: switch to MKV with it.
+                            changed({
+                              ...s,
+                              hiRes: e.target.checked,
+                              ...(e.target.checked && s.container === "mp4"
+                                ? { container: "mkv" }
+                                : {}),
+                            })
+                          }
+                        />
+                        <span>
+                          Hi-Res 音频（24-bit，低于 48 kHz 时升到 2 倍采样率）
+                          <small className="hint hires-hint">
+                            {!["flac", "pcm_s16le"].includes(s.audio)
+                              ? "选择 FLAC 或 PCM 音频后可用。"
+                              : (() => {
+                                  const a = job?.audioPath
+                                    ? job.audioMeta
+                                    : job?.meta?.audio;
+                                  if (!a?.sampleRate)
+                                    return "按每个视频自己的音轨计算。";
+                                  const rate =
+                                    a.sampleRate < 48000
+                                      ? a.sampleRate * 2
+                                      : a.sampleRate;
+                                  return `当前素材：${a.sampleRate / 1000} kHz / ${a.float ? "浮点" : a.bits ? a.bits + "-bit" : "位深未知"} → ${rate / 1000} kHz / 24-bit。`;
+                                })() + "升采样不会提高音质。"}
+                          </small>
+                        </span>
+                      </label>
+                      <div className="help-box">
+                        <Info size={17} />
+                        <p>
+                          保持源采样率与声道；MP4 用 AAC，FLAC 用
+                          MKV。要换成别的音频，点队列里的 ♪
+                          为该视频选择，按视频时长截取。
+                        </p>
+                      </div>
+                      {(job?.audioPath ? job.audioMeta : job?.meta?.audio) &&
+                        (() => {
+                          const a = (
+                            job!.audioPath ? job!.audioMeta : job!.meta!.audio
+                          )!;
+                          return (
+                            <div className="mini-facts">
+                              <span>
+                                {job!.audioPath ? "替换音频" : "源音频"}
+                              </span>
+                              <strong>
+                                {a.codec.toUpperCase()} / {a.sampleRate / 1000}{" "}
+                                kHz
+                              </strong>
+                            </div>
+                          );
+                        })()}
+                    </>
+                  )}
+                  {tab === "rtx" && (
+                    <RtxSettings
+                      s={s}
+                      state={state}
+                      set={set}
+                      patch={(p) => changed({ ...s, ...p })}
+                      call={call}
+                    />
+                  )}
+                  {tab === "alpha" && (
+                    <>
+                      <Select
+                        id="alphaMode"
+                        label="透明通道处理"
+                        // "split" = colour video without alpha + separate mask
+                        // (stored as alphaMode discard + alphaMask, any format).
+                        value={
+                          s.alphaMask && s.alphaMode === "discard"
+                            ? "split"
+                            : s.alphaMode
+                        }
+                        options={[
+                          { value: "discard", label: "移除 Alpha" },
+                          { value: "preserve", label: "保留 Alpha" },
+                          {
+                            value: "split",
+                            label: "分离 Alpha · 彩色视频 + 黑白遮罩",
+                          },
+                          { value: "mask", label: "分离 Alpha · 仅黑白遮罩" },
+                          { value: "green", label: "合成到绿幕（#00FF00）" },
+                          // Older presets may still use black / white.
+                          ...(s.alphaMode === "black"
+                            ? [{ value: "black", label: "合成到黑色背景" }]
+                            : s.alphaMode === "white"
+                              ? [{ value: "white", label: "合成到白色背景" }]
+                              : []),
+                        ]}
+                        onChange={(v) =>
+                          changed({
+                            ...s,
+                            alphaMode: v === "split" ? "discard" : v,
+                            alphaMask: v === "split",
+                            // ProRes alpha starts at quantizer 16 (~1/5 of the default size).
+                            ...(v === "preserve" &&
+                            s.alphaMode !== "preserve" &&
+                            s.encoder === "prores_ks"
+                              ? { quality: 12 }
                               : {}),
                           })
                         }
                       />
-                      <span>
-                        Hi-Res 音频（24-bit，低于 48 kHz 时升到 2 倍采样率）
-                        <small className="hint hires-hint">
-                          {!["flac", "pcm_s16le"].includes(s.audio)
-                            ? "选择 FLAC 或 PCM 音频后可用。"
-                            : (() => {
-                                const a = job?.meta?.audio;
-                                if (!a?.sampleRate)
-                                  return "按每个视频自己的音轨计算。";
-                                const rate =
-                                  a.sampleRate < 48000
-                                    ? a.sampleRate * 2
-                                    : a.sampleRate;
-                                return `当前素材：${a.sampleRate / 1000} kHz / ${a.float ? "浮点" : a.bits ? a.bits + "-bit" : "位深未知"} → ${rate / 1000} kHz / 24-bit。`;
-                              })() +
-                              "升采样不会提高音质，只是满足平台的 Hi-Res 判定（尚未实际上传验证）。"}
-                        </small>
-                      </span>
-                    </label>
-                    <div className="help-box">
-                      <Info size={17} />
-                      <p>
-                        保持源采样率与声道。MP4 推荐 AAC；FLAC 无损音频推荐使用
-                        MKV。源视频没有音轨时，输出也不添加音轨。
-                      </p>
-                    </div>
-                    {job?.meta?.audio && (
-                      <div className="mini-facts">
-                        <span>源音频</span>
-                        <strong>
-                          {job.meta.audio.codec.toUpperCase()} /{" "}
-                          {job.meta.audio.sampleRate / 1000} kHz
-                        </strong>
-                      </div>
-                    )}
-                  </>
-                )}
-                {tab === "rtx" && (
-                  <RtxSettings
-                    s={s}
-                    state={state}
-                    set={set}
-                    patch={(p) => changed({ ...s, ...p })}
-                    call={call}
-                  />
-                )}
-                {tab === "alpha" && (
-                  <>
-                    <Select
-                      id="alphaMode"
-                      label="透明通道处理"
-                      // "split" = colour video without alpha + separate mask
-                      // (stored as alphaMode discard + alphaMask, any format).
-                      value={
-                        s.alphaMask && s.alphaMode === "discard"
-                          ? "split"
-                          : s.alphaMode
-                      }
-                      options={[
-                        { value: "discard", label: "移除 Alpha" },
-                        { value: "preserve", label: "保留 Alpha" },
-                        {
-                          value: "split",
-                          label: "分离 Alpha · 彩色视频 + 黑白遮罩",
-                        },
-                        { value: "mask", label: "分离 Alpha · 仅黑白遮罩" },
-                        { value: "green", label: "合成到绿幕（#00FF00）" },
-                        // Older presets may still use black / white.
-                        ...(s.alphaMode === "black"
-                          ? [{ value: "black", label: "合成到黑色背景" }]
-                          : s.alphaMode === "white"
-                            ? [{ value: "white", label: "合成到白色背景" }]
-                            : []),
-                      ]}
-                      onChange={(v) =>
-                        changed({
-                          ...s,
-                          alphaMode: v === "split" ? "discard" : v,
-                          alphaMask: v === "split",
-                          // ProRes alpha starts at quantizer 16 (~1/5 of the default size).
-                          ...(v === "preserve" &&
-                          s.alphaMode !== "preserve" &&
-                          s.encoder === "prores_ks"
-                            ? { quality: 12 }
-                            : {}),
-                        })
-                      }
-                    />
-                    {s.alphaMask && (
-                      <>
-                        <div className="alpha-diagram">
-                          <div className="alpha-swatch color">
-                            {s.alphaMode === "preserve" ? "RGBA" : "RGB"}
+                      {s.alphaMask && (
+                        <>
+                          <div className="alpha-diagram">
+                            <div className="alpha-swatch color">
+                              {s.alphaMode === "preserve" ? "RGBA" : "RGB"}
+                            </div>
+                            <Plus size={16} />
+                            <div className="alpha-swatch mask">A</div>
                           </div>
-                          <Plus size={16} />
-                          <div className="alpha-swatch mask">A</div>
-                        </div>
-                        <p className="hint">
-                          {s.alphaMode === "discard"
-                            ? "彩色视频不含 Alpha，可用任意编码器和封装；另外导出同尺寸、同帧率的黑白遮罩（_alpha 后缀，无损）。"
-                            : "这个旧预设除了上面的处理，还会额外导出黑白遮罩（_alpha 后缀）。"}
-                          白色表示不透明，黑色表示透明，灰色保留半透明信息。
-                        </p>
-                      </>
-                    )}
-                    {s.alphaMode === "mask" && (
-                      <>
-                        <div className="alpha-diagram">
-                          <div className="alpha-swatch mask">A</div>
-                        </div>
-                        <p className="hint">
-                          只导出同尺寸、同帧率的黑白遮罩（_alpha
-                          后缀，无损，不含音频），不导出彩色视频。WebM 用
-                          VP9，其他格式用
-                          H.264；画质页的编码器设置不影响遮罩。白色表示不透明，黑色表示透明，灰色保留半透明信息。
-                        </p>
-                      </>
-                    )}
-                    {(s.alphaMask || s.alphaMode === "mask") &&
-                      job?.meta &&
-                      !job.meta.hasAlpha && (
-                        <p className="inline-error">
-                          当前素材没有可读取的 Alpha
-                          通道，不能导出遮罩。请选择其他处理方式或包含透明通道的视频。
-                        </p>
+                          <p className="hint">
+                            {s.alphaMode === "discard"
+                              ? "彩色视频不含 Alpha，可用任意编码器和封装；另外导出同尺寸、同帧率的黑白遮罩（_alpha 后缀，无损）。"
+                              : "这个旧预设除了上面的处理，还会额外导出黑白遮罩（_alpha 后缀）。"}
+                            白色表示不透明，黑色表示透明，灰色保留半透明信息。
+                          </p>
+                        </>
                       )}
-                  </>
-                )}
-                {tab === "output" && (
-                  <>
-                    <Select
-                      id="outputMode"
-                      label="保存位置"
-                      value={s.outputMode}
-                      options={[
-                        { value: "source", label: "源文件目录" },
-                        { value: "encoded", label: "源目录 \\ Encoded" },
-                        { value: "custom", label: "自定义统一目录" },
-                      ]}
-                      onChange={(v) => set("outputMode", v)}
-                    />
-                    {s.outputMode === "custom" && (
-                      <Field id="outputDir" label="统一输出目录">
-                        <div className="input-action">
-                          <input
-                            id="outputDir"
-                            value={s.outputDir}
-                            onChange={(e) => set("outputDir", e.target.value)}
-                            placeholder="选择文件夹"
-                          />
-                          <Button
-                            title="选择输出文件夹"
-                            aria-label="选择输出文件夹"
-                            onClick={pickDirectory}
-                          >
-                            <Folder size={17} />
-                          </Button>
-                        </div>
-                      </Field>
-                    )}
-                    <p className="hint">
-                      自动记住上一次选择。不同源目录分别创建自己的 Encoded
-                      文件夹。
-                    </p>
-                    <div className="divider" />
-                    <Field
-                      id="nameTemplate"
-                      label="文件名模板"
-                      hint="扩展名自动添加，同名文件自动编号。"
-                    >
-                      <input
+                      {s.alphaMode === "mask" && (
+                        <>
+                          <div className="alpha-diagram">
+                            <div className="alpha-swatch mask">A</div>
+                          </div>
+                          <p className="hint">
+                            只导出同尺寸、同帧率的黑白遮罩（_alpha
+                            后缀，无损，不含音频），不导出彩色视频。WebM 用
+                            VP9，其他格式用
+                            H.264；画质页的编码器设置不影响遮罩。白色表示不透明，黑色表示透明，灰色保留半透明信息。
+                          </p>
+                        </>
+                      )}
+                      {(s.alphaMask || s.alphaMode === "mask") &&
+                        job?.meta &&
+                        !job.meta.hasAlpha && (
+                          <p className="inline-error">
+                            当前素材没有可读取的 Alpha
+                            通道，不能导出遮罩。请选择其他处理方式或包含透明通道的视频。
+                          </p>
+                        )}
+                    </>
+                  )}
+                  {tab === "output" && (
+                    <>
+                      <Select
+                        id="outputMode"
+                        label="保存位置"
+                        value={s.outputMode}
+                        options={[
+                          { value: "source", label: "源文件目录" },
+                          { value: "encoded", label: "源目录 \\ Encoded" },
+                          { value: "custom", label: "自定义统一目录" },
+                        ]}
+                        onChange={(v) => set("outputMode", v)}
+                      />
+                      {s.outputMode === "custom" && (
+                        <Field id="outputDir" label="统一输出目录">
+                          <div className="input-action">
+                            <input
+                              id="outputDir"
+                              value={s.outputDir}
+                              onChange={(e) => set("outputDir", e.target.value)}
+                              placeholder="选择文件夹"
+                            />
+                            <Button
+                              title="选择输出文件夹"
+                              aria-label="选择输出文件夹"
+                              onClick={pickDirectory}
+                            >
+                              <Folder size={17} />
+                            </Button>
+                          </div>
+                        </Field>
+                      )}
+                      <p className="hint">
+                        自动记住上一次选择。不同源目录分别创建自己的 Encoded
+                        文件夹。
+                      </p>
+                      <div className="divider" />
+                      <Field
                         id="nameTemplate"
-                        value={s.nameTemplate}
-                        onChange={(e) => set("nameTemplate", e.target.value)}
+                        label="文件名模板"
+                        hint="扩展名自动添加，同名文件自动编号。"
+                      >
+                        <input
+                          id="nameTemplate"
+                          value={s.nameTemplate}
+                          onChange={(e) => set("nameTemplate", e.target.value)}
+                        />
+                      </Field>
+                      <div className="template-tokens">
+                        {["{name}", "{preset}", "{date}", "{index}"].map(
+                          (v) => (
+                            <Button
+                              key={v}
+                              variant="ghost"
+                              onClick={() =>
+                                set("nameTemplate", s.nameTemplate + v)
+                              }
+                            >
+                              {v}
+                            </Button>
+                          ),
+                        )}
+                      </div>
+                      <p className="hint">原名 / 预设名 / 日期 / 队列序号</p>
+                      <div className="path-preview">
+                        <span>输出示例</span>
+                        <code>
+                          {preview?.output || "添加视频后显示完整路径"}
+                        </code>
+                      </div>
+                    </>
+                  )}
+                  {tab === "advanced" && (
+                    <>
+                      <div className="form-row">
+                        <Select
+                          id="chroma"
+                          label="色度采样"
+                          value={s.chroma}
+                          options={[
+                            { value: "420", label: "4:2:0" },
+                            { value: "422", label: "4:2:2" },
+                            { value: "444", label: "4:4:4" },
+                          ]}
+                          onChange={(v) => set("chroma", v)}
+                        />
+                        <Select
+                          id="colorRange"
+                          label="输出范围"
+                          value={s.colorRange}
+                          options={[
+                            { value: "tv", label: "有限 · TV" },
+                            { value: "pc", label: "全范围 · PC" },
+                          ]}
+                          onChange={(v) => set("colorRange", v)}
+                        />
+                      </div>
+                      <Select
+                        id="colorSpace"
+                        label="色彩空间 · SDR"
+                        value={s.colorSpace}
+                        options={options(["bt709", "bt601", "bt2020"])}
+                        onChange={(v) => set("colorSpace", v)}
                       />
-                    </Field>
-                    <div className="template-tokens">
-                      {["{name}", "{preset}", "{date}", "{index}"].map((v) => (
-                        <Button
-                          key={v}
-                          variant="ghost"
-                          onClick={() =>
-                            set("nameTemplate", s.nameTemplate + v)
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={!!s.editFriendly}
+                          onChange={(e) =>
+                            set("editFriendly", e.target.checked)
                           }
-                        >
-                          {v}
+                        />
+                        <span>
+                          剪辑友好：每秒一个关键帧
+                          <small className="hint hires-hint">
+                            {s.gop >= 0
+                              ? "已手动设置 GOP 间隔，此项不生效。"
+                              : "成片可以按约 1 秒的间隔无损裁切；同画质下文件约大 2%–5%（软件编码更多）。"}
+                          </small>
+                        </span>
+                      </label>
+                      <div className="form-row">
+                        {fieldNumber("gop", "GOP 间隔", -1, 10000, "-1 为自动")}
+                        {fieldNumber("bframes", "B 帧", -1, 16, "-1 为自动")}
+                      </div>
+                      <div className="form-row">
+                        {fieldNumber(
+                          "lookahead",
+                          "前向分析帧数",
+                          0,
+                          32,
+                          lookaheadSupported ? undefined : "仅 NVIDIA 硬件编码",
+                        )}
+                        {fieldNumber(
+                          "lookaheadLevel",
+                          "前向分析级别",
+                          0,
+                          3,
+                          lookaheadLevelSupported
+                            ? undefined
+                            : "仅 NVIDIA HEVC / AV1",
+                        )}
+                      </div>
+                      <div className="command-row">
+                        <details className="command-details">
+                          <summary>查看完整命令</summary>
+                          <pre>{preview?.command || "添加视频后生成命令"}</pre>
+                        </details>
+                        <Button disabled={!job} onClick={copy}>
+                          <Copy size={14} />
+                          复制命令
                         </Button>
-                      ))}
-                    </div>
-                    <p className="hint">原名 / 预设名 / 日期 / 队列序号</p>
-                    <div className="path-preview">
-                      <span>输出示例</span>
-                      <code>{preview?.output || "添加视频后显示完整路径"}</code>
-                    </div>
-                  </>
-                )}
-                {tab === "advanced" && (
-                  <>
-                    <div className="form-row">
-                      <Select
-                        id="chroma"
-                        label="色度采样"
-                        value={s.chroma}
-                        options={[
-                          { value: "420", label: "4:2:0" },
-                          { value: "422", label: "4:2:2" },
-                          { value: "444", label: "4:4:4" },
-                        ]}
-                        onChange={(v) => set("chroma", v)}
-                      />
-                      <Select
-                        id="colorRange"
-                        label="输出范围"
-                        value={s.colorRange}
-                        options={[
-                          { value: "tv", label: "有限 · TV" },
-                          { value: "pc", label: "全范围 · PC" },
-                        ]}
-                        onChange={(v) => set("colorRange", v)}
-                      />
-                    </div>
-                    <Select
-                      id="colorSpace"
-                      label="色彩空间 · SDR"
-                      value={s.colorSpace}
-                      options={options(["bt709", "bt601", "bt2020"])}
-                      onChange={(v) => set("colorSpace", v)}
-                    />
-                    <label className="checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={!!s.editFriendly}
-                        onChange={(e) => set("editFriendly", e.target.checked)}
-                      />
-                      <span>
-                        剪辑友好：每秒一个关键帧
-                        <small className="hint hires-hint">
-                          {s.gop >= 0
-                            ? "已手动设置 GOP 间隔，此项不生效。"
-                            : "成片可以按约 1 秒的间隔无损裁切；同画质下文件约大 2%–5%（软件编码更多）。"}
-                        </small>
-                      </span>
-                    </label>
-                    <div className="form-row">
-                      {fieldNumber("gop", "GOP 间隔", -1, 10000, "-1 为自动")}
-                      {fieldNumber("bframes", "B 帧", -1, 16, "-1 为自动")}
-                    </div>
-                    <div className="form-row">
-                      {fieldNumber(
-                        "lookahead",
-                        "前向分析帧数",
-                        0,
-                        32,
-                        lookaheadSupported ? undefined : "仅 NVIDIA 硬件编码",
-                      )}
-                      {fieldNumber(
-                        "lookaheadLevel",
-                        "前向分析级别",
-                        0,
-                        3,
-                        lookaheadLevelSupported
-                          ? undefined
-                          : "仅 NVIDIA HEVC / AV1",
-                      )}
-                    </div>
-                    <div className="command-row">
-                      <details className="command-details">
-                        <summary>查看完整命令</summary>
-                        <pre>{preview?.command || "添加视频后生成命令"}</pre>
-                      </details>
-                      <Button disabled={!job} onClick={copy}>
-                        <Copy size={14} />
-                        复制命令
-                      </Button>
-                    </div>
-                  </>
-                )}
-                {s.encoder.startsWith("nvencc:") && (
-                  <p className="help-box">
-                    NVEncC
-                    将先生成临时中间视频，可能需要较多磁盘空间；完成后自动清理。
-                  </p>
-                )}
-              </form>
-              <div className="settings-foot">
-                <Check size={13} />
-                <span>设置自动保存 · 全部待处理视频共用当前设置</span>
+                      </div>
+                    </>
+                  )}
+                  {s.encoder.startsWith("nvencc:") && (
+                    <p className="help-box">
+                      NVEncC
+                      将先生成临时中间视频，可能需要较多磁盘空间；完成后自动清理。
+                    </p>
+                  )}
+                </form>
+                <div className="settings-foot">
+                  <Check size={13} />
+                  <span>设置自动保存 · 全部待处理视频共用当前设置</span>
+                </div>
               </div>
-            </div>
-          </aside>
-        </main>
+            </aside>
+          </main>
+        </div>
         <footer className="output-strip">
           <div className="output-icon">
             <ArrowDownToLine size={23} />
@@ -1837,17 +1905,18 @@ export default function App() {
                   )}
                   <i />
                   音频 →{" "}
-                  {job?.meta && !job.meta.audio
+                  {job?.meta && !job.meta.audio && !job.audioPath
                     ? "无音轨"
                     : audioLabels[s.audio]}
-                  {(!job?.meta || job.meta.audio) &&
+                  {(!job?.meta || job.meta.audio || job.audioPath) &&
                   ["aac", "libopus"].includes(s.audio) &&
                   s.audioBitrate > 0
                     ? ` · ${s.audioBitrate} kbps`
                     : ""}
-                  {(!job?.meta || job.meta.audio) && s.hiRes
+                  {(!job?.meta || job.meta.audio || job.audioPath) && s.hiRes
                     ? " · Hi-Res 24-bit"
-                    : ""}{" "}
+                    : ""}
+                  {job?.audioPath && s.audio !== "none" ? " · 替换音频" : ""}{" "}
                   {s.alphaMode === "preserve" && " · 保留 Alpha"}
                   <i /> 输出 → {s.container.toUpperCase()}{" "}
                   {s.alphaMask && (

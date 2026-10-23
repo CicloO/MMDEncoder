@@ -402,6 +402,7 @@ else {
           "installTools",
           "add",
           "remove",
+          "setAudio",
           "clearCompleted",
           "settings",
           "start",

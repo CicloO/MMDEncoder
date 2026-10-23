@@ -45,6 +45,7 @@ const allowed = new Set([
   "installTools",
   "add",
   "remove",
+  "setAudio",
   "clearCompleted",
   "settings",
   "start",

@@ -2520,6 +2520,29 @@ function createService({
         state.jobs = state.jobs.filter((j) => j.id !== job.id);
         break;
       }
+      case "setAudio": {
+        // Replace one video's audio with another file (empty path: use the
+        // video's own audio again), as on the media page's merge.
+        const job = requireJob(payload?.id);
+        if (job.status === "encoding" || (state.running && job.settings))
+          throw Error("已提交任务不能更换音频");
+        const file = payload?.path || "";
+        if (file && (!path.isAbsolute(file) || !fs.statSync(file).isFile()))
+          throw Error("请选择有效的音频文件");
+        delete job.audioMeta;
+        delete job.audioDuration;
+        if (!file) {
+          delete job.audioPath;
+          break;
+        }
+        await locate();
+        const info = await probeMedia(file);
+        if (!info.audio) throw Error("这个文件没有音轨");
+        job.audioPath = file;
+        job.audioMeta = info.audio;
+        job.audioDuration = info.audioDuration;
+        break;
+      }
       case "requeue": {
         // Put a finished or cancelled item back in the queue; the next start
         // freezes the current settings, and existing outputs get a numbered name.

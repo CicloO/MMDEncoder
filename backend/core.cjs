@@ -1001,6 +1001,13 @@ function inputArgs(job) {
       ]
     : ["-i", job.path];
 }
+// A replacement audio file chosen for this video (job.audioPath), read only
+// as long as the video so the output keeps the video's length.
+function audioInputArgs(job) {
+  if (!job.audioPath) return [];
+  const d = Number(job.meta?.duration) || 0;
+  return [...(d > 0 ? ["-t", d.toFixed(6)] : []), "-i", job.audioPath];
+}
 // Written into each output's "comment" tag: how it was encoded, so the
 // lossless trim page can re-encode cut edges with exactly these settings
 // (smart cut), and where an MMD export starts on MMD's timeline.
@@ -1065,6 +1072,15 @@ function buildCommands(job, s, engines, paths) {
   if (job.meta?.hasAlpha && ["vp8", "vp9"].includes(job.meta.codec))
     base.push("-c:v", job.meta.codec === "vp9" ? "libvpx-vp9" : "libvpx");
   base.push(...inputArgs(job));
+  // The audio's parameters and its stream: the source's, or a replacement
+  // file (job.audioMeta, read when it was chosen) given as the next input.
+  const sourceAudio = job.audioPath ? job.audioMeta : job.meta?.audio;
+  const audioLength = job.audioPath
+    ? Math.min(
+        Number(job.audioDuration) || Infinity,
+        Number(job.meta?.duration) || Infinity,
+      )
+    : job.meta?.duration;
   const colors = [
     "-colorspace",
     s.colorSpace === "bt601"
@@ -1077,13 +1093,13 @@ function buildCommands(job, s, engines, paths) {
   ];
   const hiResPlan =
     s.hiRes &&
-    job.meta?.audio &&
-    media.hiResPlan(s.audio === "flac" ? "flac" : "wav", job.meta.audio);
+    sourceAudio &&
+    media.hiResPlan(s.audio === "flac" ? "flac" : "wav", sourceAudio);
   const audio =
-    job.meta?.audio && s.audio !== "none"
+    sourceAudio && s.audio !== "none"
       ? [
           "-map",
-          "0:a:0?",
+          job.audioPath ? "1:a:0" : "0:a:0?",
           // Fade in / out over the source's length (audio keeps its timing).
           ...media.withAudioFilter(
             s.hiRes
@@ -1101,7 +1117,7 @@ function buildCommands(job, s, engines, paths) {
                       ? ["-b:a", "192k"]
                       : []),
                 ],
-            media.fadeFilter(s.audioFade, job.meta.duration),
+            media.fadeFilter(s.audioFade, audioLength),
           ),
         ]
       : ["-an"];
@@ -1219,12 +1235,12 @@ function buildCommands(job, s, engines, paths) {
           "-n",
           "-i",
           encoded,
-          ...inputArgs(job),
+          ...(job.audioPath ? audioInputArgs(job) : inputArgs(job)),
           "-map",
           "0:v:0",
           "-c:v",
           "copy",
-          // The source's audio, encoded as set (input 1 here, not 0).
+          // The source's (or replacement) audio, encoded as set (input 1).
           ...audio.map((x) => (x === "0:a:0?" ? "1:a:0?" : x)),
           ...colors,
           "-metadata",
@@ -1242,6 +1258,7 @@ function buildCommands(job, s, engines, paths) {
         exe: engines.ffmpeg,
         args: [
           ...baseFor(mask),
+          ...(mask ? [] : audioInputArgs(job)),
           "-map",
           "0:v:0",
           "-vf",

@@ -84,6 +84,10 @@ export type Job = {
   output?: string;
   maskOutput?: string;
   settings?: Settings;
+  // Replacement audio (as the media page's merge) and its parameters.
+  audioPath?: string;
+  audioMeta?: Meta["audio"];
+  audioDuration?: number;
   // PNG sequence source: FFmpeg pattern and the frame rate the user gave it.
   sequence?: {
     pattern: string;

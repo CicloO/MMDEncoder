@@ -55,8 +55,7 @@ export const fadeOptions = [
   { value: "1", label: "1 秒" },
   { value: "2", label: "2 秒" },
 ];
-export const fadeHint =
-  "开头淡入、结尾淡出，从歌曲中间开始或结束的片段不会突然出声或戛然而止。";
+export const fadeHint = "开头淡入、结尾淡出，避免突然出声或戛然而止。";
 export const audioLabels: Record<string, string> = {
   aac: "AAC",
   flac: "FLAC",

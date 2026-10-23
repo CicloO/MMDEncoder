@@ -342,332 +342,340 @@ export function MediaTools({
 
   return (
     <>
-      <main className="workspace">
-        <section className="queue-column" aria-label="媒体队列">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">工作区</span>
-              <h2>
-                媒体队列 <span className="count">{jobs.length}</span>
-              </h2>
-            </div>
-            <Button variant="primary" disabled={locked} onClick={pickFiles}>
-              <Plus size={17} />
-              添加文件
-            </Button>
-          </div>
-          <div className="queue-panel">
-            <div className="queue-toolbar">
-              <span>
-                <FileVideo size={15} /> 源文件
-              </span>
-              <Button
-                variant="ghost"
-                disabled={!clearable || state.running}
-                onClick={() => run("mediaClearCompleted")}
-              >
-                清除已完成
+      <div className="page-scroll">
+        <main className="workspace">
+          <section className="queue-column" aria-label="媒体队列">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">工作区</span>
+                <h2>
+                  媒体队列 <span className="count">{jobs.length}</span>
+                </h2>
+              </div>
+              <Button variant="primary" disabled={locked} onClick={pickFiles}>
+                <Plus size={17} />
+                添加文件
               </Button>
             </div>
-            {!jobs.length ? (
-              <div className="empty-queue">
-                <div className="film-emblem">
-                  <Film size={42} />
-                  <div className="frame-ticks" />
-                </div>
-                <h3>把音视频放进来</h3>
-                <p>
-                  拖入多个视频或音频，或从文件夹中选择
-                  <br />
-                  合并时拖入的音频会配给选中的视频。
-                </p>
-                <Button disabled={locked} onClick={pickFiles}>
-                  <FolderOpen size={17} />
-                  选择文件
-                </Button>
-                <small>MP4 · MKV · MOV · WAV · FLAC · MP3 等常见格式</small>
-              </div>
-            ) : (
-              <ol className="job-list">
-                {jobs
-                  .slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
-                  .map(row)}
-              </ol>
-            )}
-            {jobs.length > 0 && (
-              <div className="queue-pagination">
+            <div className="queue-panel">
+              <div className="queue-toolbar">
                 <span>
-                  {page * PAGE_SIZE + 1}–
-                  {Math.min((page + 1) * PAGE_SIZE, jobs.length)} /{" "}
-                  {jobs.length} 个文件
+                  <FileVideo size={15} /> 源文件
                 </span>
-                <div>
-                  <Button
-                    aria-label="上一页"
-                    disabled={page === 0}
-                    onClick={() => setPage(page - 1)}
-                  >
-                    <ChevronLeft size={16} />
-                  </Button>
-                  <Button
-                    aria-label="下一页"
-                    disabled={page + 1 >= pageCount}
-                    onClick={() => setPage(page + 1)}
-                  >
-                    <ChevronRight size={16} />
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-          {selected && (
-            <section className="detail-card" aria-label="处理结果">
-              <div className="detail-title">
-                <span className="eyebrow">当前文件</span>
-                <div className="detail-actions">
-                  <Button
-                    variant="ghost"
-                    title="转换前 / 后的 ffprobe 参数"
-                    disabled={!!state.tools?.busy}
-                    onClick={async () => {
-                      setDetails(null);
-                      setDetailsError("");
-                      setDetailsOpen(true);
-                      try {
-                        setDetails(
-                          await call("details", {
-                            id: selected.id,
-                            media: true,
-                          }),
-                        );
-                      } catch (e) {
-                        setDetailsError((e as Error).message);
-                      }
-                    }}
-                  >
-                    <Info size={14} />
-                    文件详情
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() =>
-                      run("reveal", { path: selected.output || selected.path })
-                    }
-                  >
-                    <FolderOpen size={14} />
-                    打开位置
-                  </Button>
-                </div>
-              </div>
-              <h3 title={selected.path}>{selected.name}</h3>
-              {selected.meta ? (
-                <FileMeta meta={selected.meta} />
-              ) : (
-                <p className="muted">
-                  {selected.metaError || "正在读取文件信息…"}
-                </p>
-              )}
-              <p className="path-text" title={selected.path}>
-                {selected.path}
-              </p>
-              {selected.output && (
-                <p className="path-text" title={selected.output}>
-                  → {selected.output}
-                </p>
-              )}
-              {selected.error && (
-                <p role="alert" className="inline-error">
-                  {selected.error}
-                </p>
-              )}
-              {selected.log && (
-                <details
-                  onToggle={(e) => {
-                    // Updates carry only the log's tail; load the whole log.
-                    if ((e.currentTarget as HTMLDetailsElement).open)
-                      void window.encoder
-                        .invoke("mediaLog", { id: selected.id })
-                        .then((log) =>
-                          setFullLog({ id: selected.id, log: log as string }),
-                        )
-                        .catch(() => {});
-                  }}
+                <Button
+                  variant="ghost"
+                  disabled={!clearable || state.running}
+                  onClick={() => run("mediaClearCompleted")}
                 >
-                  <summary>实际命令与日志</summary>
-                  <pre className="media-log" tabIndex={0}>
-                    {fullLog?.id === selected.id &&
-                    fullLog.log.length >= selected.log.length
-                      ? fullLog.log
-                      : selected.log}
-                  </pre>
-                </details>
+                  清除已完成
+                </Button>
+              </div>
+              {!jobs.length ? (
+                <div className="empty-queue">
+                  <div className="film-emblem">
+                    <Film size={42} />
+                    <div className="frame-ticks" />
+                  </div>
+                  <h3>把音视频放进来</h3>
+                  <p>
+                    拖入多个视频或音频，或从文件夹中选择
+                    <br />
+                    合并时拖入的音频会配给选中的视频。
+                  </p>
+                  <Button disabled={locked} onClick={pickFiles}>
+                    <FolderOpen size={17} />
+                    选择文件
+                  </Button>
+                  <small>MP4 · MKV · MOV · WAV · FLAC · MP3 等常见格式</small>
+                </div>
+              ) : (
+                <ol className="job-list">
+                  {jobs
+                    .slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
+                    .map(row)}
+                </ol>
               )}
-            </section>
-          )}
-        </section>
-        <aside className="settings-column" aria-label="处理设置">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">输出控制</span>
-              <h2>处理设置</h2>
-            </div>
-            <SlidersHorizontal size={20} className="muted" />
-          </div>
-          <div className="settings-panel">
-            <form
-              noValidate
-              onSubmit={(e) => e.preventDefault()}
-              className="settings-body"
-            >
-              <Select
-                id="media-operation"
-                label="操作"
-                value={o.operation}
-                disabled={locked}
-                options={Object.entries(OPERATIONS).map(([value, label]) => ({
-                  value,
-                  label,
-                }))}
-                onChange={(v) => set("operation", v)}
-              />
-              {o.operation !== "video" && (
-                <Select
-                  id="media-format"
-                  label="输出音频"
-                  value={o.audioFormat}
-                  disabled={locked}
-                  options={Object.entries(FORMATS).map(([value, label]) => ({
-                    value,
-                    label,
-                  }))}
-                  onChange={(v) => set("audioFormat", v)}
-                />
-              )}
-              {o.operation !== "video" && (
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    disabled={locked || !HIRES_FORMATS.includes(o.audioFormat)}
-                    checked={hiRes}
-                    onChange={(e) => set("hiRes", e.target.checked)}
-                  />
+              {jobs.length > 0 && (
+                <div className="queue-pagination">
                   <span>
-                    Hi-Res 音频（24-bit，低于 48 kHz 时升到 2 倍采样率）
-                    <small className="hint hires-hint">
-                      {!HIRES_FORMATS.includes(o.audioFormat)
-                        ? "只有 WAV / FLAC 可以输出 Hi-Res，有损格式不行。"
-                        : (hiResText(
-                            o.operation === "merge"
-                              ? selected?.audioMeta
-                              : selected?.meta?.audio,
-                          ) ||
-                            (o.operation === "merge"
-                              ? "选择替换音频后显示转换结果"
-                              : "读取文件信息后显示转换结果")) +
-                          (o.operation === "merge"
-                            ? "；合并时输出 MKV。"
-                            : "。") +
-                          "升采样不会提高音质，只是满足平台的 Hi-Res 判定（尚未实际上传验证）。"}
-                    </small>
+                    {page * PAGE_SIZE + 1}–
+                    {Math.min((page + 1) * PAGE_SIZE, jobs.length)} /{" "}
+                    {jobs.length} 个文件
                   </span>
-                </label>
-              )}
-              {o.operation !== "video" && (
-                <Select
-                  id="media-fade"
-                  label="音频淡入淡出"
-                  value={String(o.audioFormat === "copy" ? 0 : o.audioFade)}
-                  disabled={locked || o.audioFormat === "copy"}
-                  options={fadeOptions}
-                  hint={
-                    o.audioFormat === "copy"
-                      ? "复制原音轨时不能淡入淡出，请选择要重新编码的格式。"
-                      : fadeHint
-                  }
-                  onChange={(v) => set("audioFade", Number(v))}
-                />
-              )}
-              {o.operation !== "video" && LOSSY.includes(o.audioFormat) && (
-                <Select
-                  id="media-bitrate"
-                  label="音频码率"
-                  value={String(bitrate)}
-                  disabled={locked}
-                  options={BITRATES.filter(
-                    (b) => b <= MAX_BITRATE[o.audioFormat],
-                  ).map((b) => ({
-                    value: String(b),
-                    label: b ? `${b} kbps` : "跟随源文件（无损源用 320 kbps）",
-                  }))}
-                  onChange={(v) => set("audioBitrate", Number(v))}
-                />
-              )}
-              {o.operation !== "audio" && (
-                <Select
-                  id="media-container"
-                  label="输出格式"
-                  value={o.container}
-                  disabled={locked}
-                  options={Object.entries(CONTAINERS).map(([value, label]) => ({
-                    value,
-                    label,
-                  }))}
-                  onChange={(v) => set("container", v)}
-                />
-              )}
-              {o.operation === "merge" && (
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    disabled={locked}
-                    checked={o.shortest}
-                    onChange={(e) => set("shortest", e.target.checked)}
-                  />
-                  按较短流结束（关闭则保留较长流时长）
-                </label>
-              )}
-              <Select
-                id="media-location"
-                label="输出位置"
-                value={o.location}
-                disabled={locked}
-                options={Object.entries(LOCATIONS).map(([value, label]) => ({
-                  value,
-                  label,
-                }))}
-                onChange={(v) => set("location", v)}
-              />
-              {o.location === "custom" && (
-                <Field id="media-output-dir" label="自定义文件夹">
-                  <div className="path-picker">
-                    <input
-                      id="media-output-dir"
-                      value={o.outputDir}
-                      readOnly
-                      title={o.outputDir}
-                      placeholder="选择输出文件夹"
-                    />
-                    <Button disabled={locked} onClick={pickFolder}>
-                      选择
+                  <div>
+                    <Button
+                      aria-label="上一页"
+                      disabled={page === 0}
+                      onClick={() => setPage(page - 1)}
+                    >
+                      <ChevronLeft size={16} />
+                    </Button>
+                    <Button
+                      aria-label="下一页"
+                      disabled={page + 1 >= pageCount}
+                      onClick={() => setPage(page + 1)}
+                    >
+                      <ChevronRight size={16} />
                     </Button>
                   </div>
-                </Field>
+                </div>
               )}
-              <p className="hint">
-                {o.operation === "audio"
-                  ? "只输出第一条音频流。"
-                  : `第一条视频流直接复制、不重新压制。${o.container === "mp4" ? "MP4 放不下的编码（如 MMD 直接输出的 AVI 原始视频、WAV 音频）会自动改用 MKV。" : ""}`}
-                文件名自动生成，已有文件不覆盖、自动编号；源文件保持不变。
-              </p>
-              {error && (
-                <p role="alert" className="inline-error">
-                  {error}
+            </div>
+            {selected && (
+              <section className="detail-card" aria-label="处理结果">
+                <div className="detail-title">
+                  <span className="eyebrow">当前文件</span>
+                  <div className="detail-actions">
+                    <Button
+                      variant="ghost"
+                      title="转换前 / 后的 ffprobe 参数"
+                      disabled={!!state.tools?.busy}
+                      onClick={async () => {
+                        setDetails(null);
+                        setDetailsError("");
+                        setDetailsOpen(true);
+                        try {
+                          setDetails(
+                            await call("details", {
+                              id: selected.id,
+                              media: true,
+                            }),
+                          );
+                        } catch (e) {
+                          setDetailsError((e as Error).message);
+                        }
+                      }}
+                    >
+                      <Info size={14} />
+                      文件详情
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        run("reveal", {
+                          path: selected.output || selected.path,
+                        })
+                      }
+                    >
+                      <FolderOpen size={14} />
+                      打开位置
+                    </Button>
+                  </div>
+                </div>
+                <h3 title={selected.path}>{selected.name}</h3>
+                {selected.meta ? (
+                  <FileMeta meta={selected.meta} />
+                ) : (
+                  <p className="muted">
+                    {selected.metaError || "正在读取文件信息…"}
+                  </p>
+                )}
+                <p className="path-text" title={selected.path}>
+                  {selected.path}
                 </p>
-              )}
-            </form>
-          </div>
-        </aside>
-      </main>
+                {selected.output && (
+                  <p className="path-text" title={selected.output}>
+                    → {selected.output}
+                  </p>
+                )}
+                {selected.error && (
+                  <p role="alert" className="inline-error">
+                    {selected.error}
+                  </p>
+                )}
+                {selected.log && (
+                  <details
+                    onToggle={(e) => {
+                      // Updates carry only the log's tail; load the whole log.
+                      if ((e.currentTarget as HTMLDetailsElement).open)
+                        void window.encoder
+                          .invoke("mediaLog", { id: selected.id })
+                          .then((log) =>
+                            setFullLog({ id: selected.id, log: log as string }),
+                          )
+                          .catch(() => {});
+                    }}
+                  >
+                    <summary>实际命令与日志</summary>
+                    <pre className="media-log" tabIndex={0}>
+                      {fullLog?.id === selected.id &&
+                      fullLog.log.length >= selected.log.length
+                        ? fullLog.log
+                        : selected.log}
+                    </pre>
+                  </details>
+                )}
+              </section>
+            )}
+          </section>
+          <aside className="settings-column" aria-label="处理设置">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">输出控制</span>
+                <h2>处理设置</h2>
+              </div>
+              <SlidersHorizontal size={20} className="muted" />
+            </div>
+            <div className="settings-panel">
+              <form
+                noValidate
+                onSubmit={(e) => e.preventDefault()}
+                className="settings-body"
+              >
+                <Select
+                  id="media-operation"
+                  label="操作"
+                  value={o.operation}
+                  disabled={locked}
+                  options={Object.entries(OPERATIONS).map(([value, label]) => ({
+                    value,
+                    label,
+                  }))}
+                  onChange={(v) => set("operation", v)}
+                />
+                {o.operation !== "video" && (
+                  <Select
+                    id="media-format"
+                    label="输出音频"
+                    value={o.audioFormat}
+                    disabled={locked}
+                    options={Object.entries(FORMATS).map(([value, label]) => ({
+                      value,
+                      label,
+                    }))}
+                    onChange={(v) => set("audioFormat", v)}
+                  />
+                )}
+                {o.operation !== "video" && (
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      disabled={
+                        locked || !HIRES_FORMATS.includes(o.audioFormat)
+                      }
+                      checked={hiRes}
+                      onChange={(e) => set("hiRes", e.target.checked)}
+                    />
+                    <span>
+                      Hi-Res 音频（24-bit，低于 48 kHz 时升到 2 倍采样率）
+                      <small className="hint hires-hint">
+                        {!HIRES_FORMATS.includes(o.audioFormat)
+                          ? "仅 WAV / FLAC 可用。"
+                          : (hiResText(
+                              o.operation === "merge"
+                                ? selected?.audioMeta
+                                : selected?.meta?.audio,
+                            ) ||
+                              (o.operation === "merge"
+                                ? "选择替换音频后显示转换结果"
+                                : "读取文件后显示转换结果")) +
+                            (o.operation === "merge" ? "，输出 MKV。" : "。") +
+                            "升采样不会提高音质。"}
+                      </small>
+                    </span>
+                  </label>
+                )}
+                {o.operation !== "video" && (
+                  <Select
+                    id="media-fade"
+                    label="音频淡入淡出"
+                    value={String(o.audioFormat === "copy" ? 0 : o.audioFade)}
+                    disabled={locked || o.audioFormat === "copy"}
+                    options={fadeOptions}
+                    hint={
+                      o.audioFormat === "copy"
+                        ? "复制原音轨时不能淡化。"
+                        : fadeHint
+                    }
+                    onChange={(v) => set("audioFade", Number(v))}
+                  />
+                )}
+                {o.operation !== "video" && LOSSY.includes(o.audioFormat) && (
+                  <Select
+                    id="media-bitrate"
+                    label="音频码率"
+                    value={String(bitrate)}
+                    disabled={locked}
+                    options={BITRATES.filter(
+                      (b) => b <= MAX_BITRATE[o.audioFormat],
+                    ).map((b) => ({
+                      value: String(b),
+                      label: b
+                        ? `${b} kbps`
+                        : "跟随源文件（无损源用 320 kbps）",
+                    }))}
+                    onChange={(v) => set("audioBitrate", Number(v))}
+                  />
+                )}
+                {o.operation !== "audio" && (
+                  <Select
+                    id="media-container"
+                    label="输出格式"
+                    value={o.container}
+                    disabled={locked}
+                    options={Object.entries(CONTAINERS).map(
+                      ([value, label]) => ({
+                        value,
+                        label,
+                      }),
+                    )}
+                    onChange={(v) => set("container", v)}
+                  />
+                )}
+                {o.operation === "merge" && (
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      disabled={locked}
+                      checked={o.shortest}
+                      onChange={(e) => set("shortest", e.target.checked)}
+                    />
+                    时长取较短的一方
+                  </label>
+                )}
+                <Select
+                  id="media-location"
+                  label="输出位置"
+                  value={o.location}
+                  disabled={locked}
+                  options={Object.entries(LOCATIONS).map(([value, label]) => ({
+                    value,
+                    label,
+                  }))}
+                  onChange={(v) => set("location", v)}
+                />
+                {o.location === "custom" && (
+                  <Field id="media-output-dir" label="自定义文件夹">
+                    <div className="path-picker">
+                      <input
+                        id="media-output-dir"
+                        value={o.outputDir}
+                        readOnly
+                        title={o.outputDir}
+                        placeholder="选择输出文件夹"
+                      />
+                      <Button disabled={locked} onClick={pickFolder}>
+                        选择
+                      </Button>
+                    </div>
+                  </Field>
+                )}
+                <p className="hint">
+                  {o.operation === "audio"
+                    ? "只输出第一条音频流。"
+                    : `视频直接复制，不重新压制${o.container === "mp4" ? "；MP4 放不下时自动改用 MKV" : ""}。`}
+                  已有文件不覆盖。
+                </p>
+                {error && (
+                  <p role="alert" className="inline-error">
+                    {error}
+                  </p>
+                )}
+              </form>
+            </div>
+          </aside>
+        </main>
+      </div>
       <footer className="output-strip">
         <div className="output-icon">
           <ArrowDownToLine size={23} />
