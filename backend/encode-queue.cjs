@@ -77,6 +77,9 @@ function createEncodeQueue(ctx) {
       throw Error("请选择最多 1000 个视频文件");
     await locate();
     const folders = new Map(); // picked PNGs of one folder: read it once
+    // A video can be queued more than once (e.g. two different settings);
+    // only several pictures of one sequence picked together count once.
+    const sequences = new Set();
     for (const input of paths) {
       if (typeof input !== "string" || !path.isAbsolute(input))
         throw Error("素材必须为绝对路径");
@@ -94,19 +97,11 @@ function createEncodeQueue(ctx) {
         state.notice = "文件夹里没有 PNG 序列：" + path.basename(input);
         continue;
       }
-      if (seq) resolved = seq.first;
-      if (
-        state.jobs.some(
-          (j) =>
-            j.path.toLowerCase() === resolved.toLowerCase() ||
-            (seq &&
-              j.sequence?.pattern.toLowerCase() === seq.pattern.toLowerCase()),
-        )
-      ) {
-        if (!seq || paths.length === 1)
-          state.notice =
-            "已跳过重复素材：" + (seq ? seq.name : path.basename(input));
-        continue;
+      if (seq) {
+        resolved = seq.first;
+        const key = seq.pattern.toLowerCase();
+        if (sequences.has(key)) continue;
+        sequences.add(key);
       }
       const job = {
         id: crypto.randomUUID(),

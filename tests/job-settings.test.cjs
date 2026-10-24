@@ -144,3 +144,65 @@ test(
     }
   },
 );
+
+test(
+  "the same video can be queued twice; each run gets its own output",
+  { skip: !fs.existsSync(ff), timeout: 180000 },
+  async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "job-twice-"));
+    const input = path.join(dir, "同一段.mp4");
+    execFileSync(ff, [
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=s=160x90:r=30:d=1",
+      "-c:v",
+      "libx264",
+      input,
+    ]);
+    delete require.cache[require.resolve("../backend/service.cjs")];
+    const { createService } = require("../backend/service.cjs");
+    const svc = createService({
+      dataDir: path.join(dir, "data"),
+      mmdPluginDll: "",
+    });
+    const state = () => svc.getState();
+    try {
+      await until(() => state().located && !state().detecting);
+      await svc.invoke("add", { paths: [input] });
+      await svc.invoke("add", { paths: [input] });
+      await until(() => state().jobs.every((j) => j.status !== "probing"));
+      assert.equal(state().jobs.length, 2);
+      await svc.invoke("settings", {
+        patch: {
+          encoder: "libx264",
+          preset: "ultrafast",
+          container: "mp4",
+          audio: "none",
+          outputMode: "source",
+        },
+      });
+      // The second copy as MKV on its own.
+      const second = state().jobs[1];
+      await svc.invoke("setJobSettings", { id: second.id, own: true });
+      await svc.invoke("setJobSettings", {
+        id: second.id,
+        patch: { container: "mkv" },
+      });
+      await svc.invoke("start");
+      await until(() => !state().running);
+      const [a, b] = state().jobs;
+      assert.equal(a.status, "done", a.error);
+      assert.equal(b.status, "done", b.error);
+      assert.notEqual(a.output, b.output);
+      assert.equal(path.extname(b.output), ".mkv");
+      assert.ok(fs.existsSync(a.output) && fs.existsSync(b.output));
+    } finally {
+      svc.dispose();
+      await new Promise((r) => setTimeout(r, 200));
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

@@ -56,7 +56,10 @@ test(
         input,
       ]);
       svc = createService({ engineDir, dataDir: path.join(dir, "data") });
+      // A video can be queued twice; the second copy is removed again here.
       await svc.invoke("add", { paths: [input, input] });
+      assert.equal(svc.getState().jobs.length, 2);
+      await svc.invoke("remove", { id: svc.getState().jobs[1].id });
       assert.equal(svc.getState().jobs.length, 1);
       assert.equal(svc.getState().jobs[0].meta.hasAlpha, true);
       await svc.invoke("settings", {
