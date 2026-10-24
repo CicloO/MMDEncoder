@@ -272,15 +272,7 @@ function createMediaQueue(ctx) {
       // File-info reads started by mediaAdd are short; let them finish
       // instead of reporting them as a busy task.
       await Promise.all([...mediaProbes]);
-      if (
-        state.running ||
-        state.trim.running ||
-        state.detecting ||
-        ctx.tools.state.busy ||
-        state.enhancements.busy ||
-        ctx.children.size
-      )
-        throw Error("请等待当前任务结束");
+      if (ctx.isBusy()) throw Error("请等待当前任务结束");
       const options = payload || {};
       if (!["audio", "video", "merge"].includes(options.operation))
         throw Error("请选择提取音频、提取视频或音视频合并");

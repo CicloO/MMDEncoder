@@ -386,9 +386,13 @@ export default function App() {
     const file = await call("pickMedia", { multiple: false }).catch(() => null);
     if (typeof file === "string") await replaceAudio(j, file);
   }
-  async function replaceAudio(j: Job, file: string) {
+  async function replaceAudio(row: Job, file: string) {
+    let j = row;
     try {
-      await call("setAudio", { id: j.id, path: file }, "已替换音频");
+      const r = await call("setAudio", { id: j.id, path: file }, "已替换音频");
+      // The response is the current state: the row may be older (pushes
+      // during an import come at most every 200 ms).
+      j = r?.jobs?.find((x: Job) => x.id === j.id) || j;
     } catch {
       return;
     }

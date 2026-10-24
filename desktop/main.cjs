@@ -93,7 +93,7 @@ else {
           await service.invoke("trimCancel");
           const deadline = Date.now() + 5000;
           const busy = () => {
-            const s = service.getState();
+            const s = service.uiState();
             return s.running || s.trim?.running;
           };
           while (busy() && Date.now() < deadline)
@@ -131,7 +131,7 @@ else {
             ],
           });
           return result.canceled
-            ? service.getState()
+            ? service.uiState()
             : service.invoke("add", { paths: result.filePaths });
         }
         if (action === "pickMedia") {
@@ -238,7 +238,7 @@ else {
               ),
               "utf8",
             );
-          return service.getState();
+          return service.uiState();
         }
         if (action === "mmdOpenLog") {
           const logs = path.join(

@@ -1524,6 +1524,20 @@ function createService({
     })();
   }
 
+  // Whether anything is using the encoders, the tools or the GPU: encoding
+  // or media processing, a trim export, detection, a tool install, the RTX
+  // check or another child process. { tools: false } leaves out a tool
+  // install (for the tool actions themselves).
+  function isBusy({ tools: withTools = true } = {}) {
+    return !!(
+      state.running ||
+      state.trim.running ||
+      state.detecting ||
+      (withTools && tools.state.busy) ||
+      state.enhancements.busy ||
+      children.size
+    );
+  }
   // Shared with the queue modules. `stopped`, `detectPromise` and the running
   // encoder change in several places, so the modules read them through ctx.
   const ctx = {
@@ -1544,6 +1558,9 @@ function createService({
     dataDir,
     // Reading files on import, shared by both queues: 4 at a time.
     probeLimit: createLimit(4),
+    // The queues ask these instead of reading other parts' state.
+    isBusy,
+    trimExporting: () => state.trim.running,
     get stopped() {
       return stopped;
     },
@@ -1567,12 +1584,12 @@ function createService({
       if (Object.hasOwn(m.actions, action)) {
         await m.actions[action](payload);
         emit();
-        return clone(state);
+        return uiState(state);
       }
     }
     switch (action) {
       case "state":
-        return clone(state);
+        return uiState(state);
       case "details": {
         if (tools.state.busy) throw Error("工具安装中，请稍后查看详情");
         // payload.media: a job from the audio / video tools queue
@@ -1725,15 +1742,7 @@ function createService({
         });
         break;
       case "testEnhancements": {
-        if (
-          state.running ||
-          state.trim.running ||
-          state.detecting ||
-          tools.state.busy ||
-          state.enhancements.busy ||
-          children.size
-        )
-          throw Error("请等待当前任务结束");
+        if (isBusy()) throw Error("请等待当前任务结束");
         const s = { ...state.settings, ...schema(payload.settings || {}) };
         await locate();
         state.enhancements = {
@@ -1768,13 +1777,7 @@ function createService({
         );
       case "checkTools":
       case "installTools":
-        if (
-          state.running ||
-          state.trim.running ||
-          state.detecting ||
-          state.enhancements.busy ||
-          children.size
-        )
+        if (isBusy({ tools: false }))
           throw Error("请等待编码、探测和硬件检测结束后管理工具");
         try {
           await tools.run(action === "installTools");
@@ -1790,13 +1793,7 @@ function createService({
         break;
       case "setToolsRoot": {
         if (toolsRoot) throw Error("安装位置由环境变量指定，不能在软件中更改");
-        if (
-          state.running ||
-          state.trim.running ||
-          state.detecting ||
-          state.enhancements.busy ||
-          children.size
-        )
+        if (isBusy({ tools: false }))
           throw Error("请等待编码、探测和硬件检测结束后更改安装位置");
         const target = payload?.root || DEFAULT_ROOT;
         tools.relocate(target);
@@ -2040,7 +2037,7 @@ function createService({
         throw Error("不支持的操作：" + action);
     }
     emit();
-    return clone(state);
+    return uiState(state);
   }
   setImmediate(() => {
     if (disposed) return;
@@ -2072,6 +2069,9 @@ function createService({
   return {
     invoke,
     getState: () => clone(state),
+    // What the window may see (no video logs, media log tails only).
+    uiState: () => uiState(state),
+    isBusy: () => isBusy(),
     dispose() {
       flushEvidence();
       disposed = true;

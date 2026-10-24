@@ -7,6 +7,7 @@ const crypto = require("node:crypto");
 const core = require("./core.cjs");
 const { signature: enhancementSignature } = require("./enhancements.cjs");
 const sequence = require("./sequence.cjs");
+const { uiState } = require("./ui-state.cjs");
 // Frame rate a PNG sequence starts with; it can be changed per sequence.
 const SEQUENCE_FPS = 30;
 const SEQUENCE_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120];
@@ -116,7 +117,9 @@ function createEncodeQueue(ctx) {
       added.push({ job, input, seq });
     }
     // All files are in the queue (in order) before any is read; then a few
-    // are read at a time. A file removed meanwhile is not read.
+    // are read at a time. A file removed meanwhile is not read. Finished
+    // reads reach the window at most every 200 ms (emitProgress), not once
+    // per file; the response carries the final state.
     emit();
     await Promise.all(
       added.map((a) =>
@@ -125,7 +128,7 @@ function createEncodeQueue(ctx) {
         ),
       ),
     );
-    return clone(state);
+    return uiState(state);
   }
   async function probeJob({ job, input, seq }) {
     const resolved = job.path;
@@ -143,7 +146,7 @@ function createEncodeQueue(ctx) {
       if (seq) {
         job.meta = await sequenceMeta(job);
         job.status = "ready";
-        emit();
+        emitProgress();
         // Usable now; the total size (one stat per frame) follows, outside
         // the import limit so other files are not held up.
         void sequence
@@ -152,7 +155,7 @@ function createEncodeQueue(ctx) {
             if (total === undefined || !job.sequence || !job.meta) return;
             job.sequence.size = total;
             job.meta = withSequenceRate(job.meta, job.sequence);
-            emit();
+            emitProgress();
           });
         return;
       }
@@ -189,7 +192,7 @@ function createEncodeQueue(ctx) {
       job.status = "invalid";
       job.error = "素材探测失败：" + e.message;
     }
-    emit();
+    emitProgress();
   }
   // A PNG sequence has no frame rate of its own: the user sets it (default
   // SEQUENCE_FPS), and length and timing follow from it.
@@ -491,7 +494,7 @@ function createEncodeQueue(ctx) {
     if (ctx.tools.state.busy || state.enhancements.busy)
       throw Error("工具管理或 RTX 验证中，请稍后处理队列");
     if (state.running) throw Error("队列正在运行");
-    if (state.trim.running) throw Error("无损剪辑正在导出，请等它结束");
+    if (ctx.trimExporting()) throw Error("无损剪辑正在导出，请等它结束");
     // Validate the frozen per-job settings first; a bad alpha source must not
     // prevent valid items from continuing, or be mislabeled as an engine fault.
     jobs = jobs.filter((j) => {
