@@ -140,3 +140,127 @@ test(
     }
   },
 );
+
+test(
+  "音频对齐 of an added / replacement audio with the video's own sound: merge and video page",
+  { skip: !fs.existsSync(ff), timeout: 300000 },
+  async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "align-replace-"));
+    const run = (args) => execFileSync(ff, ["-v", "error", ...args]);
+    const song = path.join(dir, "原曲.wav");
+    run([
+      "-f",
+      "lavfi",
+      "-i",
+      "anoisesrc=d=30:c=pink:r=48000:seed=21,tremolo=f=1.7:d=0.9",
+      song,
+    ]);
+    // A render whose own sound starts 3 s into the song, and one that starts
+    // before the song does (its first 1.25 s silent).
+    const video = (name, args) => {
+      const f = path.join(dir, name);
+      run([
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=s=160x90:r=30:d=10",
+        ...args,
+        "-c:v",
+        "libx264",
+        "-c:a",
+        "aac",
+        "-shortest",
+        f,
+      ]);
+      return f;
+    };
+    const late = video("晚.mp4", ["-ss", "3", "-t", "10", "-i", song]);
+    const early = video("早.mp4", [
+      "-t",
+      "10",
+      "-i",
+      song,
+      "-af",
+      "adelay=1250:all=1",
+    ]);
+    delete require.cache[require.resolve("../backend/service.cjs")];
+    const { createService } = require("../backend/service.cjs");
+    const svc = createService({
+      dataDir: path.join(dir, "data"),
+      mmdPluginDll: "",
+    });
+    const st = () => svc.getState();
+    try {
+      await until(() => st().located && !st().detecting);
+      // Merge: the added song is cut by 3 s / padded by 1.25 s.
+      await svc.invoke("mediaAdd", { paths: [late, early] });
+      await until(() => st().mediaJobs.every((j) => j.meta || j.metaError));
+      for (const j of st().mediaJobs) {
+        await svc.invoke("mediaSetAudio", { id: j.id, path: song });
+        const r = await svc.invoke("alignRun", {
+          reference: j.path,
+          target: song,
+        });
+        assert.ok(r.reliable);
+        await svc.invoke("mediaSetAudioOffset", { id: j.id, offset: r.offset });
+      }
+      assert.ok(Math.abs(st().mediaJobs[0].audioOffset - 3) < 0.0005);
+      assert.ok(Math.abs(st().mediaJobs[1].audioOffset + 1.25) < 0.0005);
+      await svc.invoke("mediaStart", {
+        operation: "merge",
+        audioFormat: "flac",
+        container: "mkv",
+        location: "source",
+      });
+      await until(() => !st().running);
+      for (const j of st().mediaJobs) {
+        assert.equal(j.status, "done", j.error);
+        const c = await align({ ffmpeg: ff }, j.path, j.output);
+        assert.ok(Math.abs(c.offset) < 0.0005, j.name + " merged: " + c.offset);
+      }
+      // Choosing another audio drops the alignment.
+      await svc.invoke("mediaRequeue", { id: st().mediaJobs[0].id });
+      await svc.invoke("mediaSetAudio", {
+        id: st().mediaJobs[0].id,
+        path: song,
+      });
+      assert.equal(st().mediaJobs[0].audioOffset, undefined);
+
+      // Video page: the same with the replacement audio.
+      await svc.invoke("add", { paths: [late, early] });
+      await until(() => st().jobs.every((j) => j.status !== "probing"));
+      await svc.invoke("settings", {
+        patch: {
+          encoder: "libx264",
+          preset: "ultrafast",
+          container: "mkv",
+          audio: "flac",
+          outputMode: "custom",
+          outputDir: path.join(dir, "out"),
+        },
+      });
+      for (const [j, offset] of st().jobs.map((j, i) => [j, [3, -1.25][i]])) {
+        await svc.invoke("setAudio", { id: j.id, path: song });
+        await svc.invoke("setAudioOffset", { id: j.id, offset });
+      }
+      await svc.invoke("start");
+      await until(() => !st().running);
+      for (const j of st().jobs) {
+        assert.equal(j.status, "done", j.error);
+        assert.ok(
+          Math.abs(duration(j.output) - 10) < 0.05,
+          "video length kept",
+        );
+        const c = await align({ ffmpeg: ff }, j.path, j.output);
+        assert.ok(
+          Math.abs(c.offset) < 0.0005,
+          j.name + " encoded: " + c.offset,
+        );
+      }
+    } finally {
+      svc.dispose();
+      await new Promise((r) => setTimeout(r, 200));
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

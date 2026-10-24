@@ -9,7 +9,6 @@ import {
   Wand2,
 } from "lucide-react";
 import { Button, Modal, Select } from "./components";
-import type { MediaJob } from "./types";
 
 // Sound of a file as the backend sends it (alignPreview): mono 16-bit.
 type Track = { rate: number; duration: number; pcm: Int16Array };
@@ -113,15 +112,33 @@ function draw(
 
 // 音频对齐: line a file's audio (the target) up with a reference, for
 // extracting it cut or padded to match (see media.command, alignFilter).
+// The result: the reference used, the offset (target time = reference time
+// + offset) and, where offered (withTrim), whether to end with the reference.
+export type Alignment = { reference: string; offset: number; trim: boolean };
 export function AlignDialog({
   open,
-  job,
+  targetPath,
+  fixedReference,
+  initial,
+  withTrim = false,
+  description,
   call,
+  onApply,
+  onClear,
   onClose,
 }: {
   open: boolean;
-  job?: MediaJob;
+  targetPath?: string;
+  // The reference when the page decides it (a video's own sound); without
+  // it the user adds one.
+  fixedReference?: string;
+  initial?: Partial<Alignment>;
+  withTrim?: boolean;
+  description: string;
   call: (action: string, payload?: unknown) => Promise<any>;
+  onApply: (a: Alignment) => Promise<void>;
+  // Offered when there is an alignment to remove.
+  onClear?: () => Promise<void>;
   onClose: () => void;
 }) {
   const [target, setTarget] = useState<Track | null>(null),
@@ -171,11 +188,11 @@ export function AlignDialog({
     return { ...t, pcm: new Int16Array(t.pcm) };
   }
   async function run(ref = refPath) {
-    if (!job || !ref) return;
+    if (!targetPath || !ref) return;
     setBusy("正在自动对齐…");
     setError("");
     try {
-      const r = await call("alignRun", { reference: ref, target: job.path });
+      const r = await call("alignRun", { reference: ref, target: targetPath });
       setOffset(r.offset);
       setResult({ confidence: r.confidence, reliable: r.reliable });
     } catch (e) {
@@ -202,32 +219,38 @@ export function AlignDialog({
       setBusy("");
     }
   }
-  // Open: the target's sound, and an earlier alignment of this file.
+  // Open: the target's sound, the reference's, and an earlier alignment; a
+  // given reference not yet aligned is aligned at once.
   useEffect(() => {
-    if (!open || !job) return;
+    if (!open || !targetPath) return;
     let cancelled = false;
+    const ref = fixedReference || initial?.reference || "";
     setTarget(null);
     setReference(null);
-    setRefPath(job.align?.reference || "");
-    setOffset(job.align?.offset || 0);
-    setTrim(job.align ? !!job.align.length : true);
+    setRefPath(ref);
+    setOffset(initial?.offset || 0);
+    setTrim(initial?.trim ?? true);
     setResult(null);
     setError("");
     setPlayhead(0);
     setBusy("正在读取音频…");
     (async () => {
       try {
-        const t = await load(job.path);
+        const t = await load(targetPath);
         if (cancelled) return;
         setTarget(t);
         let span = t.duration;
-        if (job.align?.reference) {
-          const r = await load(job.align.reference);
+        if (ref) {
+          const r = await load(ref);
           if (cancelled) return;
           setReference(r);
           span = r.duration;
         }
         setView({ start: 0, span: Math.max(1, span) });
+        if (ref && initial?.offset === undefined) {
+          setBusy("");
+          await run(ref);
+        }
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       } finally {
@@ -239,7 +262,7 @@ export function AlignDialog({
       stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, job?.id]);
+  }, [open, targetPath, fixedReference]);
   // Redraw on any change; the canvases follow their box on resize.
   useEffect(() => {
     const paint = () => {
@@ -351,13 +374,11 @@ export function AlignDialog({
     setView({ start: Math.max(-span * 0.1, start), span });
   }
   async function apply() {
-    if (!job) return;
+    if (!refPath) return;
+    stop();
     setBusy("正在保存…");
     try {
-      await call("mediaSetAlign", {
-        id: job.id,
-        align: refPath ? { reference: refPath, offset, trim } : null,
-      });
+      await onApply({ reference: refPath, offset, trim: withTrim && trim });
       onClose();
     } catch (e) {
       setError((e as Error).message);
@@ -366,9 +387,10 @@ export function AlignDialog({
     }
   }
   async function clear() {
-    if (!job) return;
+    if (!onClear) return;
+    stop();
     try {
-      await call("mediaSetAlign", { id: job.id, align: null });
+      await onClear();
       onClose();
     } catch (e) {
       setError((e as Error).message);
@@ -390,19 +412,23 @@ export function AlignDialog({
       }}
       wide
       title="音频对齐"
-      description={`把“${job?.name || ""}”的音频起点对齐到参考音频；提取音频时按这里的结果截取或补静音。`}
+      description={description}
       error={error}
     >
       <div className="align-dialog">
         <div className="align-ref">
           <span className="align-label">参考</span>
           <span className="path-text" title={refPath}>
-            {refPath ? baseName(refPath) : "尚未添加（可选音频或视频）"}
+            {refPath
+              ? baseName(refPath) + (fixedReference ? "（视频自带的声音）" : "")
+              : "尚未添加（可选音频或视频）"}
           </span>
-          <Button onClick={pickReference} disabled={!!busy}>
-            <FolderOpen size={15} />
-            {refPath ? "更换参考" : "添加参考音频"}
-          </Button>
+          {!fixedReference && (
+            <Button onClick={pickReference} disabled={!!busy}>
+              <FolderOpen size={15} />
+              {refPath ? "更换参考" : "添加参考音频"}
+            </Button>
+          )}
           <Button onClick={() => run()} disabled={!refPath || !!busy}>
             <Wand2 size={15} />
             自动对齐
@@ -567,18 +593,20 @@ export function AlignDialog({
               →
             </Button>
           </div>
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={trim}
-              disabled={!refPath}
-              onChange={(e) => setTrim(e.target.checked)}
-            />
-            导出时截到参考的长度（不够时补静音）
-          </label>
+          {withTrim && (
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={trim}
+                disabled={!refPath}
+                onChange={(e) => setTrim(e.target.checked)}
+              />
+              导出时截到参考的长度（不够时补静音）
+            </label>
+          )}
         </div>
         <div className="modal-actions">
-          {job?.align && (
+          {onClear && (
             <Button onClick={clear} disabled={!!busy}>
               清除对齐
             </Button>

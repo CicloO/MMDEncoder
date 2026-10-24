@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Wand2,
   ArrowDownToLine,
   ArrowRight,
   ChevronFirst,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 import { Button, Field, Select, useDragSort } from "./components";
 import { fadeOptions } from "./presentation";
+import { autoAlign } from "./autoAlign";
 import type { State, TrimClip } from "./types";
 
 const OPTIONS_KEY = "mmd-trim-options";
@@ -238,6 +240,22 @@ export function TrimTools({
   }
 
   const exportable = clips.filter((c) => c.status === "ready" && !c.empty);
+  // 音频对齐 for the replacement audio: where the first clip's start falls
+  // in the audio, from the clip's own sound (one clip, or clips in order
+  // from one take, line up throughout).
+  const [aligning, setAligning] = useState(false);
+  async function fillOffset() {
+    const first = exportable[0];
+    if (!first || !o.audioFile || !first.fps) return;
+    setAligning(true);
+    setError("");
+    const note = await autoAlign(first.path, o.audioFile, async (offset) => {
+      const at = offset + (first.from ?? 0) / (first.fps!.num / first.fps!.den);
+      set("offset", o.mmdFrames ? String(Math.round(at * 30)) : at.toFixed(3));
+    });
+    setAligning(false);
+    if (note) setError(note.replace("可点波形按钮检视对齐", "请手动填写"));
+  }
   const totalFrames = exportable.reduce(
     (a, c) => a + ((c.to ?? 0) - (c.from ?? 0)),
     0,
@@ -708,13 +726,28 @@ export function TrimTools({
                       }
                       hint="正数：从音频此处开始；负数：视频开头先留空。"
                     >
-                      <input
-                        id="trim-offset"
-                        inputMode="decimal"
-                        value={o.offset}
-                        disabled={t.running}
-                        onChange={(e) => set("offset", e.target.value)}
-                      />
+                      <div className="path-picker">
+                        <input
+                          id="trim-offset"
+                          inputMode="decimal"
+                          value={o.offset}
+                          disabled={t.running}
+                          onChange={(e) => set("offset", e.target.value)}
+                        />
+                        <Button
+                          disabled={
+                            t.running ||
+                            !o.audioFile ||
+                            !exportable.length ||
+                            !!aligning
+                          }
+                          title="以第一个片段的原视频声音为参考，自动算出起点偏移"
+                          onClick={fillOffset}
+                        >
+                          <Wand2 size={15} />
+                          {aligning ? "对齐中…" : "自动填写"}
+                        </Button>
+                      </div>
                     </Field>
                   </>
                 )}

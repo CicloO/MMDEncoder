@@ -30,6 +30,8 @@ const allowed = new Set([
   "setSequenceFps",
   "mediaReorder",
   "mediaSetAlign",
+  "mediaSetAudioOffset",
+  "setAudioOffset",
   "alignPreview",
   "alignRun",
   "mmdStatus",

@@ -195,13 +195,20 @@ function command(p, tools, output) {
   // silence, stopped by -shortest at the video's end.
   const merge = p.operation === "merge";
   const pad = merge && p.audioFormat !== "copy";
-  const aligned = p.operation === "audio" && p.align;
+  // Extracting: p.align (with a reference length); merging: p.audioOffset
+  // for the added audio (it then lasts as long as the video, as above).
+  const aligned =
+    p.operation === "audio"
+      ? p.align
+      : merge && p.audioOffset
+        ? { offset: Number(p.audioOffset) }
+        : null;
   if (aligned && p.audioFormat === "copy")
     throw Error("对齐需要重新编码音频，请选择复制原音轨以外的格式");
   codecArgs = withAudioFilter(
     codecArgs,
     [
-      aligned ? alignFilter(p.align, p.sourceAudio?.sampleRate) : "",
+      aligned ? alignFilter(aligned, p.sourceAudio?.sampleRate) : "",
       fadeFilter(fade, p.fadeLength),
       pad ? "apad" : "",
     ]
@@ -212,7 +219,12 @@ function command(p, tools, output) {
   if (merge)
     args.push(
       ...(Number(p.videoDuration) > 0
-        ? ["-t", Number(p.videoDuration).toFixed(6)]
+        ? [
+            "-t",
+            (
+              Number(p.videoDuration) + Math.max(0, Number(p.audioOffset) || 0)
+            ).toFixed(6),
+          ]
         : []),
       "-i",
       p.audioInput,

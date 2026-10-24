@@ -536,6 +536,7 @@ function createEncodeQueue(ctx) {
         throw Error("请选择有效的音频文件");
       delete job.audioMeta;
       delete job.audioDuration;
+      delete job.audioOffset; // another audio: its alignment no longer holds
       if (!file) {
         delete job.audioPath;
         return;
@@ -546,6 +547,22 @@ function createEncodeQueue(ctx) {
       job.audioPath = file;
       job.audioMeta = info.audio;
       job.audioDuration = info.audioDuration;
+    },
+    // 音频对齐 of a replacement audio with the video's own sound (seconds,
+    // > 0 its start is cut, < 0 silence first); null clears it.
+    setAudioOffset(payload) {
+      const job = requireJob(payload?.id);
+      if (job.status === "encoding" || (state.running && job.settings))
+        throw Error("已提交任务不能更改对齐");
+      const offset = payload?.offset;
+      if (offset === null || offset === undefined) {
+        delete job.audioOffset;
+        return;
+      }
+      if (!job.audioPath) throw Error("请先替换音频");
+      if (!Number.isFinite(offset) || Math.abs(offset) > 24 * 3600)
+        throw Error("对齐数据无效");
+      job.audioOffset = offset;
     },
     requeue(payload) {
       // Put a finished or cancelled item back in the queue; the next start

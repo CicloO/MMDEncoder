@@ -1,4 +1,5 @@
 import {
+  AudioLines,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -13,7 +14,10 @@ import {
   Terminal,
   X,
 } from "lucide-react";
+import { useState } from "react";
 import { Button, Select, useDragSort, PAGE_SIZE } from "./components";
+import { AlignDialog } from "./AlignDialog";
+import { offsetText } from "./autoAlign";
 import { FileMeta, metaSummary } from "./FileMeta";
 import { formatDuration, statusLabels, targetLabel } from "./presentation";
 import type { Job, Settings, State } from "./types";
@@ -87,6 +91,9 @@ export function EncodeQueue({
           : "选中视频后显示分辨率、帧率与音轨信息。"}
       </p>
     );
+  // The video whose replacement audio is being aligned (音频对齐).
+  const [alignId, setAlignId] = useState("");
+  const aligning = jobs.find((j) => j.id === alignId);
   return (
     <section className="queue-column" aria-label="视频队列">
       <div className="section-heading">
@@ -165,7 +172,8 @@ export function EncodeQueue({
                       <strong title={j.name}>{j.name}</strong>
                       <span className="job-sub">
                         {j.meta ? metaSummary(j.meta) : "正在读取素材信息"}
-                        {j.audioPath && ` · 音频：${baseName(j.audioPath)}`}
+                        {j.audioPath &&
+                          ` · 音频：${baseName(j.audioPath)}${j.audioOffset !== undefined ? " · 对齐 " + offsetText(j.audioOffset) : ""}`}
                       </span>
                       {(() => {
                         const own = j.ownSettings;
@@ -350,7 +358,22 @@ export function EncodeQueue({
               <Music size={14} />
               <span className="path-text" title={job.audioPath}>
                 替换音频：{job.audioPath}
+                {job.audioOffset !== undefined &&
+                  ` · 对齐 ${offsetText(job.audioOffset)}`}
               </span>
+              <Button
+                variant="ghost"
+                disabled={state.running || !job.meta?.audio}
+                title={
+                  job.meta?.audio
+                    ? "以视频自带的声音为参考，检视、微调替换音频的对齐"
+                    : "这个视频没有自带的声音，无法对齐"
+                }
+                onClick={() => setAlignId(job.id)}
+              >
+                <AudioLines size={14} />
+                对齐
+              </Button>
               <Button
                 variant="ghost"
                 disabled={state.running}
@@ -415,6 +438,27 @@ export function EncodeQueue({
           <p>原视频始终保留。同名输出自动编号，每个任务独立记录结果。</p>
         </div>
       </div>
+      <AlignDialog
+        open={!!aligning?.audioPath}
+        call={call}
+        onClose={() => setAlignId("")}
+        targetPath={aligning?.audioPath}
+        fixedReference={aligning?.path}
+        initial={
+          aligning?.audioOffset !== undefined
+            ? { offset: aligning.audioOffset }
+            : undefined
+        }
+        description={`把替换音频对齐到“${aligning?.name || ""}”自带的声音；压制时按这里的结果截取或补静音，时长仍与视频相同。`}
+        onApply={(a) =>
+          call("setAudioOffset", { id: aligning!.id, offset: a.offset })
+        }
+        onClear={
+          aligning?.audioOffset !== undefined
+            ? () => call("setAudioOffset", { id: aligning.id, offset: null })
+            : undefined
+        }
+      />
     </section>
   );
 }

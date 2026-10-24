@@ -39,6 +39,7 @@ import {
 import { MediaTools } from "./MediaTools";
 import { TrimTools } from "./TrimTools";
 import { EncodeQueue } from "./EncodeQueue";
+import { autoAlign } from "./autoAlign";
 import { MediaDetails } from "./MediaDetails";
 import { RtxSettings } from "./RtxSettings";
 import { AboutDialog } from "./AboutDialog";
@@ -109,6 +110,22 @@ export default function App() {
       /* Theme still works for this session. */
     }
   }, [theme]);
+  // Video page: line a replacement audio up with the video's own sound
+  // when it is chosen (remembered per computer, like the theme).
+  const [autoAlignAudio, setAutoAlignAudio] = useState(() => {
+    try {
+      return localStorage.getItem("mmd-auto-align") !== "off";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("mmd-auto-align", autoAlignAudio ? "on" : "off");
+    } catch {
+      /* Still applies for this session. */
+    }
+  }, [autoAlignAudio]);
   const [state, setState] = useState<State | null>(null),
     [compatibility, setCompatibility] = useState<{
       errors: string[];
@@ -361,11 +378,21 @@ export default function App() {
   function action(actionName: string, payload?: unknown, message?: string) {
     void call(actionName, payload, message).catch(() => {});
   }
-  // Replace one video's audio, as the media page's merge does.
+  // Replace one video's audio, as the media page's merge does, and line it
+  // up with the video's own sound when "自动对齐" is on and there is one.
   async function pickAudio(j: Job) {
     const file = await call("pickMedia", { multiple: false }).catch(() => null);
-    if (typeof file === "string")
-      action("setAudio", { id: j.id, path: file }, "已替换音频");
+    if (typeof file !== "string") return;
+    try {
+      await call("setAudio", { id: j.id, path: file }, "已替换音频");
+    } catch {
+      return;
+    }
+    if (!autoAlignAudio || !j.meta?.audio || j.sequence) return;
+    const note = await autoAlign(j.path, file, (offset) =>
+      call("setAudioOffset", { id: j.id, offset }),
+    );
+    notify(note || "已替换音频，并按视频自带的声音自动对齐");
   }
   function persist(settings: Settings, to = draftTarget.current) {
     const task = saveChain.current
@@ -1348,6 +1375,19 @@ export default function App() {
                           为该视频选择，按视频时长截取。
                         </p>
                       </div>
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={autoAlignAudio}
+                          onChange={(e) => setAutoAlignAudio(e.target.checked)}
+                        />
+                        <span>
+                          替换音频后自动对齐
+                          <small className="hint hires-hint">
+                            以视频自带的声音为参考；对不上时不应用，可在“当前素材”里点“对齐”检视、微调。
+                          </small>
+                        </span>
+                      </label>
                       {(job?.audioPath ? job.audioMeta : job?.meta?.audio) &&
                         (() => {
                           const a = (

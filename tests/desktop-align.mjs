@@ -121,6 +121,47 @@ try {
     Math.abs(check.offset) < 0.0005,
     "extracted audio lines up: " + check.offset,
   );
+
+  // Merge: the render with the song added; chosen, it is aligned at once
+  // against the render's own sound (自动对齐 is on by default).
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = async () => ({
+      canceled: false,
+      filePaths: [file],
+    });
+  }, song);
+  await page.getByLabel("操作").selectOption("merge");
+  await page.evaluate(
+    (p) => window.encoder.invoke("mediaAdd", { paths: [p] }),
+    render,
+  );
+  await page.getByRole("button", { name: /为 渲染\.mp4 选择音频/ }).click();
+  await expect(page.getByText(/对齐 \+2\.500 秒/)).toBeVisible({
+    timeout: 60000,
+  });
+  // The dialog shows the video's own sound as the fixed reference.
+  await page.getByRole("button", { name: /对齐 渲染\.mp4 的合并音频/ }).click();
+  const mergeDialog = page.getByRole("dialog", { name: "音频对齐" });
+  await expect(mergeDialog.getByText(/视频自带的声音/)).toBeVisible();
+  await expect(
+    mergeDialog.getByRole("button", { name: "添加参考音频" }),
+  ).toHaveCount(0);
+  await expect(mergeDialog.getByText(/目标开头多出 2\.500\d 秒/)).toBeVisible();
+  await page.screenshot({ path: path.join(evidence, "align-merge.png") });
+  await mergeDialog.getByRole("button", { name: "取消" }).click();
+
+  // Video page: replacing the render's audio aligns it the same way.
+  await page.getByRole("button", { name: "视频压制", exact: true }).click();
+  await page.evaluate(
+    (p) => window.encoder.invoke("add", { paths: [p] }),
+    render,
+  );
+  await expect.poll(async () => (await state()).jobs[0]?.status).toBe("ready");
+  await page.getByRole("button", { name: /为 渲染\.mp4 选择音频/ }).click();
+  await expect
+    .poll(async () => (await state()).jobs[0].audioOffset, { timeout: 60000 })
+    .toBeCloseTo(2.5, 3);
+  await expect(page.getByText(/替换音频：.*对齐 \+2\.500 秒/)).toBeVisible();
   console.log("Desktop align PASS");
   passed = true;
 } finally {

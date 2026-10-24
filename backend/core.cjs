@@ -1005,7 +1005,10 @@ function inputArgs(job) {
 // as long as the video so the output keeps the video's length.
 function audioInputArgs(job) {
   if (!job.audioPath) return [];
-  const d = Number(job.meta?.duration) || 0;
+  // Aligned later in the file (job.audioOffset > 0): read that much more.
+  const d =
+    (Number(job.meta?.duration) || 0) +
+    Math.max(0, Number(job.audioOffset) || 0);
   return [...(d > 0 ? ["-t", d.toFixed(6)] : []), "-i", job.audioPath];
 }
 // Written into each output's "comment" tag: how it was encoded, so the
@@ -1163,9 +1166,13 @@ function buildCommands(job, s, engines, paths) {
   // The audio's parameters and its stream: the source's, or a replacement
   // file (job.audioMeta, read when it was chosen) given as the next input.
   const sourceAudio = job.audioPath ? job.audioMeta : job.meta?.audio;
+  // 音频对齐 of a replacement (job.audioOffset, seconds: > 0 its start is
+  // cut, < 0 silence goes first); the audio then ends at the video's end or
+  // its own, whichever is first.
+  const audioOffset = job.audioPath ? Number(job.audioOffset) || 0 : 0;
   const audioLength = job.audioPath
     ? Math.min(
-        Number(job.audioDuration) || Infinity,
+        (Number(job.audioDuration) || Infinity) - audioOffset,
         Number(job.meta?.duration) || Infinity,
       )
     : job.meta?.duration;
@@ -1192,8 +1199,9 @@ function buildCommands(job, s, engines, paths) {
           ...media.withAudioFilter(
             s.hiRes
               ? // PCM becomes 24-bit PCM; see media.hiResPlan for the rules.
-                // A fade means re-encoding even where Hi-Res would copy.
-                s.audioFade && hiResPlan.action === "copy"
+                // A fade or an alignment means re-encoding even where
+                // Hi-Res would copy.
+                (s.audioFade || audioOffset) && hiResPlan.action === "copy"
                 ? media.hiResCodec(hiResPlan)
                 : media.hiResArgs(hiResPlan, engines?.soxr)
               : [
@@ -1205,7 +1213,22 @@ function buildCommands(job, s, engines, paths) {
                       ? ["-b:a", "192k"]
                       : []),
                 ],
-            media.fadeFilter(s.audioFade, audioLength),
+            [
+              audioOffset
+                ? media.alignFilter(
+                    // Ends with the video (silence padded in front must not
+                    // make it longer).
+                    {
+                      offset: audioOffset,
+                      length: Number(job.meta?.duration) || 0,
+                    },
+                    sourceAudio.sampleRate,
+                  )
+                : "",
+              media.fadeFilter(s.audioFade, audioLength),
+            ]
+              .filter(Boolean)
+              .join(","),
           ),
         ]
       : ["-an"];

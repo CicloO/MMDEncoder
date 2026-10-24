@@ -113,10 +113,15 @@ function createMediaQueue(ctx) {
       // A merge is as long as the video (see media.command). The fade-out
       // ends where the audio does: at the video's end, or earlier when the
       // audio is shorter (silence follows).
-      if (o.operation === "merge") p.videoDuration = source.videoDuration;
+      if (o.operation === "merge") {
+        p.videoDuration = source.videoDuration;
+        // The added audio lined up with the video's own (音频对齐).
+        p.audioOffset = Number(job.audioOffset) || 0;
+      }
+      const shift = p.audioOffset || 0;
       p.fadeLength =
         o.operation === "merge" && source.videoDuration
-          ? Math.min(audioSource.audioDuration, source.videoDuration)
+          ? Math.min(audioSource.audioDuration - shift, source.videoDuration)
           : audioSource.audioDuration;
       // Extracting audio lined up with a reference (音频对齐): cut or pad
       // its start; the result ends where the reference does when trimmed.
@@ -231,6 +236,7 @@ function createMediaQueue(ctx) {
       if (file) job.audioPath = file;
       else delete job.audioPath;
       delete job.audioMeta;
+      delete job.audioOffset; // another audio: its alignment no longer holds
       // The replacement audio's own parameters (Hi-Res preview, checks).
       if (file) {
         await locate();
@@ -313,6 +319,21 @@ function createMediaQueue(ctx) {
     },
     mediaReorder(payload) {
       state.mediaJobs = ctx.reorder(state.mediaJobs, payload.ids);
+    },
+    // 音频对齐 of a merge's added audio with the video's own sound (seconds,
+    // > 0 its start is cut, < 0 silence first); null clears it.
+    mediaSetAudioOffset(payload) {
+      const job = requireMediaJob(payload?.id);
+      if (job.status === "running") throw Error("处理中的文件不能更改对齐");
+      const offset = payload?.offset;
+      if (offset === null || offset === undefined) {
+        delete job.audioOffset;
+        return;
+      }
+      if (!job.audioPath) throw Error("请先选择要合并的音频");
+      if (!Number.isFinite(offset) || Math.abs(offset) > 24 * 3600)
+        throw Error("对齐数据无效");
+      job.audioOffset = offset;
     },
     // The 音频对齐 dialog's result for one file: extracting its audio then
     // cuts (offset > 0) or pads (offset < 0) its start to line up with the
