@@ -118,3 +118,70 @@ test(
     }
   },
 );
+
+test(
+  "alignment of two versions of a song: the same beat, different and loud vocals (an original and a cover)",
+  { skip: !fs.existsSync(ff), timeout: 180000 },
+  async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "align-cover-"));
+    try {
+      const rate = 44100,
+        seconds = 60,
+        n = rate * seconds;
+      let seed = 7;
+      const rnd = () =>
+        ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31) * 2 - 1;
+      // Backing: drum hits at uneven times, as fills and syncopation make them.
+      const backing = new Float32Array(n);
+      for (let t = 0.3; t < seconds - 1; t += 0.2 + 0.2 * Math.abs(rnd())) {
+        const at = Math.round(t * rate);
+        for (let i = 0; i < rate * 0.12; i++)
+          backing[at + i] += 0.6 * Math.exp(-i / (rate * 0.02)) * rnd();
+      }
+      // "Vocals": a loud gliding tone, different in each version.
+      const version = (pitch, shift) => {
+        const out = new Float32Array(n + Math.round(shift * rate));
+        const s = Math.round(shift * rate);
+        for (let i = 0; i < n; i++) {
+          const t = i / rate;
+          const voice =
+            0.5 *
+            Math.sin(2 * Math.PI * (pitch + 60 * Math.sin(t * 0.7)) * t) *
+            (0.6 + 0.4 * Math.sin(t * 1.3));
+          out[s + i] = 0.5 * (backing[i] + voice);
+        }
+        return out;
+      };
+      const wav = (file, x) => {
+        const b = Buffer.alloc(44 + x.length * 2);
+        b.write("RIFF", 0);
+        b.writeUInt32LE(36 + x.length * 2, 4);
+        b.write("WAVEfmt ", 8);
+        b.writeUInt32LE(16, 16);
+        b.writeUInt16LE(1, 20);
+        b.writeUInt16LE(1, 22);
+        b.writeUInt32LE(rate, 24);
+        b.writeUInt32LE(rate * 2, 28);
+        b.writeUInt16LE(2, 32);
+        b.writeUInt16LE(16, 34);
+        b.write("data", 36);
+        b.writeUInt32LE(x.length * 2, 40);
+        for (let i = 0; i < x.length; i++)
+          b.writeInt16LE(
+            Math.round(Math.max(-1, Math.min(1, x[i])) * 32767),
+            44 + i * 2,
+          );
+        fs.writeFileSync(file, b);
+        return file;
+      };
+      const original = wav(path.join(dir, "original.wav"), version(330, 0));
+      // The cover starts 2.345 s later in its file.
+      const cover = wav(path.join(dir, "cover.wav"), version(523, 2.345));
+      const r = await align({ ffmpeg: ff }, original, cover);
+      assert.ok(r.reliable, "confidence " + r.confidence);
+      assert.ok(Math.abs(r.offset - 2.345) < 0.003, "offset " + r.offset);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

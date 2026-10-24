@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  AudioLines,
   Wand2,
   ArrowDownToLine,
   ArrowRight,
@@ -22,6 +23,7 @@ import {
 import { Button, Field, Select, useDragSort } from "./components";
 import { fadeOptions } from "./presentation";
 import { autoAlign } from "./autoAlign";
+import { AlignDialog } from "./AlignDialog";
 import type { State, TrimClip } from "./types";
 
 const OPTIONS_KEY = "mmd-trim-options";
@@ -244,15 +246,23 @@ export function TrimTools({
   // in the audio, from the clip's own sound (one clip, or clips in order
   // from one take, line up throughout).
   const [aligning, setAligning] = useState(false);
+  // The first clip's start in its own file (seconds): 起点偏移 counts the
+  // audio from there, the alignment from the file's start.
+  const clipStart = () => {
+    const first = exportable[0];
+    return first?.fps ? (first.from ?? 0) / (first.fps.num / first.fps.den) : 0;
+  };
+  const setOffsetSeconds = (at: number) =>
+    set("offset", o.mmdFrames ? String(Math.round(at * 30)) : at.toFixed(3));
+  const [alignOpen, setAlignOpen] = useState(false);
   async function fillOffset() {
     const first = exportable[0];
     if (!first || !o.audioFile || !first.fps) return;
     setAligning(true);
     setError("");
-    const note = await autoAlign(first.path, o.audioFile, async (offset) => {
-      const at = offset + (first.from ?? 0) / (first.fps!.num / first.fps!.den);
-      set("offset", o.mmdFrames ? String(Math.round(at * 30)) : at.toFixed(3));
-    });
+    const note = await autoAlign(first.path, o.audioFile, async (offset) =>
+      setOffsetSeconds(offset + clipStart()),
+    );
     setAligning(false);
     if (note) setError(note.replace("可点波形按钮检视对齐", "请手动填写"));
   }
@@ -747,6 +757,17 @@ export function TrimTools({
                           <Wand2 size={15} />
                           {aligning ? "对齐中…" : "自动填写"}
                         </Button>
+                        <Button
+                          variant="ghost icon"
+                          aria-label="音频对齐"
+                          title="音频对齐：以第一个片段原视频的声音为参考检视、微调"
+                          disabled={
+                            t.running || !o.audioFile || !exportable.length
+                          }
+                          onClick={() => setAlignOpen(true)}
+                        >
+                          <AudioLines size={16} />
+                        </Button>
                       </div>
                     </Field>
                   </>
@@ -903,6 +924,23 @@ export function TrimTools({
           )}
         </div>
       </footer>
+      <AlignDialog
+        open={alignOpen && !!o.audioFile && !!exportable.length}
+        call={call}
+        onClose={() => setAlignOpen(false)}
+        targetPath={o.audioFile}
+        fixedReference={exportable[0]?.path}
+        initial={
+          o.offset.trim() !== ""
+            ? { offset: offsetSeconds() - clipStart() }
+            : undefined
+        }
+        description={`把替换音频对齐到“${exportable[0]?.name || ""}”自带的声音；应用后填入起点偏移（按第一个片段的起点换算）。`}
+        onApply={async (a) => setOffsetSeconds(a.offset + clipStart())}
+        onClear={
+          o.offset.trim() !== "" ? async () => set("offset", "") : undefined
+        }
+      />
     </>
   );
 }

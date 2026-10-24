@@ -107,6 +107,36 @@ try {
   await page.waitForTimeout(400);
   await dialog.getByRole("button", { name: "暂停" }).click();
 
+  // Right-drag on a waveform moves the playhead (the seek bar follows);
+  // left-drag on the reference pans the view, not the alignment.
+  const seekBar = dialog.getByRole("slider", { name: "播放位置" });
+  const box = await target.boundingBox();
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2, {
+    steps: 5,
+  });
+  await page.mouse.up({ button: "right" });
+  const at = Number(await seekBar.inputValue());
+  // The view spans from the target's start (-2.5 s) to its end (17.5 s).
+  assert.ok(at > 7 && at < 12, "playhead moved to about 60 %: " + at);
+  await expect(dialog.getByText(/目标开头多出 2\.500\d 秒/)).toBeVisible();
+  const refBox = await dialog.getByLabel(/参考音频波形/).boundingBox();
+  const startText = () =>
+    dialog.locator(".align-ruler span").first().innerText();
+  const before = await startText();
+  await page.mouse.move(refBox.x + refBox.width * 0.6, refBox.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(refBox.x + refBox.width * 0.3, refBox.y + 20, {
+    steps: 5,
+  });
+  await page.mouse.up();
+  assert.notEqual(await startText(), before, "view panned");
+  await expect(dialog.getByText(/目标开头多出 2\.500\d 秒/)).toBeVisible();
+  // The seek bar sets the playhead too.
+  await seekBar.fill("1");
+  await expect(dialog.locator(".align-seek span")).toHaveText("0:01.000");
+
   await dialog.getByRole("button", { name: "应用" }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByText(/对齐 \+2\.500 秒 · 截到参考长度/)).toBeVisible();
@@ -162,6 +192,42 @@ try {
     .poll(async () => (await state()).jobs[0].audioOffset, { timeout: 60000 })
     .toBeCloseTo(2.5, 3);
   await expect(page.getByText(/替换音频：.*对齐 \+2\.500 秒/)).toBeVisible();
+  // The queue row has the same alignment button as on the media page.
+  await page.getByRole("button", { name: /对齐 渲染\.mp4 的替换音频/ }).click();
+  const videoDialog = page.getByRole("dialog", { name: "音频对齐" });
+  await expect(videoDialog.getByText(/视频自带的声音/)).toBeVisible();
+  await videoDialog.getByRole("button", { name: "取消" }).click();
+  await expect(videoDialog).toBeHidden();
+  // Trim page: 起点偏移 filled in from the first clip's sound, and the same
+  // dialog to look at it (the picker still answers with the song).
+  await page.getByRole("button", { name: "无损剪辑", exact: true }).click();
+  await page.evaluate(
+    (p) => window.encoder.invoke("trimAdd", { paths: [p] }),
+    render,
+  );
+  await expect(page.locator(".trim-tick").first()).toBeVisible({
+    timeout: 30000,
+  });
+  await page.locator("#trim-audio").selectOption("replace");
+  await page.getByRole("button", { name: "选择音频" }).click();
+  await page.getByRole("button", { name: "自动填写" }).click();
+  const field = page.locator("#trim-offset");
+  const frames = (await page.getByText("起点偏移 · MMD 帧").count()) > 0;
+  await expect
+    .poll(async () => Number(await field.inputValue()), { timeout: 60000 })
+    .toBeCloseTo(frames ? 75 : 2.5, frames ? 0 : 2);
+  await page.getByRole("button", { name: "音频对齐" }).click();
+  const trimDialog = page.getByRole("dialog", { name: "音频对齐" });
+  await expect(trimDialog.getByText(/视频自带的声音/)).toBeVisible();
+  await expect(trimDialog.getByText(/目标开头多出 2\.50\d\d 秒/)).toBeVisible({
+    timeout: 30000,
+  });
+  await trimDialog.getByRole("button", { name: "应用" }).click();
+  await expect(trimDialog).toBeHidden();
+  assert.ok(
+    Math.abs(Number(await field.inputValue()) - (frames ? 75 : 2.5)) <
+      (frames ? 1 : 0.01),
+  );
   console.log("Desktop align PASS");
   passed = true;
 } finally {

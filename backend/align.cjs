@@ -8,22 +8,33 @@
 // target starts later (pad that much silence before it).
 //
 // Method: generalised cross-correlation with phase transform (GCC-PHAT).
-// Whitening the cross spectrum leaves only phase, so differences in level,
-// EQ and lossy coding between the two versions matter little. A coarse pass
-// on low-rate audio searches every possible offset; a second pass at a high
-// rate around the coarse answer gives it to the sample.
+// Whitening the cross spectrum leaves only phase, so level, EQ and lossy
+// coding matter little. Two ways to find the offset roughly:
+// - The waveforms (4 kHz, up to a minute of the reference against all of
+//   the target): sure and exact when both carry the same recording (a
+//   render and its song).
+// - Onset strength (how fast the loudness rises, 100 frames a second, the
+//   whole of both), then again at 1000 frames a second around the answer:
+//   the beat is shared by two versions of a song where the vocals or the
+//   mix differ (an original and a cover on the same backing track), which
+//   the waveforms are not.
+// The waveforms are used when they match clearly, else the onsets. Then the
+// waveforms at 48 kHz around the answer give it to the sample.
 const { spawn } = require("node:child_process");
 
-const COARSE_RATE = 4000;
+const DECODE_RATE = 4000;
+// How much of the reference the waveform pass uses (seconds); the onset
+// pass compares up to LONGEST of each.
+const WAVE_REFERENCE = 60;
+const LONGEST = 20 * 60;
 const FINE_RATE = 48000;
-// How much of the reference the coarse pass uses (seconds): enough to be
-// unambiguous, small enough to stay fast on long targets.
-const COARSE_REFERENCE = 60;
-// The fine pass compares this much (seconds) around the coarse offset.
+// The fine pass compares this much (seconds) around the rough answer.
 const FINE_WINDOW = 8;
-const FINE_SEARCH = 0.02;
 // Peak over the next best peak at least this: the two recordings line up.
+// Waveforms: unrelated songs measured 1.00–1.01, matches 1.5 and up.
+// Onsets: unrelated up to 1.4, versions of one song 2.8 and up.
 const RELIABLE = 1.25;
+const RELIABLE_ONSETS = 2;
 
 // Mono samples at `rate` from `start` for `length` seconds (whole file when
 // length is 0). Any file FFmpeg reads; a video's first audio track.
@@ -157,6 +168,29 @@ function peak(corr, from, to, gap) {
   };
 }
 
+// Onset strength per frame of `hop` samples: the rise of the log energy.
+// Silence is floored a hundred thousand times below the loudest frame, so
+// the moment sound starts does not outweigh the music itself.
+function onsets(x, hop) {
+  const n = Math.floor(x.length / hop);
+  const e = new Float64Array(n);
+  let top = 0;
+  for (let f = 0; f < n; f++) {
+    let s = 0;
+    for (let i = f * hop; i < (f + 1) * hop; i++) s += x[i] * x[i];
+    e[f] = s / hop;
+    if (e[f] > top) top = e[f];
+  }
+  const floor = top * 1e-5 || 1e-12;
+  const o = new Float32Array(n);
+  let prev = Math.log(Math.max(e[0] || 0, floor));
+  for (let f = 1; f < n; f++) {
+    const v = Math.log(Math.max(e[f], floor));
+    o[f] = Math.max(0, v - prev);
+    prev = v;
+  }
+  return o;
+}
 // Where the reference's sound is: its first second above a fifth of its
 // loudest second, so the fine pass does not compare silence.
 function firstSound(samples, rate) {
@@ -173,27 +207,58 @@ function firstSound(samples, rate) {
 
 async function align(tools, reference, target, { signal } = {}) {
   const ff = tools.ffmpeg;
-  // Coarse: up to a minute of the reference against all of the target.
   const [ref, tgt] = await Promise.all([
-    decode(ff, reference, COARSE_RATE, { length: COARSE_REFERENCE, signal }),
-    decode(ff, target, COARSE_RATE, { signal }),
+    decode(ff, reference, DECODE_RATE, { length: LONGEST, signal }),
+    decode(ff, target, DECODE_RATE, { length: LONGEST, signal }),
   ]);
-  if (ref.length < COARSE_RATE / 2 || tgt.length < COARSE_RATE / 2)
-    throw Error("音频太短，至少需要半秒");
-  const coarse = gccPhat(ref, tgt);
-  const c = peak(coarse, coarse.min, coarse.max, COARSE_RATE / 20);
-  let offset = c.lag / COARSE_RATE;
-  // Fine: a window of the reference where it has sound, and the target's
-  // matching stretch with a little room either side.
-  // (When the target starts later, the window moves on until the target has
-  // begun.)
-  const from = Math.max(
-    firstSound(ref, COARSE_RATE),
-    Math.ceil(FINE_SEARCH - offset),
-  );
-  const at = from + offset - FINE_SEARCH;
-  if (at >= 0) {
-    const [r, t] = await Promise.all([
+  if (ref.length < DECODE_RATE || tgt.length < DECODE_RATE)
+    throw Error("音频太短，至少需要 1 秒");
+  // Waveforms first.
+  const wave = gccPhat(ref.subarray(0, WAVE_REFERENCE * DECODE_RATE), tgt);
+  const w = peak(wave, wave.min, wave.max, DECODE_RATE / 20);
+  let offset, confidence, reliable;
+  // The rough answer is good to 1 ms; the fine pass looks this far either side.
+  const search = 0.003;
+  if (w.ratio >= RELIABLE) {
+    offset = w.lag / DECODE_RATE;
+    [confidence, reliable] = [w.ratio, true];
+  } else {
+    // Onsets: every offset in 10 ms frames, then within 30 ms in 1 ms frames.
+    const coarse = gccPhat(
+      onsets(ref, DECODE_RATE / 100),
+      onsets(tgt, DECODE_RATE / 100),
+    );
+    const c = peak(coarse, coarse.min, coarse.max, 10);
+    const mid = gccPhat(
+      onsets(ref, DECODE_RATE / 1000),
+      onsets(tgt, DECODE_RATE / 1000),
+    );
+    const centre = Math.round(c.lag * 10);
+    const m = peak(
+      mid,
+      Math.max(mid.min, centre - 30),
+      Math.min(mid.max, centre + 30),
+      2,
+    );
+    offset = m.lag / 1000;
+    [confidence, reliable] = [c.ratio, c.ratio >= RELIABLE_ONSETS];
+  }
+  // To the sample: windows of the reference where it has sound, and the
+  // target's matching stretch with `search` either side. For two versions
+  // the peak in one window can be a few ms off where their sounds differ,
+  // so up to four windows are compared and the clearest peak counts (the
+  // same recording is clear at once), or the rough answer stays when none is.
+  const start = Math.max(firstSound(ref, DECODE_RATE), search - offset);
+  const end =
+    Math.min(ref.length, tgt.length - offset * DECODE_RATE) / DECODE_RATE;
+  const room = Math.max(0, end - FINE_WINDOW - start);
+  let best = null;
+  for (const share of [0, 0.25, 0.5, 0.75]) {
+    if (best?.ratio >= 5) break;
+    const from = start + room * share;
+    const at = from + offset - search;
+    if (at < 0) continue;
+    const [r, tw] = await Promise.all([
       decode(ff, reference, FINE_RATE, {
         start: from,
         length: FINE_WINDOW,
@@ -201,25 +266,22 @@ async function align(tools, reference, target, { signal } = {}) {
       }),
       decode(ff, target, FINE_RATE, {
         start: at,
-        length: FINE_WINDOW + 2 * FINE_SEARCH,
+        length: FINE_WINDOW + 2 * search,
         signal,
       }),
     ]);
-    if (r.length > FINE_RATE / 2 && t.length > FINE_RATE / 2) {
-      const fine = gccPhat(r, t);
-      const reach = Math.round(2 * FINE_SEARCH * FINE_RATE);
-      const f = peak(fine, 0, Math.min(reach, fine.max), FINE_RATE / 1000);
-      // Lag in the fine window counts from `at`.
-      offset = at + f.lag / FINE_RATE - from;
-    }
+    if (r.length < FINE_RATE / 2 || tw.length < FINE_RATE / 2) continue;
+    const fine = gccPhat(r, tw);
+    const reach = Math.round(2 * search * FINE_RATE);
+    const p = peak(fine, 0, Math.min(reach, fine.max), FINE_RATE / 1000);
+    // Lag in the fine window counts from `at`.
+    if (!best || p.ratio > best.ratio)
+      best = { offset: at + p.lag / FINE_RATE - from, ratio: p.ratio };
   }
-  return {
-    offset,
-    // How clearly the match stands out; below RELIABLE the two may not be
-    // the same recording (another mix, a changed tempo, unrelated audio).
-    confidence: c.ratio,
-    reliable: c.ratio >= RELIABLE,
-  };
+  if (best?.ratio >= 2) offset = best.offset;
+  // confidence: how clearly the match stands out; when not reliable the two
+  // may not be the same song (or one has another tempo or arrangement).
+  return { offset, confidence, reliable };
 }
 
-module.exports = { align, decode, gccPhat, fft, RELIABLE };
+module.exports = { align, decode, gccPhat, fft, onsets, RELIABLE };

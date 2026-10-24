@@ -1975,7 +1975,8 @@ html[data-theme="light"] {
 }
 .align-waves {
   display: grid;
-  grid-template-columns: 36px 1fr;
+  /* minmax(0, …): long hints and the seek bar must not widen the dialog. */
+  grid-template-columns: 36px minmax(0, 1fr);
   align-items: center;
   gap: 6px 10px;
 }
@@ -1990,10 +1991,16 @@ html[data-theme="light"] {
   --wave-axis: var(--color-border);
   --wave-head: var(--color-danger);
   --wave-fill: var(--color-muted);
+  --wave-zero: var(--color-muted);
+  --wave-start: var(--color-primary);
+  touch-action: none;
 }
 .align-wave.target {
   --wave-fill: var(--color-primary);
   cursor: grab;
+}
+.align-wave.reference {
+  cursor: ew-resize;
 }
 .align-wave.target:active {
   cursor: grabbing;
@@ -2002,9 +2009,48 @@ html[data-theme="light"] {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
+.align-dialog.dropping {
+  outline: 2px dashed var(--color-primary);
+  outline-offset: 6px;
+  border-radius: var(--radius-control);
+}
+.align-ruler span {
+  flex-shrink: 0;
+}
+.align-ruler span:nth-child(2) {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
+  white-space: normal;
+}
+.align-dialog,
+.align-seek {
+  min-width: 0;
+}
+.align-seek {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.align-seek input[type="range"] {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  accent-color: var(--color-primary);
+}
+.align-seek span {
+  font: 12px var(--font-mono);
+  color: var(--color-muted);
+  min-width: 80px;
+  text-align: right;
+}
 .align-ruler {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
   font: 11px var(--font-mono);
   color: var(--color-muted);
 }
@@ -2053,8 +2099,17 @@ html[data-theme="light"] {
   opacity: 0.45;
   cursor: default;
 }
+.segmented label {
+  position: relative;
+}
+/* Hidden but focusable; sized to nothing (inputs are 100% wide by
+   default, which made the dialog scroll sideways). */
 .segmented input {
   position: absolute;
+  inset: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
   opacity: 0;
   pointer-events: none;
 }

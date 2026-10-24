@@ -212,6 +212,22 @@ export function EncodeQueue({
                       <Music size={16} />
                     </Button>
                   )}
+                  {/* As on the media page: the alignment of a chosen audio. */}
+                  {!["encoding", "done"].includes(j.status) && j.audioPath && (
+                    <Button
+                      variant={`ghost icon${j.audioOffset !== undefined ? " active" : ""}`}
+                      aria-label={`对齐 ${j.name} 的替换音频`}
+                      title={
+                        j.meta?.audio
+                          ? "音频对齐：以视频自带的声音为参考检视、微调"
+                          : "这个视频没有自带的声音，无法对齐"
+                      }
+                      disabled={state.running || !j.meta?.audio}
+                      onClick={() => setAlignId(j.id)}
+                    >
+                      <AudioLines size={16} />
+                    </Button>
+                  )}
                   {["done", "cancelled"].includes(j.status) && (
                     <Button
                       variant="ghost icon"

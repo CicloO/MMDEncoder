@@ -55,6 +55,8 @@ function draw(
   span: number,
   shift: number,
   playhead: number,
+  // Where each recording starts (reference time): dashed lines.
+  starts: { t: number; color: string }[],
 ) {
   if (!canvas) return;
   const dpr = window.devicePixelRatio || 1;
@@ -103,6 +105,19 @@ function draw(
       g.fillRect(x, y0, 1, Math.max(1, y1 - y0));
     }
   }
+  g.save();
+  g.setLineDash([4 * dpr, 4 * dpr]);
+  g.lineWidth = Math.max(1, dpr);
+  for (const s of starts) {
+    const x = Math.round(((s.t - start) / span) * w) + 0.5;
+    if (x < 0 || x > w) continue;
+    g.strokeStyle = css.getPropertyValue(s.color);
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.lineTo(x, h);
+    g.stroke();
+  }
+  g.restore();
   const px = ((playhead - start) / span) * w;
   if (px >= 0 && px <= w) {
     g.fillStyle = css.getPropertyValue("--wave-head");
@@ -157,7 +172,8 @@ export function AlignDialog({
     [playing, setPlaying] = useState(false),
     [listen, setListen] = useState("both"),
     [split, setSplit] = useState(false),
-    [step, setStep] = useState(STEPS[0].value);
+    [step, setStep] = useState(STEPS[0].value),
+    [dropping, setDropping] = useState(false);
   const refCanvas = useRef<HTMLCanvasElement>(null),
     tgtCanvas = useRef<HTMLCanvasElement>(null),
     audio = useRef<{
@@ -166,8 +182,7 @@ export function AlignDialog({
       when: number;
       from: number;
       frame: number;
-    } | null>(null),
-    drag = useRef<{ x: number; offset: number; moved: boolean } | null>(null);
+    } | null>(null);
   const refEnv = useMemo(
     () => (reference ? envelope(reference.pcm) : null),
     [reference],
@@ -181,19 +196,32 @@ export function AlignDialog({
     target ? target.duration - offset : 0,
     1,
   );
+  // Both recordings from their starts, with a little room so the start
+  // lines are not on the edge.
+  function fit(shift = offset, refDuration = reference?.duration || 0) {
+    const lo = Math.min(0, -shift);
+    const hi = Math.max(
+      refDuration,
+      target ? target.duration - shift : 0,
+      lo + 1,
+    );
+    const pad = (hi - lo) * 0.02;
+    setView({ start: lo - pad, span: hi - lo + 2 * pad });
+  }
 
   async function load(path: string) {
     const t = (await call("alignPreview", { path })) as Track;
     // The structured clone may arrive as a plain array buffer view.
     return { ...t, pcm: new Int16Array(t.pcm) };
   }
-  async function run(ref = refPath) {
+  async function run(ref = refPath, refDuration = reference?.duration || 0) {
     if (!targetPath || !ref) return;
     setBusy("正在自动对齐…");
     setError("");
     try {
       const r = await call("alignRun", { reference: ref, target: targetPath });
       setOffset(r.offset);
+      fit(r.offset, refDuration);
       setResult({ confidence: r.confidence, reliable: r.reliable });
     } catch (e) {
       setError((e as Error).message);
@@ -203,7 +231,9 @@ export function AlignDialog({
   }
   async function pickReference() {
     const file = await call("pickMedia", { multiple: false }).catch(() => null);
-    if (typeof file !== "string") return;
+    if (typeof file === "string") await takeReference(file);
+  }
+  async function takeReference(file: string) {
     stop();
     setBusy("正在读取参考音频…");
     setError("");
@@ -211,9 +241,9 @@ export function AlignDialog({
       const r = await load(file);
       setReference(r);
       setRefPath(file);
-      setView({ start: 0, span: Math.max(1, r.duration) });
+      fit(offset, r.duration);
       setBusy("");
-      await run(file);
+      await run(file, r.duration);
     } catch (e) {
       setError((e as Error).message);
       setBusy("");
@@ -246,10 +276,12 @@ export function AlignDialog({
           setReference(r);
           span = r.duration;
         }
-        setView({ start: 0, span: Math.max(1, span) });
+        const lo = Math.min(0, -(initial?.offset || 0));
+        const pad = (span - lo) * 0.02;
+        setView({ start: lo - pad, span: Math.max(1, span - lo + 2 * pad) });
         if (ref && initial?.offset === undefined) {
           setBusy("");
-          await run(ref);
+          await run(ref, span);
         }
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
@@ -274,6 +306,7 @@ export function AlignDialog({
         view.span,
         0,
         playhead,
+        [{ t: 0, color: "--wave-zero" }],
       );
       draw(
         tgtCanvas.current,
@@ -283,6 +316,10 @@ export function AlignDialog({
         view.span,
         offset,
         playhead,
+        [
+          { t: 0, color: "--wave-zero" },
+          { t: -offset, color: "--wave-start" },
+        ],
       );
     };
     paint();
@@ -364,6 +401,50 @@ export function AlignDialog({
     const r = e.currentTarget.getBoundingClientRect();
     return view.start + ((e.clientX - r.left) / r.width) * view.span;
   };
+  const pointer = useRef<{
+    button: number;
+    x: number;
+    offset: number;
+    start: number;
+    moved: boolean;
+  } | null>(null);
+  function pointerHandlers(kind: "reference" | "target") {
+    return {
+      onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+      onPointerDown: (e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (e.button !== 0 && e.button !== 2) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        pointer.current = {
+          button: e.button,
+          x: e.clientX,
+          offset,
+          start: view.start,
+          moved: false,
+        };
+        if (e.button === 2) setPlayhead(timeAt(e));
+      },
+      onPointerMove: (e: React.PointerEvent<HTMLCanvasElement>) => {
+        const p = pointer.current;
+        if (!p) return;
+        if (p.button === 2) return setPlayhead(timeAt(e));
+        const dx = e.clientX - p.x;
+        if (Math.abs(dx) > 2) p.moved = true;
+        if (!p.moved) return;
+        const dt =
+          (dx / e.currentTarget.getBoundingClientRect().width) * view.span;
+        if (kind === "target") setOffset(p.offset - dt);
+        else setView((v) => ({ ...v, start: p.start - dt }));
+      },
+      onPointerUp: (e: React.PointerEvent<HTMLCanvasElement>) => {
+        const p = pointer.current;
+        pointer.current = null;
+        if (!p) return;
+        // Heard at once from where it now is.
+        if (playing && (p.button === 2 || (kind === "target" && p.moved)))
+          play(p.button === 2 ? timeAt(e) : playhead);
+      },
+    };
+  }
   function seek(t: number) {
     setPlayhead(t);
     if (playing) play(t);
@@ -415,13 +496,35 @@ export function AlignDialog({
       description={description}
       error={error}
     >
-      <div className="align-dialog">
+      <div
+        className={`align-dialog${dropping ? " dropping" : ""}`}
+        // Kept here: the page behind would take the file into its queue.
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!fixedReference) setDropping(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node))
+            setDropping(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDropping(false);
+          if (fixedReference || busy) return;
+          const [file] = window.encoder.getPaths(
+            Array.from(e.dataTransfer.files),
+          );
+          if (file) void takeReference(file);
+        }}
+      >
         <div className="align-ref">
           <span className="align-label">参考</span>
           <span className="path-text" title={refPath}>
             {refPath
               ? baseName(refPath) + (fixedReference ? "（视频自带的声音）" : "")
-              : "尚未添加（可选音频或视频）"}
+              : "尚未添加：选择或拖入音频 / 视频"}
           </span>
           {!fixedReference && (
             <Button onClick={pickReference} disabled={!!busy}>
@@ -462,39 +565,18 @@ export function AlignDialog({
           <canvas
             ref={refCanvas}
             className="align-wave reference"
-            aria-label="参考音频波形，点击设置播放位置"
-            onClick={(e) => seek(timeAt(e))}
+            aria-label="参考音频波形：左键拖动平移，右键拖动移动播放位置，滚轮缩放"
             onWheel={(e) => zoom(e.deltaY > 0 ? 1.25 : 0.8, timeAt(e))}
+            {...pointerHandlers("reference")}
           />
           <span className="align-label">目标</span>
           <canvas
             ref={tgtCanvas}
             className="align-wave target"
             tabIndex={0}
-            aria-label="目标音频波形：拖动或用左右方向键调整对齐，按住 Shift 步长乘 10"
+            aria-label="目标音频波形：左键拖动或用左右方向键调整对齐（按住 Shift 步长乘 10），右键拖动移动播放位置"
             onWheel={(e) => zoom(e.deltaY > 0 ? 1.25 : 0.8, timeAt(e))}
-            onMouseDown={(e) =>
-              (drag.current = { x: e.clientX, offset, moved: false })
-            }
-            onMouseMove={(e) => {
-              const d = drag.current;
-              if (!d) return;
-              const dx = e.clientX - d.x;
-              if (Math.abs(dx) > 2) d.moved = true;
-              if (d.moved)
-                setOffset(
-                  d.offset -
-                    (dx / e.currentTarget.getBoundingClientRect().width) *
-                      view.span,
-                );
-            }}
-            onMouseUp={(e) => {
-              const d = drag.current;
-              drag.current = null;
-              if (!d?.moved) seek(timeAt(e));
-              else if (playing) play(playhead);
-            }}
-            onMouseLeave={() => (drag.current = null)}
+            {...pointerHandlers("target")}
             onKeyDown={(e) => {
               if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
                 e.preventDefault();
@@ -509,8 +591,24 @@ export function AlignDialog({
           <span />
           <div className="align-ruler">
             <span>{seconds(view.start)}</span>
-            <span>播放位置 {seconds(playhead)}</span>
+            <span>
+              虚线：起点（灰为参考 0 秒，蓝为目标开头）· 左键拖动：对齐 / 平移 ·
+              右键拖动：播放位置
+            </span>
             <span>{seconds(view.start + view.span)}</span>
+          </div>
+          <span className="align-label">进度</span>
+          <div className="align-seek">
+            <input
+              type="range"
+              aria-label="播放位置"
+              min={Math.min(0, -offset)}
+              max={length}
+              step="any"
+              value={Math.min(Math.max(playhead, Math.min(0, -offset)), length)}
+              onChange={(e) => seek(Number(e.target.value))}
+            />
+            <span>{seconds(playhead)}</span>
           </div>
         </div>
         <div className="align-controls">
@@ -565,9 +663,7 @@ export function AlignDialog({
             >
               <Plus size={15} />
             </Button>
-            <Button
-              onClick={() => setView({ start: 0, span: Math.max(1, length) })}
-            >
+            <Button onClick={() => fit()}>
               <AudioLines size={15} />
               全部
             </Button>
