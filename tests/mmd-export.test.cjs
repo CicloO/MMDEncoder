@@ -21,24 +21,63 @@ test("frame rates from AvgTimePerFrame and presets the live export can use", () 
   assert.equal(mx.frameRate(166666).text, "60");
   assert.equal(mx.frameRate(333333).text, "30");
   assert.equal(mx.frameRate(333667).text, "30000/1001");
-  assert.equal(mx.unsupported(preset("builtin-4k").settings), "");
-  assert.match(
-    mx.unsupported({
-      ...preset("builtin-4k").settings,
-      encoder: "nvencc:hevc",
-    }),
-    /NVEncC/,
-  );
-  assert.equal(mx.unsupported(preset("builtin-alpha-mask").settings), "");
-  // A mask-only preset never runs the colour encoder, NVEncC or not.
-  assert.equal(
-    mx.unsupported({
-      ...preset("builtin-4k").settings,
-      encoder: "nvencc:hevc",
-      alphaMode: "mask",
-    }),
-    "",
-  );
+  // Every preset works in the live export, NVEncC ones too (mmd-pipe.cjs).
+  for (const s of [
+    preset("builtin-4k").settings,
+    preset("builtin-alpha-mask").settings,
+    { ...preset("builtin-4k").settings, encoder: "nvencc:hevc" },
+  ])
+    assert.equal(mx.unsupported(s), "");
+});
+
+test("NVEncC presets: MMD's frames go through FFmpeg to NVEncC, then into the container", () => {
+  const { root, mx } = fresh();
+  const engines = {
+    ffmpeg: "C:/t/ffmpeg.exe",
+    ffprobe: "C:/t/ffprobe.exe",
+    nvencc: "C:/t/NVEncC.exe",
+  };
+  const runtime = {
+    avi: path.join(root, "render.avi"),
+    width: 640,
+    height: 360,
+    bits: 32,
+    bottomUp: true,
+    avgTimePerFrame: 333333,
+  };
+  for (const maskMode of ["off", "with"]) {
+    mx.writeConfig({
+      settings: { ...preset("builtin-4k").settings, encoder: "nvencc:hevc" },
+      presetName: "NVEncC",
+      maskMode,
+      engines,
+      appExe: "C:/app/MMDEncoder.exe",
+      helper: "C:/app/mmd-export.cjs",
+    });
+    const p = mx.plan(runtime);
+    assert.equal(p.exe, "C:/app/MMDEncoder.exe");
+    assert.ok(p.args[0].endsWith("mmd-pipe.cjs"));
+    assert.equal(p.env.ELECTRON_RUN_AS_NODE, "1");
+    const job = JSON.parse(p.env.MMD_PIPE_JOB);
+    const [encode, mux] = job.steps;
+    assert.equal(encode.exe, engines.nvencc);
+    const from = encode.pipeFrom.args;
+    assert.equal(encode.pipeFrom.exe, engines.ffmpeg);
+    assert.ok(from.includes("rawvideo") && from.includes("bgra"));
+    assert.equal(from.indexOf("pipe:0"), from.lastIndexOf("pipe:0"));
+    if (maskMode === "with") {
+      assert.match(
+        from[from.indexOf("-filter_complex") + 1],
+        /^\[0:v\]vflip,split/,
+      );
+      assert.ok(p.maskOutput);
+    } else assert.match(from[from.indexOf("-vf") + 1], /^vflip,/);
+    // The container step reads only NVEncC's file: no pipe, no progress.
+    assert.equal(mux.exe, engines.ffmpeg);
+    assert.ok(!mux.args.includes("pipe:0") && !mux.args.includes("-progress"));
+    assert.equal(mux.args.at(-1), p.temp);
+    assert.equal(job.temporary.length, 1);
+  }
 });
 
 test(

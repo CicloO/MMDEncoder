@@ -1128,8 +1128,16 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
     si.hStdOutput = nul;
     si.hStdError = err;
     PROCESS_INFORMATION pi{};
-    BOOL ok = CreateProcessW(ffmpeg.c_str(), cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr,
-                             nullptr, &si, &pi);
+    // Variables the plan asks for (NVEncC presets run MMDEncoder.exe in Node
+    // mode to drive FFmpeg and NVEncC); otherwise MMD's own environment.
+    std::vector<std::pair<std::wstring, std::wstring>> extra;
+    for (auto& kv : plan[L"env"].o)
+      if (kv.second.type == Json::String) extra.push_back({kv.first, kv.second.s});
+    std::vector<wchar_t> env;
+    if (!extra.empty()) env = environmentWith(extra);
+    BOOL ok = CreateProcessW(ffmpeg.c_str(), cmd.data(), nullptr, nullptr, TRUE,
+                             CREATE_NO_WINDOW | (env.empty() ? 0 : CREATE_UNICODE_ENVIRONMENT),
+                             env.empty() ? nullptr : env.data(), nullptr, &si, &pi);
     CloseHandle(readPipe);
     if (err != INVALID_HANDLE_VALUE) CloseHandle(err);
     if (nul != INVALID_HANDLE_VALUE) CloseHandle(nul);

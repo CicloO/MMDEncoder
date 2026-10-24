@@ -414,6 +414,8 @@ function createService({
       const child = spawn(plan.exe, plan.args, {
         windowsHide: true,
         stdio: ["pipe", "ignore", "pipe"],
+        // NVEncC presets run MMDEncoder.exe in Node mode (mmd-pipe.cjs).
+        ...(plan.env ? { env: { ...process.env, ...plan.env } } : {}),
       });
       children.add(child);
       let stderr = "";

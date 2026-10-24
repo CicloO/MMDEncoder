@@ -10,7 +10,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, "../..");
 const core = require(path.join(root, "backend/core.cjs"));
-const { ff, fp } = require(path.join(root, "tests/engines.cjs"));
+const { ff, fp, nv } = require(path.join(root, "tests/engines.cjs"));
 const appExe = path.resolve(
   process.argv[2] || path.join(root, "release/MMDEncoder/MMDEncoder.exe"),
 );
@@ -161,7 +161,9 @@ try {
   if (fs.existsSync(mask)) {
     const m = probe(mask).streams;
     check(
-      m.length === 1 && m[0].profile === "High 4:4:4 Predictive" && Number(m[0].nb_frames) === 120,
+      m.length === 1 &&
+        m[0].profile === "High 4:4:4 Predictive" &&
+        Number(m[0].nb_frames) === 120,
       "lossless alpha mask with 120 frames next to the MP4",
     );
   } else check(false, "alpha mask written");
@@ -201,6 +203,81 @@ try {
     (entry.notes || []).some((n) => n.includes("采样点 441000–529200")),
     "WAV cut from frame 300 for 120 frames at 60 fps",
   );
+
+  // An NVEncC preset: FFmpeg → NVEncC → container, run by mmd-pipe.cjs.
+  if (fs.existsSync(nv)) {
+    require(path.join(root, "backend/mmd-export.cjs")).writeConfig({
+      settings: {
+        ...settings,
+        encoder: "nvencc:hevc",
+        preset: "P4",
+        quality: 28,
+        rateControl: "quality",
+      },
+      presetName: "NVEncC HEVC",
+      presetId: "nvencc-test",
+      maskMode: "with",
+      engines: { ffmpeg: ff, ffprobe: fp, nvencc: nv },
+      appExe,
+      helper: path.join(root, "backend/mmd-export.cjs"),
+    });
+    // A running MMDEncoder rewrites this file with its own (packaged) helper.
+    check(
+      JSON.parse(fs.readFileSync(configPath, "utf8")).helper ===
+        path.join(root, "backend/mmd-export.cjs"),
+      "NVEncC: plugin config points at this checkout (MMDEncoder closed)",
+    );
+    const nvAvi = path.join(dir, "NVEncC test.avi");
+    const nvOut = execFileSync(
+      path.join(build, "mmd-sim.exe"),
+      [
+        path.join(build, "MMDEncoderPlugin.dll"),
+        template,
+        nvAvi,
+        pmm,
+        "320",
+        "240",
+        "60",
+        "300",
+        "359",
+      ],
+      { encoding: "utf8" },
+    );
+    check(/frames=120/.test(nvOut), "NVEncC: MMD side sent 120 frames");
+    const nvMp4 = path.join(dir, "NVEncC test_0300-0359f.mp4");
+    for (
+      let i = 0;
+      i < 120 && (fs.existsSync(nvAvi) || !fs.existsSync(nvMp4));
+      i++
+    )
+      await new Promise((r) => setTimeout(r, 500));
+    if (fs.existsSync(nvMp4)) {
+      const info = probe(nvMp4);
+      const v = info.streams.find((s) => s.codec_type === "video");
+      const a = info.streams.find((s) => s.codec_type === "audio");
+      check(
+        v?.codec_name === "hevc" && Number(v.nb_frames) === 120,
+        "NVEncC: HEVC with all 120 frames",
+      );
+      check(a?.codec_name === "aac", "NVEncC: sound added by finish");
+      check(
+        pixel(nvMp4, 0)[0] < 60 && pixel(nvMp4, 238)[0] > 200,
+        "NVEncC: picture upright",
+      );
+      const nvMask = path.join(dir, "NVEncC test_0300-0359f_alpha.mp4");
+      check(
+        fs.existsSync(nvMask) &&
+          Number(probe(nvMask).streams[0].nb_frames) === 120,
+        "NVEncC: alpha mask with 120 frames",
+      );
+    } else check(false, "NVEncC: MP4 created");
+    check(
+      !fs
+        .readdirSync(dir)
+        .some((n) => n.includes(".mmdencoder-") || n.includes(".nvenc.")),
+      "NVEncC: temporary files removed",
+    );
+  } else console.log("SKIP NVEncC export (NVEncC not installed)");
 } finally {
   if (savedConfig) fs.writeFileSync(configPath, savedConfig);
   else fs.rmSync(configPath, { force: true });
