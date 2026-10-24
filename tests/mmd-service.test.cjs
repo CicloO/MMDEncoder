@@ -105,11 +105,6 @@ test(
       await svc.invoke("mmdExportSet", { maskMode: "with" });
       assert.equal(mx.readSelection().maskMode, "with");
       assert.equal(mx.readSelection().alphaMask, undefined);
-      assert.equal(
-        JSON.parse(fs.readFileSync(mx.selectionPath(), "utf8")).alphaMask,
-        true,
-        "1.4.1 plugins still read the old switch",
-      );
       assert.equal(mx.readConfig().maskMode, "with");
       assert.ok(mx.plan(runtime).maskOutput.endsWith("x_alpha.mp4"));
       await svc.invoke("mmdTest");

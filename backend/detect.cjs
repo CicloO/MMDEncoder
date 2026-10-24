@@ -145,7 +145,13 @@ function createDetector({ run, dataDir, info, engines, logs }) {
   function readDetectionCache(key) {
     try {
       const c = JSON.parse(fs.readFileSync(cacheFile(), "utf8"));
-      if (c.key !== key || !Array.isArray(c.engines) || !c.engines.length)
+      if (
+        c.key !== key ||
+        !Array.isArray(c.engines) ||
+        !c.engines.length ||
+        typeof c.libplacebo !== "boolean" ||
+        typeof c.nvencLossless !== "boolean"
+      )
         return null;
       const ids = new Set(core.ENGINES.map((e) => e.id));
       return c.engines.every((e) => ids.has(e.id)) ? c : null;

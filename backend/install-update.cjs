@@ -11,11 +11,7 @@ const { spawn } = require("node:child_process");
 
 const job = JSON.parse(process.env.MMD_UPDATE_JOB || "{}");
 const { appDir, newDir, backup, pid, log, keep = [], relaunch = true } = job;
-// Relaunch whichever name the new version ships (it was "MMD Encoder.exe" before).
-const exeOf = () =>
-  ["MMDEncoder.exe", "MMD Encoder.exe"]
-    .map((n) => path.join(appDir || "", n))
-    .find((p) => fs.existsSync(p)) || path.join(appDir || "", "MMDEncoder.exe");
+const exeOf = () => path.join(appDir || "", "MMDEncoder.exe");
 
 function write(message) {
   try {

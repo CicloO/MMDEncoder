@@ -14,10 +14,9 @@ const HELPER = path.join("resources", "app", "backend", "install-update.cjs");
 const KEEP = ["data", ".update"];
 
 // True when this looks like an extracted portable build we may rewrite.
-// (Builds before the rename shipped "MMD Encoder.exe".)
 function isPortableDir(dir) {
   return (
-    [EXE, "MMD Encoder.exe"].some((n) => fs.existsSync(path.join(dir, n))) &&
+    fs.existsSync(path.join(dir, EXE)) &&
     fs.existsSync(path.join(dir, "resources", "app", "package.json"))
   );
 }

@@ -1496,19 +1496,17 @@ export default function App() {
                           }
                         />
                       )}
-                      {s.alphaMask && (
+                      {s.alphaMask && s.alphaMode === "discard" && (
                         <>
                           <div className="alpha-diagram">
-                            <div className="alpha-swatch color">
-                              {s.alphaMode === "preserve" ? "RGBA" : "RGB"}
-                            </div>
+                            <div className="alpha-swatch color">RGB</div>
                             <Plus size={16} />
                             <div className="alpha-swatch mask">A</div>
                           </div>
                           <p className="hint">
-                            {s.alphaMode === "discard"
-                              ? "彩色视频不含 Alpha，可用任意编码器和封装；另外导出同尺寸、同帧率的黑白遮罩（_alpha 后缀，无损）。"
-                              : "这个旧预设除了上面的处理，还会额外导出黑白遮罩（_alpha 后缀）。"}
+                            {
+                              "彩色视频不含 Alpha，可用任意编码器和封装；另外导出同尺寸、同帧率的黑白遮罩（_alpha 后缀，无损）。"
+                            }
                             白色表示不透明，黑色表示透明，灰色保留半透明信息。
                           </p>
                         </>

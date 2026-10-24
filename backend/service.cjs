@@ -882,23 +882,15 @@ function createService({
       const key = await detectionKey();
       const cached = !force && key && readDetectionCache(key);
       // ArtCNN upscaling runs in FFmpeg through libplacebo on Vulkan.
-      state.engineInfo.libplacebo =
-        typeof cached?.libplacebo === "boolean"
-          ? cached.libplacebo
-          : await hasLibplacebo(force);
+      state.engineInfo.libplacebo = cached
+        ? cached.libplacebo
+        : await hasLibplacebo(force);
       // The Alpha mask goes to NVENC when it encodes lossless.
-      state.engineInfo.nvencLossless =
-        typeof cached?.nvencLossless === "boolean"
-          ? cached.nvencLossless
-          : await hasNvencLossless(force);
+      state.engineInfo.nvencLossless = cached
+        ? cached.nvencLossless
+        : await hasNvencLossless(force);
       if (cached) {
         state.engines = cached.engines;
-        // A cache from before the Vulkan / NVENC lossless checks: add them.
-        if (
-          typeof cached.libplacebo !== "boolean" ||
-          typeof cached.nvencLossless !== "boolean"
-        )
-          writeDetectionCache(key, cached.log || "");
         state.detectionLog +=
           (cached.log || "") +
           "\n使用 " +

@@ -58,12 +58,8 @@ function readSelection() {
       followMmd: s.followMmd !== false,
       // Seconds of audio fade-in and fade-out (0 = off).
       audioFade: FADES.includes(s.audioFade) ? s.audioFade : 0,
-      // "" = saved before 1.4.2: the preset decides, plus the old switch.
-      maskMode: MASK_MODES.includes(s.maskMode)
-        ? s.maskMode
-        : s.alphaMask === true
-          ? "with"
-          : "",
+      // "" = the preset decides.
+      maskMode: MASK_MODES.includes(s.maskMode) ? s.maskMode : "",
       // Add the MMD frame range to the file name (_0400-0600f).
       rangeSuffix: s.rangeSuffix !== false,
       savedAt: typeof s.savedAt === "string" ? s.savedAt : "",
@@ -87,8 +83,6 @@ function writeSelection({
     audioFade,
     rangeSuffix: rangeSuffix !== false,
     maskMode: MASK_MODES.includes(maskMode) ? maskMode : "off",
-    // For MMDEncoder 1.4.1 and its plugin, which only know this switch.
-    alphaMask: maskMode === "with",
     savedAt: savedAt || new Date().toISOString(),
   };
   writeAtomic(selectionPath(), selection);
@@ -96,7 +90,7 @@ function writeSelection({
 }
 
 // mmd-export.json: tools, the helper to run, and every preset the settings
-// window may offer. Legacy single-preset form ({settings, presetName, …}) also
+// window may offer. The single-preset form ({settings, presetName, …}) also
 // writes the selection, for scripts and tests.
 function writeConfig({
   presets,
