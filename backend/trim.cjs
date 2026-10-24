@@ -405,13 +405,37 @@ function snap(idx, frame, { end = false } = {}) {
   const n = idx.frames.length;
   frame = Math.max(0, Math.min(n, Math.round(frame)));
   if (end && frame >= n) return n;
-  const points = idx.frames.filter((f) => f.safe).map((f) => f.frame);
-  if (end) points.push(n);
-  if (!points.length) throw Error("这个文件没有可以无损切开的位置");
-  let best = points[0];
-  for (const p of points)
-    if (Math.abs(p - frame) < Math.abs(best - frame)) best = p;
-  return best;
+  const points = safePoints(idx);
+  if (!points.length && !end) throw Error("这个文件没有可以无损切开的位置");
+  // The first point at or after the frame, and the one before it.
+  const i = firstAtLeast(points, frame);
+  const after = i < points.length ? points[i] : end ? n : undefined;
+  const before = i > 0 ? points[i - 1] : undefined;
+  if (before === undefined) return after;
+  if (after === undefined) return before;
+  return frame - before <= after - frame ? before : after;
+}
+// The safe cut points of an index, in display order: worked out once per
+// index (a 100,000-frame file took 0.4 ms a lookup filtering every time).
+const safeCache = new WeakMap();
+function safePoints(idx) {
+  let points = safeCache.get(idx);
+  if (!points) {
+    points = idx.frames.filter((f) => f.safe).map((f) => f.frame);
+    safeCache.set(idx, points);
+  }
+  return points;
+}
+// Index of the first value >= x in an ascending list (its length if none).
+function firstAtLeast(list, x) {
+  let lo = 0,
+    hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid] < x) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 // Packets of the display range [from, to): checked to be exactly a run of
@@ -531,9 +555,10 @@ function pieces(s, smart) {
   const n = idx.frames.length;
   if (!smart || idx.frames.every((f) => f.safe))
     return [{ copy: true, from: s.from, to: s.to }];
-  const safe = idx.frames.filter((f) => f.safe).map((f) => f.frame);
-  const a = safe.find((x) => x >= s.from) ?? n;
-  const b = s.to === n ? n : ([...safe].reverse().find((x) => x <= s.to) ?? 0);
+  const safe = safePoints(idx);
+  const a = safe[firstAtLeast(safe, s.from)] ?? n;
+  // The last safe point at or before s.to.
+  const b = s.to === n ? n : (safe[firstAtLeast(safe, s.to + 1) - 1] ?? 0);
   if (a >= b) return [{ copy: false, from: s.from, to: s.to }];
   return [
     ...(s.from < a ? [{ copy: false, from: s.from, to: a }] : []),
