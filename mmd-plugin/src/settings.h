@@ -6,7 +6,7 @@
 // saved to mmd-selection.json, which MMDEncoder also reads and writes; MMDEncoder adopts a
 // choice saved here as soon as it lands.
 
-enum { IDC_PRESET = 101, IDC_FOLLOW = 102, IDC_FADE = 103, IDC_MASK = 104, IDC_OPEN_APP = 105, IDC_SUFFIX = 106 };
+enum { IDC_PRESET = 101, IDC_FOLLOW = 102, IDC_FADE = 103, IDC_MASK = 104, IDC_OPEN_APP = 105, IDC_SUFFIX = 106, IDC_TEST = 107 };
 static const double kFades[] = {0, 0.5, 1, 2};
 static const wchar_t* kFadeNames[] = {L"关闭", L"0.5 秒", L"1 秒", L"2 秒"};
 // Alpha mask: the choice overrides the preset's own alpha setting.
@@ -16,26 +16,32 @@ static const wchar_t* kMaskNames[] = {L"不导出", L"同时导出遮罩", L"仅
 struct SettingsContext {
   struct Preset {
     std::wstring id, name;
-    int mask;  // what the preset does by itself: index into kMaskModes
   };
   std::vector<Preset> presets;
   std::wstring presetId;
   bool followMmd = true;
   bool rangeSuffix = true;  // name the file with the MMD frame range (_0400-0600f)
-  int maskMode = -1;  // index into kMaskModes; -1 = saved by 1.4.1, the preset decides
+  int maskMode = 0;
   double audioFade = 0;
   std::wstring appExe;  // MMDEncoder.exe, from mmd-export.json
+  std::wstring helper;
+  bool testing = false;
 };
 
-// Picking a preset that writes a mask by itself sets the mask choice to match.
-static void presetPicked(HWND dlg, SettingsContext* ctx, bool initial) {
+static bool readSettings(HWND dlg, SettingsContext* ctx) {
   int i = (int)SendDlgItemMessageW(dlg, IDC_PRESET, CB_GETCURSEL, 0, 0);
-  int own = i >= 0 && i < (int)ctx->presets.size() ? ctx->presets[i].mask : 0;
-  int mode = (int)SendDlgItemMessageW(dlg, IDC_MASK, CB_GETCURSEL, 0, 0);
-  // MMD export options outrank the preset: only a choice saved before the
-  // mask option existed is derived from the preset, once, on opening.
-  if (initial && ctx->maskMode < 0) mode = own;
-  SendDlgItemMessageW(dlg, IDC_MASK, CB_SETCURSEL, mode < 0 ? 0 : mode, 0);
+  if (i < 0 || i >= (int)ctx->presets.size()) {
+    MessageBoxW(dlg, L"请选择导出预设。", L"MMDEncoder", MB_OK | MB_ICONWARNING);
+    return false;
+  }
+  ctx->presetId = ctx->presets[i].id;
+  ctx->followMmd = IsDlgButtonChecked(dlg, IDC_FOLLOW) == BST_CHECKED;
+  ctx->rangeSuffix = IsDlgButtonChecked(dlg, IDC_SUFFIX) == BST_CHECKED;
+  int f = (int)SendDlgItemMessageW(dlg, IDC_FADE, CB_GETCURSEL, 0, 0);
+  ctx->audioFade = kFades[f < 0 ? 0 : f];
+  int m = (int)SendDlgItemMessageW(dlg, IDC_MASK, CB_GETCURSEL, 0, 0);
+  ctx->maskMode = m < 0 ? 0 : m;
+  return true;
 }
 
 // In-memory dialog template (no .rc file needed).
@@ -105,8 +111,37 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
     SendMessageW(fade, CB_SETCURSEL, fadeIndex, 0);
     HWND mask = GetDlgItem(dlg, IDC_MASK);
     for (int i = 0; i < 3; i++) SendMessageW(mask, CB_ADDSTRING, 0, (LPARAM)kMaskNames[i]);
-    SendMessageW(mask, CB_SETCURSEL, ctx->maskMode < 0 ? 0 : ctx->maskMode, 0);
-    presetPicked(dlg, ctx, true);
+    SendMessageW(mask, CB_SETCURSEL, ctx->maskMode, 0);
+    EnableWindow(GetDlgItem(dlg, IDC_TEST), selected >= 0);
+    return TRUE;
+  }
+  if (ctx && ctx->testing && (msg == WM_CLOSE || msg == WM_COMMAND)) return TRUE;
+  if (msg == WM_COMMAND && LOWORD(wp) == IDC_TEST && HIWORD(wp) == BN_CLICKED) {
+    if (!readSettings(dlg, ctx)) return TRUE;
+    char fade[16];
+    sprintf_s(fade, "%g", ctx->audioFade);
+    // Test exactly the choices shown here without saving them; Cancel keeps
+    // the last saved selection, even after a successful or failed test.
+    std::string job = "{\"selection\":{\"presetId\":" + jsonString(ctx->presetId) +
+                      ",\"followMmd\":" + (ctx->followMmd ? "true" : "false") +
+                      ",\"maskMode\":\"" + kMaskModes[ctx->maskMode] +
+                      "\",\"audioFade\":" + fade + "}}";
+    ctx->testing = true;
+    const int controls[] = {IDC_PRESET, IDC_FOLLOW, IDC_SUFFIX, IDC_FADE, IDC_MASK, IDC_OPEN_APP, IDC_TEST, IDOK, IDCANCEL};
+    for (int id : controls) EnableWindow(GetDlgItem(dlg, id), FALSE);
+    SetDlgItemTextW(dlg, IDC_TEST, L"测试中…");
+    std::string reply;
+    Json result;
+    bool answered = runHelper(ctx->appExe, ctx->helper, L"test", job, reply, 75000, dlg) &&
+                    JsonReader(reply).parse(result);
+    ctx->testing = false;
+    for (int id : controls) EnableWindow(GetDlgItem(dlg, id), TRUE);
+    SetDlgItemTextW(dlg, IDC_TEST, L"编码测试");
+    const bool ok = answered && result[L"ok"].b;
+    std::wstring message = ok ? result[L"message"].s
+                            : L"编码测试失败：\n" + (answered ? result[L"error"].s : L"MMDEncoder 没有返回测试结果，请检查程序和编码引擎是否可用。");
+    MessageBoxW(dlg, message.c_str(), L"MMDEncoder", MB_OK | (ok ? MB_ICONINFORMATION : MB_ICONWARNING));
+    SetFocus(GetDlgItem(dlg, IDC_TEST));
     return TRUE;
   }
   // Open MMDEncoder (an open one comes to the front) to manage presets and exports.
@@ -122,23 +157,12 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
     return TRUE;
   }
   if (msg == WM_COMMAND && LOWORD(wp) == IDC_PRESET && HIWORD(wp) == CBN_SELCHANGE) {
-    presetPicked(dlg, ctx, false);
+    EnableWindow(GetDlgItem(dlg, IDC_TEST), SendDlgItemMessageW(dlg, IDC_PRESET, CB_GETCURSEL, 0, 0) >= 0);
     return TRUE;
   }
   if (msg == WM_COMMAND && (LOWORD(wp) == IDOK || LOWORD(wp) == IDCANCEL)) {
     if (LOWORD(wp) == IDOK) {
-      int i = (int)SendDlgItemMessageW(dlg, IDC_PRESET, CB_GETCURSEL, 0, 0);
-      if (i < 0 || i >= (int)ctx->presets.size()) {
-        MessageBoxW(dlg, L"请选择导出预设。", L"MMDEncoder", MB_OK | MB_ICONWARNING);
-        return TRUE;
-      }
-      ctx->presetId = ctx->presets[i].id;
-      ctx->followMmd = IsDlgButtonChecked(dlg, IDC_FOLLOW) == BST_CHECKED;
-      ctx->rangeSuffix = IsDlgButtonChecked(dlg, IDC_SUFFIX) == BST_CHECKED;
-      int f = (int)SendDlgItemMessageW(dlg, IDC_FADE, CB_GETCURSEL, 0, 0);
-      ctx->audioFade = kFades[f < 0 ? 0 : f];
-      int m = (int)SendDlgItemMessageW(dlg, IDC_MASK, CB_GETCURSEL, 0, 0);
-      ctx->maskMode = m < 0 ? 0 : m;
+      if (!readSettings(dlg, ctx)) return TRUE;
     }
     EndDialog(dlg, LOWORD(wp) == IDOK);
     return TRUE;
@@ -153,7 +177,7 @@ static void showSettings(HWND parent) {
   if (!readFile(dir + L"\\mmd-export.json", raw) || !JsonReader(raw).parse(config) ||
       config[L"version"].n != 2) {
     MessageBoxW(parent,
-                L"还没有导出设置。\n\n请打开 MMDEncoder（1.4.0 或更新版本），在“MMD 导出”里安装或更新 MMD "
+                L"还没有导出设置。\n\n请打开 MMDEncoder，在“MMD 导出”里安装或更新 MMD "
                 L"导出插件；之后就能在这里选择导出预设。",
                 L"MMDEncoder", MB_OK | MB_ICONINFORMATION);
     return;
@@ -161,11 +185,7 @@ static void showSettings(HWND parent) {
   SettingsContext ctx;
   for (const Json& p : config[L"presets"].a)
     if (p[L"unsupported"].s.empty()) {
-      const Json& s = p[L"settings"];
-      int mask = s[L"alphaMode"].s == L"mask"                               ? 2
-                 : s[L"alphaMask"].type == Json::Bool && s[L"alphaMask"].b ? 1
-                                                                            : 0;  // kMaskModes
-      ctx.presets.push_back({p[L"id"].s, p[L"name"].s, mask});
+      ctx.presets.push_back({p[L"id"].s, p[L"name"].s});
     }
   raw.clear();
   if (readFile(dir + L"\\mmd-selection.json", raw) && JsonReader(raw).parse(selection)) {
@@ -175,11 +195,9 @@ static void showSettings(HWND parent) {
     ctx.audioFade = selection[L"audioFade"].n;
     for (int i = 0; i < 3; i++)
       if (selection[L"maskMode"].s == utf16(kMaskModes[i])) ctx.maskMode = i;
-    // Saved by 1.4.1, which only had the "also export the mask" switch.
-    if (ctx.maskMode < 0 && selection[L"alphaMask"].type == Json::Bool && selection[L"alphaMask"].b)
-      ctx.maskMode = 1;
   }
   ctx.appExe = config[L"appExe"].s;
+  ctx.helper = config[L"helper"].s;
 
   DialogTemplate t(L"MMDEncoder 导出设置", 270, 162);
   const WORD STATIC_ = 0x0082, BUTTON_ = 0x0080, COMBO_ = 0x0085;
@@ -197,6 +215,7 @@ static void showSettings(HWND parent) {
             L"成片保存在 AVI 同目录、以 AVI 的文件名命名，自动合成音频，完成后删除占位 AVI。"
             L"这里的选项均优先于预设；与 MMDEncoder 的“MMD 导出”同步，以最后保存为准。淡入淡出仅作用于成片首尾。");
   t.control(IDC_OPEN_APP, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 10, 140, 80, 15, L"打开 MMDEncoder");
+  t.control(IDC_TEST, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 94, 140, 50, 15, L"编码测试");
   t.control(IDOK, BUTTON_, BS_DEFPUSHBUTTON | WS_TABSTOP, 148, 140, 54, 15, L"确定");
   t.control(IDCANCEL, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 206, 140, 54, 15, L"取消");
   if (DialogBoxIndirectParamW(g_module, t.get(), parent, settingsProc, (LPARAM)&ctx) != 1) return;
@@ -209,8 +228,7 @@ static void showSettings(HWND parent) {
   sprintf_s(fade, "%g", ctx.audioFade);
   std::string json = "{\n  \"presetId\": " + jsonString(ctx.presetId) + ",\n  \"followMmd\": " +
                      (ctx.followMmd ? "true" : "false") + ",\n  \"maskMode\": \"" + kMaskModes[ctx.maskMode] +
-                     "\",\n  \"alphaMask\": " + (ctx.maskMode == 1 ? "true" : "false") +
-                     ",\n  \"rangeSuffix\": " + (ctx.rangeSuffix ? "true" : "false") +
+                     "\",\n  \"rangeSuffix\": " + (ctx.rangeSuffix ? "true" : "false") +
                      ",\n  \"audioFade\": " + fade +
                      ",\n  \"savedAt\": \"" + saved + "\"\n}\n";
   std::wstring file = dir + L"\\mmd-selection.json", tmp = file + L".tmp";

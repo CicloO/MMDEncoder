@@ -10,7 +10,11 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, "../..");
 const core = require(path.join(root, "backend/core.cjs"));
+// engines.cjs isolates ordinary service tests. This DLL instead uses Windows'
+// known folder, so this one integration test must restore the actual location.
+const localAppData = process.env.LOCALAPPDATA;
 const { ff, fp, nv } = require(path.join(root, "tests/engines.cjs"));
+process.env.LOCALAPPDATA = localAppData;
 const appExe = path.resolve(
   process.argv[2] || path.join(root, "release/MMDEncoder/MMDEncoder.exe"),
 );
@@ -23,6 +27,15 @@ const pluginDir = path.join(
 const configPath = path.join(pluginDir, "mmd-export.json");
 const historyPath = path.join(pluginDir, "exports.jsonl");
 const selectionPath = path.join(pluginDir, "mmd-selection.json");
+for (const image of ["MMDEncoder.exe", "MikuMikuDance.exe"]) {
+  const running = execFileSync(
+    "tasklist",
+    ["/FI", `IMAGENAME eq ${image}`, "/NH"],
+    { encoding: "utf8", windowsHide: true },
+  );
+  if (running.includes(image))
+    throw Error(`Close ${image} before the plugin integration test`);
+}
 
 let failures = 0;
 const check = (ok, what) => {
@@ -60,6 +73,9 @@ const savedSelection = fs.existsSync(selectionPath)
   : null;
 const savedConfig = fs.existsSync(configPath)
   ? fs.readFileSync(configPath)
+  : null;
+const savedHistory = fs.existsSync(historyPath)
+  ? fs.readFileSync(historyPath)
   : null;
 try {
   // Project music under a Chinese folder; the .pmm stores the path in GBK.
@@ -278,11 +294,133 @@ try {
       "NVEncC: temporary files removed",
     );
   } else console.log("SKIP NVEncC export (NVEncC not installed)");
+
+  const mx = require(path.join(root, "backend/mmd-export.cjs"));
+  const configure = (patch = {}) =>
+    mx.writeConfig({
+      settings,
+      presetName: "Encoding test",
+      presetId: "test",
+      maskMode: "off",
+      engines: { ffmpeg: ff, ffprobe: fp, nvencc: nv },
+      appExe,
+      helper: path.join(root, "backend/mmd-export.cjs"),
+      ...patch,
+    });
+  configure();
+  // An obsolete field must no longer select a mask in the new DLL.
+  const oldSelection = { ...mx.readSelection(), alphaMask: true };
+  delete oldSelection.maskMode;
+  fs.writeFileSync(selectionPath, JSON.stringify(oldSelection));
+  const beforeTest = fs.readFileSync(selectionPath, "utf8");
+  const dialog = (mask, save = false) =>
+    execFileSync(
+      path.join(build, "mmd-sim.exe"),
+      [
+        "--dialog-test",
+        path.join(build, "MMDEncoderPlugin.dll"),
+        String(mask),
+        save ? "save" : "cancel",
+      ],
+      { encoding: "utf8", timeout: 100000 },
+    );
+  const cancelled = dialog(1);
+  check(
+    /initialMask=0/.test(cancelled),
+    "settings: legacy alphaMask no longer read",
+  );
+  check(
+    /测试编码通过.*含 Alpha 遮罩/.test(cancelled),
+    "settings: encoding test uses unsaved mask choice",
+  );
+  check(
+    fs.readFileSync(selectionPath, "utf8") === beforeTest,
+    "settings: Cancel after testing leaves selection unchanged",
+  );
+  const saved = dialog(2, true);
+  const selection = JSON.parse(fs.readFileSync(selectionPath, "utf8"));
+  check(
+    /测试编码通过/.test(saved) && selection.maskMode === "only",
+    "settings: test then OK saves mask-only choice",
+  );
+  check(
+    !Object.hasOwn(selection, "alphaMask"),
+    "settings: obsolete alphaMask no longer written",
+  );
+  const broken = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  broken.engines.ffmpeg = path.join(dir, "missing-ffmpeg.exe");
+  fs.writeFileSync(configPath, JSON.stringify(broken));
+  check(
+    /编码测试失败/.test(dialog(0)),
+    "settings: encoding failure is shown and dialog remains usable",
+  );
+
+  if (fs.existsSync(nv)) {
+    for (const [name, enhancement, expected] of [
+      [
+        "VSR",
+        { vsr: true, vsrScale: 2, vsrQuality: 1 },
+        { width: 1280, height: 720, frames: 30, fps: 30 },
+      ],
+      [
+        "VFG",
+        { vfg: true, vfgMultiplier: 2, vfgMode: "medium" },
+        // Interpolation supplies the points between 30 originals: 29 * 2 + 1.
+        { width: 640, height: 360, frames: 59, fps: 60 },
+      ],
+    ]) {
+      configure({
+        settings: {
+          ...settings,
+          encoder: "nvencc:hevc",
+          preset: "P4",
+          resizeMode: "source",
+          ...enhancement,
+        },
+        followMmd: false,
+      });
+      const result = JSON.parse(
+        execFileSync(appExe, [path.join(root, "backend/mmd-export.cjs")], {
+          env: {
+            ...process.env,
+            ELECTRON_RUN_AS_NODE: "1",
+            MMD_EXPORT_MODE: "test",
+            MMD_EXPORT_JOB: "{}",
+          },
+          encoding: "utf8",
+          timeout: 90000,
+          windowsHide: true,
+        }),
+      );
+      const [num, den] = (result.video?.avg_frame_rate || "0/1")
+        .split("/")
+        .map(Number);
+      check(
+        result.ok &&
+          result.video.width === expected.width &&
+          result.video.height === expected.height &&
+          Number(result.video.nb_read_frames) === expected.frames &&
+          // The Matroska intermediate uses millisecond timestamps; use the
+          // same 0.1 fps tolerance as enhancements.probe on this short clip.
+          Math.abs(num / den - expected.fps) < 0.1,
+        `shared test: ${name} actual dimensions, frames and FPS (${JSON.stringify(result)})`,
+      );
+    }
+  }
 } finally {
   if (savedConfig) fs.writeFileSync(configPath, savedConfig);
   else fs.rmSync(configPath, { force: true });
   if (savedSelection) fs.writeFileSync(selectionPath, savedSelection);
   else fs.rmSync(selectionPath, { force: true });
+  if (savedHistory) fs.writeFileSync(historyPath, savedHistory);
+  else fs.rmSync(historyPath, { force: true });
+  const pending = path.join(pluginDir, "pending");
+  for (const name of fs.existsSync(pending) ? fs.readdirSync(pending) : []) {
+    if (!name.endsWith(".json")) continue;
+    const file = path.join(pending, name);
+    const entry = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (entry.temp && path.dirname(entry.temp) === dir) fs.rmSync(file);
+  }
   fs.rmSync(dir, { recursive: true, force: true });
 }
 console.log(failures ? `E2E FAILED (${failures})` : "E2E OK");

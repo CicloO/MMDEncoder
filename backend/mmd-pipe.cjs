@@ -34,7 +34,15 @@ async function run(step) {
   });
   const encoder = spawn(step.exe, step.args, {
     windowsHide: true,
-    stdio: [source.stdout, "ignore", "inherit"],
+    stdio: ["pipe", "ignore", "inherit"],
+  });
+  // Drain the parent's readable stream as well as feeding the encoder. Passing
+  // source.stdout as a child descriptor leaves its 'close' event pending on
+  // Windows, and Node can exit with an unresolved promise before the remux.
+  source.stdout.pipe(encoder.stdin);
+  encoder.stdin.on("error", () => source.kill());
+  encoder.once("close", () => {
+    if (source.exitCode === null) source.kill();
   });
   const [a, b] = await Promise.all([exited(source), exited(encoder)]);
   return a || b;

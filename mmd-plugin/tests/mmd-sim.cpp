@@ -18,6 +18,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <thread>
 
 #pragma comment(lib, "msdmo.lib")
 #pragma comment(lib, "dmoguids.lib")
@@ -82,8 +83,9 @@ static HWND makeWindow(const wchar_t* cls, const std::wstring& title, bool visib
 }
 
 int wmain(int argc, wchar_t** argv) {
+  setvbuf(stdout, nullptr, _IONBF, 0);
   // --dialog <plugin.dll>: open the codec settings window, as MMD's 詳細設定 does.
-  if (argc == 3 && wcscmp(argv[1], L"--dialog") == 0) {
+  if (argc >= 3 && (wcscmp(argv[1], L"--dialog") == 0 || wcscmp(argv[1], L"--dialog-test") == 0)) {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     HMODULE dll = LoadLibraryW(argv[2]);
     using GetClassObject = HRESULT(STDAPICALLTYPE*)(REFCLSID, REFIID, void**);
@@ -93,7 +95,57 @@ int wmain(int argc, wchar_t** argv) {
     if (!get || FAILED(get(CLSID_MMDEncoderPlugin, IID_IClassFactory, (void**)&factory)) ||
         FAILED(factory->CreateInstance(nullptr, IID_IAMVfwCompressDialogs, (void**)&dlg)))
       return std::printf("cannot create plugin\n"), 1;
+    std::thread driver;
+    bool tested = false;
+    if (wcscmp(argv[1], L"--dialog-test") == 0 && argc == 5) {
+      const DWORD threadId = GetCurrentThreadId();
+      const int mask = _wtoi(argv[3]);
+      const bool save = wcscmp(argv[4], L"save") == 0;
+      driver = std::thread([&tested, threadId, mask, save] {
+        // Inspect only windows belonging to this simulator's dialog thread.
+        auto find = [threadId](bool settings) {
+          struct Search { bool settings; HWND found; } query{settings, nullptr};
+          EnumThreadWindows(threadId, [](HWND window, LPARAM data) -> BOOL {
+            auto* q = reinterpret_cast<Search*>(data);
+            wchar_t title[128]; GetWindowTextW(window, title, 128);
+            const bool matches = q->settings ? GetDlgItem(window, 107) != nullptr
+                                             : wcscmp(title, L"MMDEncoder") == 0;
+            if (matches) { q->found = window; return FALSE; }
+            return TRUE;
+          }, (LPARAM)&query);
+          return query.found;
+        };
+        HWND settings = nullptr;
+        for (int i = 0; i < 500 && !settings; i++) { settings = find(true); Sleep(10); }
+        if (!settings) { std::printf("settings window not found\n"); return; }
+        std::printf("settings window found\n");
+        std::printf("initialMask=%lld\n", (long long)SendDlgItemMessageW(settings, 104, CB_GETCURSEL, 0, 0));
+        SendDlgItemMessageW(settings, 104, CB_SETCURSEL, mask, 0);
+        PostMessageW(settings, WM_COMMAND, MAKEWPARAM(107, BN_CLICKED), (LPARAM)GetDlgItem(settings, 107));
+        HWND result = nullptr;
+        for (int i = 0; i < 8500 && !result; i++) { result = find(false); Sleep(10); }
+        if (!result) { std::printf("result window not found\n"); PostMessageW(settings, WM_CLOSE, 0, 0); return; }
+        std::wstring text;
+        EnumChildWindows(result, [](HWND child, LPARAM data) -> BOOL {
+          wchar_t cls[32]; GetClassNameW(child, cls, 32);
+          if (wcscmp(cls, L"Static") == 0) {
+            wchar_t part[4096]; GetWindowTextW(child, part, 4096);
+            *reinterpret_cast<std::wstring*>(data) += part;
+          }
+          return TRUE;
+        }, (LPARAM)&text);
+        int n = WideCharToMultiByte(CP_UTF8, 0, text.data(), (int)text.size(), nullptr, 0, nullptr, nullptr);
+        std::string bytes(n, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, text.data(), (int)text.size(), bytes.data(), n, nullptr, nullptr);
+        std::printf("testResult=%s\n", bytes.c_str());
+        tested = true;
+        PostMessageW(GetDlgItem(result, IDOK), BM_CLICK, 0, 0);
+        for (int i = 0; i < 500 && IsWindow(result); i++) Sleep(10);
+        PostMessageW(settings, WM_COMMAND, save ? IDOK : IDCANCEL, 0);
+      });
+    }
     HRESULT hr = dlg->ShowDialog(VfwCompressDialog_Config, nullptr);
+    if (driver.joinable()) { driver.join(); if (!tested) return 1; }
     dlg->Release();
     factory->Release();
     std::printf("dialog closed hr=0x%08lx\n", (unsigned long)hr);

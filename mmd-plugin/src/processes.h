@@ -48,7 +48,7 @@ static std::vector<wchar_t> environmentWith(const std::vector<std::pair<std::wst
 
 // Run MMDEncoder.exe in Node mode with the helper script; returns its stdout.
 static bool runHelper(const std::wstring& exe, const std::wstring& helper, const std::wstring& mode,
-                      const std::string& job, std::string& out, DWORD timeoutMs) {
+                      const std::string& job, std::string& out, DWORD timeoutMs, HWND responsive = nullptr) {
   SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
   HANDLE readPipe = nullptr, writePipe = nullptr;
   if (!CreatePipe(&readPipe, &writePipe, &sa, 0)) return false;
@@ -91,6 +91,17 @@ static bool runHelper(const std::wstring& exe, const std::wstring& helper, const
       break;
     }
     WaitForSingleObject(pi.hProcess, 20);
+    // The settings test may take a few seconds; keep its dialog painting and
+    // processing messages while its controls are disabled against reentry.
+    if (responsive) {
+      MSG msg;
+      while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+        if (!IsDialogMessageW(responsive, &msg)) {
+          TranslateMessage(&msg);
+          DispatchMessageW(&msg);
+        }
+      }
+    }
   }
   CloseHandle(readPipe);
   if (timedOut) {

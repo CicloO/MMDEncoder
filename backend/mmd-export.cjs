@@ -140,11 +140,10 @@ function writeConfig({
 }
 
 // The effective export settings: config + current selection.
-function readConfig() {
+function readConfig(selection = readSelection()) {
   const config = JSON.parse(fs.readFileSync(configPath(), "utf8"));
   if (config.version !== 2)
     throw Error("导出设置版本不支持，请打开 MMDEncoder 重新选择导出预设");
-  const selection = readSelection();
   if (!selection?.presetId)
     throw Error(
       "还没有选择导出预设：请在 MMDEncoder 的“预设管理”或 MMD 的“詳細設定”里选择",

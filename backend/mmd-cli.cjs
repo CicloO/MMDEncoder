@@ -1,8 +1,18 @@
 "use strict";
 // CLI used by the plugin: MMD_EXPORT_MODE=plan|finish, MMD_EXPORT_JOB=<json>.
-async function main({ plan, finish, remember }) {
+async function main({ plan, finish, remember, readConfig }) {
   const mode = process.env.MMD_EXPORT_MODE;
   const job = JSON.parse(process.env.MMD_EXPORT_JOB || "{}");
+  if (mode === "test") {
+    try {
+      const config = job.selection ? readConfig(job.selection) : readConfig();
+      const result = await require("./mmd-test.cjs").testExport(config);
+      process.stdout.write(JSON.stringify(result));
+    } catch (e) {
+      process.stdout.write(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
   if (mode === "plan") {
     try {
       process.stdout.write(JSON.stringify({ ok: true, ...plan(job) }));

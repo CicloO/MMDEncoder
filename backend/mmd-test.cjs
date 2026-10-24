@@ -3,10 +3,14 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const { spawn, execFile } = require("node:child_process");
+const { promisify } = require("node:util");
 const mmdExport = require("./mmd-export.cjs");
 
-async function testExport(config, children = new Set()) {
+async function testExport(
+  config = mmdExport.readConfig(),
+  children = new Set(),
+) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mmdencoder-export-test-"));
   const started = Date.now();
   let snapshot = "";
@@ -72,8 +76,28 @@ async function testExport(config, children = new Set()) {
     if (!fs.existsSync(plan.temp)) throw Error("没有生成测试文件");
     if (plan.maskTemp && !fs.existsSync(plan.maskTemp))
       throw Error("没有生成 Alpha 遮罩测试文件");
+    const { stdout } = await promisify(execFile)(
+      config.engines.ffprobe,
+      [
+        "-v",
+        "error",
+        "-count_frames",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height,avg_frame_rate,nb_read_frames",
+        "-of",
+        "json",
+        plan.temp,
+      ],
+      { windowsHide: true, timeout: 15000 },
+    );
+    const video = JSON.parse(stdout).streams?.[0];
+    if (!video || !(Number(video.nb_read_frames) > 0))
+      throw Error("测试文件没有可用的视频帧");
     return {
       ok: true,
+      video,
       at: new Date().toISOString(),
       message: `测试编码通过${plan.maskTemp ? "（含 Alpha 遮罩）" : ""}（${((Date.now() - started) / 1000).toFixed(1)} 秒）`,
     };
