@@ -39,6 +39,11 @@
 #include <string>
 #include <vector>
 
+#include "json.h"
+#include "platform.h"
+#include "processes.h"
+#include "settings.h"
+
 #pragma comment(lib, "msdmo.lib")
 #pragma comment(lib, "dmoguids.lib")
 #pragma comment(lib, "strmiids.lib")
@@ -67,34 +72,10 @@ static std::atomic<long> g_locks{0};
 
 // ------------------------------------------------------------- strings ---
 
-static std::wstring utf16(const std::string& s, UINT cp = CP_UTF8) {
-  if (s.empty()) return L"";
-  int n = MultiByteToWideChar(cp, 0, s.data(), (int)s.size(), nullptr, 0);
-  std::wstring w(n, L'\0');
-  MultiByteToWideChar(cp, 0, s.data(), (int)s.size(), w.data(), n);
-  return w;
-}
-static std::string utf8(const std::wstring& w) {
-  if (w.empty()) return "";
-  int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-  std::string s(n, '\0');
-  WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), s.data(), n, nullptr, nullptr);
-  return s;
-}
 static std::wstring guidText(const GUID& g) {
   wchar_t s[64];
   StringFromGUID2(g, s, 64);
   return s;
-}
-
-static std::wstring pluginDir() {
-  PWSTR base = nullptr;
-  std::wstring dir;
-  if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &base))) {
-    dir = std::wstring(base) + L"\\MMDEncoder\\mmd-plugin";
-    CoTaskMemFree(base);
-  }
-  return dir;
 }
 
 // ------------------------------------------------------------- logging ---
@@ -172,164 +153,6 @@ static void plog(const wchar_t* fmt, ...) {
   va_end(args);
   Log::get().line(buf);
 }
-
-// ---------------------------------------------------------------- JSON ---
-// Just enough JSON for mmd-export.json and the helper's reply.
-
-struct Json {
-  enum Type { Null, Bool, Number, String, Array, Object } type = Null;
-  bool b = false;
-  double n = 0;
-  std::wstring s;
-  std::vector<Json> a;
-  std::map<std::wstring, Json> o;
-  const Json& operator[](const wchar_t* key) const {
-    static const Json none;
-    auto it = o.find(key);
-    return it == o.end() ? none : it->second;
-  }
-};
-
-class JsonReader {
- public:
-  explicit JsonReader(const std::string& text) : t_(text) {}
-  bool parse(Json& out) {
-    try {
-      out = value();
-      return true;
-    } catch (...) {
-      return false;
-    }
-  }
-
- private:
-  void ws() {
-    while (i_ < t_.size() && isspace((unsigned char)t_[i_])) i_++;
-  }
-  char peek() {
-    ws();
-    if (i_ >= t_.size()) throw 0;
-    return t_[i_];
-  }
-  void expect(char c) {
-    if (peek() != c) throw 0;
-    i_++;
-  }
-  Json value() {
-    Json j;
-    char c = peek();
-    if (c == '{') {
-      j.type = Json::Object;
-      i_++;
-      if (peek() == '}') return i_++, j;
-      for (;;) {
-        std::wstring key = string();
-        expect(':');
-        j.o[key] = value();
-        if (peek() == ',') {
-          i_++;
-          continue;
-        }
-        expect('}');
-        return j;
-      }
-    }
-    if (c == '[') {
-      j.type = Json::Array;
-      i_++;
-      if (peek() == ']') return i_++, j;
-      for (;;) {
-        j.a.push_back(value());
-        if (peek() == ',') {
-          i_++;
-          continue;
-        }
-        expect(']');
-        return j;
-      }
-    }
-    if (c == '"') {
-      j.type = Json::String;
-      j.s = string();
-      return j;
-    }
-    if (t_.compare(i_, 4, "true") == 0) return i_ += 4, j.type = Json::Bool, j.b = true, j;
-    if (t_.compare(i_, 5, "false") == 0) return i_ += 5, j.type = Json::Bool, j;
-    if (t_.compare(i_, 4, "null") == 0) return i_ += 4, j;
-    size_t end = i_;
-    while (end < t_.size() && strchr("+-0123456789.eE", t_[end])) end++;
-    if (end == i_) throw 0;
-    j.type = Json::Number;
-    j.n = atof(t_.substr(i_, end - i_).c_str());
-    i_ = end;
-    return j;
-  }
-  std::wstring string() {
-    expect('"');
-    std::string bytes;
-    while (i_ < t_.size() && t_[i_] != '"') {
-      char c = t_[i_++];
-      if (c != '\\') {
-        bytes += c;
-        continue;
-      }
-      char e = t_.at(i_++);
-      switch (e) {
-        case 'n': bytes += '\n'; break;
-        case 't': bytes += '\t'; break;
-        case 'r': bytes += '\r'; break;
-        case 'b': bytes += '\b'; break;
-        case 'f': bytes += '\f'; break;
-        case 'u': {
-          unsigned cp = std::stoul(t_.substr(i_, 4), nullptr, 16);
-          i_ += 4;
-          if (cp >= 0xD800 && cp < 0xDC00 && t_.compare(i_, 2, "\\u") == 0) {
-            unsigned lo = std::stoul(t_.substr(i_ + 2, 4), nullptr, 16);
-            i_ += 6;
-            cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
-          }
-          std::wstring w;
-          if (cp >= 0x10000) {
-            w += (wchar_t)(0xD800 + ((cp - 0x10000) >> 10));
-            w += (wchar_t)(0xDC00 + ((cp - 0x10000) & 0x3FF));
-          } else {
-            w += (wchar_t)cp;
-          }
-          bytes += utf8(w);
-          break;
-        }
-        default: bytes += e;
-      }
-    }
-    expect('"');
-    return utf16(bytes);
-  }
-  const std::string& t_;
-  size_t i_ = 0;
-};
-
-static std::string jsonString(const std::wstring& w) {
-  std::string out = "\"";
-  for (unsigned char c : utf8(w)) {
-    if (c == '"' || c == '\\') {
-      out += '\\';
-      out += (char)c;
-    } else if (c < 0x20) {
-      char buf[8];
-      sprintf_s(buf, "\\u%04x", c);
-      out += buf;
-    } else {
-      out += (char)c;
-    }
-  }
-  return out + "\"";
-}
-
-static bool readFile(const std::wstring& path, std::string& out);
-
-#include "processes.h"
-
-#include "settings.h"
 
 // Start the finish step in the background; it must outlive nothing but runs
 // after MMD releases the AVI, so it is detached from MMD's console and job.
@@ -501,7 +324,7 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
   STDMETHODIMP ShowDialog(int dialog, HWND parent) override {
     if (dialog == VfwCompressDialog_QueryConfig || dialog == VfwCompressDialog_QueryAbout) return S_OK;
     if (dialog == VfwCompressDialog_Config || dialog == VfwCompressDialog_About) {
-      showSettings(parent);
+      showSettings(parent, g_module, pluginDir(), plog);
       return S_OK;
     }
     return E_INVALIDARG;
@@ -764,7 +587,7 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
     const std::string job = "{\"avi\":" + jsonString(avi_) + ",\"pmm\":" + jsonString(mmd_.pmm) + head;
     std::string reply;
     Json plan;
-    if (!runHelper(appExe_, helper_, L"plan", job, reply, 30000) || !JsonReader(reply).parse(plan))
+    if (!runHelper(appExe_, helper_, L"plan", job, reply, 30000, plog) || !JsonReader(reply).parse(plan))
       return fail(L"MMDEncoder 没有返回导出命令：" + utf16(reply.substr(0, 400)));
     if (!plan[L"ok"].b) return fail(L"无法使用当前导出预设：" + plan[L"error"].s);
     temp_ = plan[L"temp"].s;
