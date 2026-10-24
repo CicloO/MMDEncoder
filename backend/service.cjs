@@ -19,6 +19,7 @@ const { createEncodeQueue } = require("./encode-queue.cjs");
 const { createLimit } = require("./limit.cjs");
 const { uiState } = require("./ui-state.cjs");
 const { createDetector } = require("./detect.cjs");
+const { createAlignService } = require("./align-service.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
   engineDir,
@@ -1288,7 +1289,11 @@ function createService({
   };
   const mediaQueue = createMediaQueue(ctx);
   const encodeQueue = createEncodeQueue(ctx);
-  const modules = [mediaQueue, encodeQueue];
+  const alignService = createAlignService({
+    engineInfo: () => state.engineInfo,
+    locate,
+  });
+  const modules = [mediaQueue, encodeQueue, alignService];
 
   async function invoke(action, payload = {}) {
     // Queries return their own answer; actions change state, which is then
