@@ -17,6 +17,7 @@ const mmdPlugin = require("./mmd-plugin.cjs");
 const { createMediaQueue } = require("./media-queue.cjs");
 const { createEncodeQueue } = require("./encode-queue.cjs");
 const { createLimit } = require("./limit.cjs");
+const { uiState } = require("./ui-state.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
   engineDir,
@@ -136,17 +137,7 @@ function createService({
     pushTimer = null;
     lastPush = Date.now();
     if (disposed) return;
-    // The window reads a video job's log through the "logs" action; leaving
-    // the up-to-200 KB logs out keeps each push small however long the queue.
-    const s = clone({
-      ...state,
-      jobs: state.jobs.map(({ log, ...j }) => j),
-      // Media logs: only the tail; the window asks for the whole one.
-      mediaJobs: state.mediaJobs.map((j) =>
-        j.log?.length > 8000 ? { ...j, log: "…" + j.log.slice(-8000) } : j,
-      ),
-    });
-    onUpdate(s);
+    onUpdate(uiState(state));
   }
   // Batch writes rather than synchronously touching disk for every encoder line.
   // The renderer receives a bounded tail; the on-disk task log retains every line.
