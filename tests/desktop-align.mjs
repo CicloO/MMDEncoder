@@ -110,7 +110,7 @@ try {
   // Waveforms: right-drag pans the view (not the alignment), a left click
   // sets the playhead; the zoom bar's edge zooms.
   const ruler = dialog.locator(".align-ruler span");
-  const playheadText = dialog.locator(".align-seek > span");
+  const playheadText = dialog.locator(".align-time");
   const box = await target.boundingBox();
   const startBefore = await ruler.first().innerText();
   await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2);

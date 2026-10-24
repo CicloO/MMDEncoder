@@ -8,7 +8,7 @@ import {
   Plus,
   Wand2,
 } from "lucide-react";
-import { Button, Modal, Select } from "./components";
+import { Button, Modal } from "./components";
 
 // Sound of a file as the backend sends it (alignPreview): mono 16-bit.
 type Track = { rate: number; duration: number; pcm: Int16Array };
@@ -634,138 +634,144 @@ export function AlignDialog({
           <span />
           <div className="align-ruler">
             <span>{seconds(view.start)}</span>
-            <span>
-              虚线：起点（灰为参考 0 秒，蓝为目标开头）· 左键点击：播放位置 ·
-              左键拖动目标：对齐 · 右键拖动：平移 · 滚轮：缩放
-            </span>
             <span>{seconds(view.start + view.span)}</span>
           </div>
           <span className="align-label">视图</span>
-          <div className="align-seek">
+          {/* Same width as the waveforms: the shown part of the whole. */}
+          <div
+            ref={zoomBar}
+            className="align-zoom"
+            role="scrollbar"
+            aria-orientation="horizontal"
+            aria-label="视图范围：拖动中间平移，拖动两端缩放；方向键平移"
+            aria-valuemin={Math.round(whole.lo * 1000)}
+            aria-valuemax={Math.round(whole.hi * 1000)}
+            aria-valuenow={Math.round(view.start * 1000)}
+            tabIndex={0}
+            onPointerDown={zoomDown}
+            onPointerMove={zoomMove}
+            onPointerUp={() => (zoomDrag.current = null)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                e.preventDefault();
+                const dir = e.key === "ArrowRight" ? 1 : -1;
+                setView((v) => ({
+                  ...v,
+                  start: v.start + dir * v.span * 0.1,
+                }));
+              }
+            }}
+          >
             <div
-              ref={zoomBar}
-              className="align-zoom"
-              role="scrollbar"
-              aria-orientation="horizontal"
-              aria-label="视图范围：拖动中间平移，拖动两端缩放；方向键平移"
-              aria-valuemin={Math.round(whole.lo * 1000)}
-              aria-valuemax={Math.round(whole.hi * 1000)}
-              aria-valuenow={Math.round(view.start * 1000)}
-              tabIndex={0}
-              onPointerDown={zoomDown}
-              onPointerMove={zoomMove}
-              onPointerUp={() => (zoomDrag.current = null)}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                  e.preventDefault();
-                  const dir = e.key === "ArrowRight" ? 1 : -1;
-                  setView((v) => ({
-                    ...v,
-                    start: v.start + dir * v.span * 0.1,
-                  }));
-                }
+              className="align-zoom-window"
+              style={{
+                left: share(view.start) + "%",
+                width: share(view.start + view.span) - share(view.start) + "%",
               }}
             >
-              <div
-                className="align-zoom-window"
-                style={{
-                  left: share(view.start) + "%",
-                  width:
-                    share(view.start + view.span) - share(view.start) + "%",
-                }}
-              >
-                <span data-edge="left" className="align-zoom-edge left" />
-                <span data-edge="right" className="align-zoom-edge right" />
-              </div>
-              <div
-                className="align-zoom-head"
-                style={{
-                  left:
-                    share(Math.min(Math.max(playhead, whole.lo), whole.hi)) +
-                    "%",
-                }}
-              />
+              <span data-edge="left" className="align-zoom-edge left" />
+              <span data-edge="right" className="align-zoom-edge right" />
             </div>
-            <span title="播放位置">{seconds(playhead)}</span>
           </div>
         </div>
         <div className="align-controls">
-          <div className="align-group">
-            <Button
-              variant="primary"
-              onClick={() => (playing ? stop() : play())}
-              disabled={!target}
-              aria-label={playing ? "暂停" : "播放"}
-            >
-              {playing ? <Pause size={15} /> : <Play size={15} />}
-              {playing ? "暂停" : "播放"}
-            </Button>
-            <div className="segmented" role="radiogroup" aria-label="试听">
-              {[
-                ["reference", "参考"],
-                ["target", "目标"],
-                ["both", "叠听"],
-              ].map(([value, label]) => (
-                <label key={value}>
-                  <input
-                    type="radio"
-                    name="align-listen"
-                    checked={listen === value}
-                    disabled={value !== "target" && !reference}
-                    onChange={() => {
-                      setListen(value);
-                      if (playing) setTimeout(() => play(), 0);
-                    }}
-                  />
-                  {label}
-                </label>
-              ))}
+          <div className="align-row">
+            <div className="align-group">
+              <Button
+                variant="primary"
+                onClick={() => (playing ? stop() : play())}
+                disabled={!target}
+                aria-label={playing ? "暂停" : "播放"}
+              >
+                {playing ? <Pause size={15} /> : <Play size={15} />}
+                {playing ? "暂停" : "播放"}
+              </Button>
+              <span className="align-time" title="播放位置">
+                {seconds(playhead)}
+              </span>
             </div>
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={split}
-                onChange={(e) => setSplit(e.target.checked)}
-              />
-              左右分声道（左参考、右目标）
-            </label>
+            <div className="align-group">
+              <span className="align-row-label">试听</span>
+              <div className="segmented" role="radiogroup" aria-label="试听">
+                {[
+                  ["reference", "参考"],
+                  ["target", "目标"],
+                  ["both", "叠听"],
+                ].map(([value, label]) => (
+                  <label key={value}>
+                    <input
+                      type="radio"
+                      name="align-listen"
+                      checked={listen === value}
+                      disabled={value !== "target" && !reference}
+                      onChange={() => {
+                        setListen(value);
+                        if (playing) setTimeout(() => play(), 0);
+                      }}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={split}
+                  onChange={(e) => setSplit(e.target.checked)}
+                />
+                左右分声道
+              </label>
+            </div>
           </div>
-          <div className="align-group">
-            <Button aria-label="缩小" title="缩小" onClick={() => zoom(1.5)}>
-              <Minus size={15} />
-            </Button>
-            <Button
-              aria-label="放大"
-              title="放大"
-              onClick={() => zoom(1 / 1.5)}
-            >
-              <Plus size={15} />
-            </Button>
-            <Button onClick={() => fit()}>
-              <AudioLines size={15} />
-              全部
-            </Button>
-            <Select
-              id="align-step"
-              label="微调步长"
-              value={step}
-              options={STEPS}
-              onChange={setStep}
-            />
-            <Button
-              aria-label="目标左移"
-              title="目标左移（←，按住 Shift 乘 10）"
-              onClick={() => nudge(1)}
-            >
-              ←
-            </Button>
-            <Button
-              aria-label="目标右移"
-              title="目标右移（→，按住 Shift 乘 10）"
-              onClick={() => nudge(-1)}
-            >
-              →
-            </Button>
+          <div className="align-row">
+            <div className="align-group">
+              <span className="align-row-label">缩放</span>
+              <Button aria-label="缩小" title="缩小" onClick={() => zoom(1.5)}>
+                <Minus size={15} />
+              </Button>
+              <Button
+                aria-label="放大"
+                title="放大"
+                onClick={() => zoom(1 / 1.5)}
+              >
+                <Plus size={15} />
+              </Button>
+              <Button onClick={() => fit()}>
+                <AudioLines size={15} />
+                全部
+              </Button>
+            </div>
+            <div className="align-group">
+              <label className="align-row-label" htmlFor="align-step">
+                微调
+              </label>
+              <select
+                id="align-step"
+                className="align-step"
+                value={step}
+                onChange={(e) => setStep(e.target.value)}
+              >
+                {STEPS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              <Button
+                aria-label="目标左移"
+                title="目标左移（←，按住 Shift 乘 10）"
+                onClick={() => nudge(1)}
+              >
+                ←
+              </Button>
+              <Button
+                aria-label="目标右移"
+                title="目标右移（→，按住 Shift 乘 10）"
+                onClick={() => nudge(-1)}
+              >
+                →
+              </Button>
+            </div>
           </div>
           {withTrim && (
             <label className="checkbox-row">
@@ -778,6 +784,10 @@ export function AlignDialog({
               导出时截到参考的长度（不够时补静音）
             </label>
           )}
+          <p className="hint align-hint">
+            虚线标出起点：灰色为参考 0
+            秒，蓝色为目标开头。左键单击设置播放位置；左键拖动目标波形对齐；右键拖动或拖动视图条平移；拖动视图条两端或滚轮缩放。
+          </p>
         </div>
         <div className="modal-actions">
           {onClear && (
