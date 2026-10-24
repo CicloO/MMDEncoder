@@ -1,0 +1,105 @@
+#pragma once
+
+// ----------------------------------------------------------- processes ---
+
+// Quote one argument the way CommandLineToArgvW / the MSVC runtime parse it.
+static std::wstring quoteArg(const std::wstring& a) {
+  if (!a.empty() && a.find_first_of(L" \t\"") == std::wstring::npos) return a;
+  std::wstring out = L"\"";
+  size_t slashes = 0;
+  for (wchar_t c : a) {
+    if (c == L'\\') {
+      slashes++;
+    } else if (c == L'"') {
+      out.append(slashes * 2 + 1, L'\\');
+      out += c;
+      slashes = 0;
+      continue;
+    } else {
+      slashes = 0;
+    }
+    out += c;
+  }
+  out.append(slashes, L'\\');
+  return out + L"\"";
+}
+
+// Current environment plus a few variables, as a CREATE_UNICODE_ENVIRONMENT block.
+static std::vector<wchar_t> environmentWith(const std::vector<std::pair<std::wstring, std::wstring>>& add) {
+  std::vector<wchar_t> block;
+  LPWCH env = GetEnvironmentStringsW();
+  for (LPWCH p = env; *p; p += wcslen(p) + 1) {
+    std::wstring entry = p;
+    bool replaced = false;
+    for (auto& kv : add)
+      if (_wcsnicmp(entry.c_str(), (kv.first + L"=").c_str(), kv.first.size() + 1) == 0)
+        replaced = true;
+    if (!replaced) block.insert(block.end(), entry.begin(), entry.end() + 1);
+  }
+  FreeEnvironmentStringsW(env);
+  for (auto& kv : add) {
+    std::wstring entry = kv.first + L"=" + kv.second;
+    block.insert(block.end(), entry.begin(), entry.end());
+    block.push_back(L'\0');
+  }
+  block.push_back(L'\0');
+  return block;
+}
+
+// Run MMDEncoder.exe in Node mode with the helper script; returns its stdout.
+static bool runHelper(const std::wstring& exe, const std::wstring& helper, const std::wstring& mode,
+                      const std::string& job, std::string& out, DWORD timeoutMs) {
+  SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
+  HANDLE readPipe = nullptr, writePipe = nullptr;
+  if (!CreatePipe(&readPipe, &writePipe, &sa, 0)) return false;
+  SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
+  STARTUPINFOW si{sizeof(si)};
+  si.dwFlags = STARTF_USESTDHANDLES;
+  si.hStdOutput = writePipe;
+  si.hStdError = writePipe;
+  si.hStdInput = nullptr;
+  PROCESS_INFORMATION pi{};
+  std::wstring cmd = quoteArg(exe) + L" " + quoteArg(helper);
+  auto env = environmentWith({{L"ELECTRON_RUN_AS_NODE", L"1"},
+                              {L"MMD_EXPORT_MODE", mode},
+                              {L"MMD_EXPORT_JOB", utf16(job)}});
+  BOOL ok = CreateProcessW(exe.c_str(), cmd.data(), nullptr, nullptr, TRUE,
+                           CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, env.data(), nullptr, &si, &pi);
+  CloseHandle(writePipe);
+  if (!ok) {
+    plog(L"cannot start helper %s (error %lu)", exe.c_str(), GetLastError());
+    CloseHandle(readPipe);
+    return false;
+  }
+  // Read only what is already in the pipe, so a helper that hangs without
+  // writing or exiting cannot block past the deadline (a plain ReadFile on an
+  // anonymous pipe would wait forever). The pipe breaks once the helper has
+  // exited and everything it wrote has been read.
+  char buf[4096];
+  const ULONGLONG deadline = GetTickCount64() + timeoutMs;
+  bool timedOut = false;
+  for (;;) {
+    DWORD avail = 0, n = 0;
+    if (!PeekNamedPipe(readPipe, nullptr, 0, nullptr, &avail, nullptr)) break;
+    if (avail) {
+      if (!ReadFile(readPipe, buf, (std::min)(avail, (DWORD)sizeof(buf)), &n, nullptr) || !n) break;
+      out.append(buf, n);
+      continue;
+    }
+    if (GetTickCount64() > deadline) {
+      timedOut = true;
+      break;
+    }
+    WaitForSingleObject(pi.hProcess, 20);
+  }
+  CloseHandle(readPipe);
+  if (timedOut) {
+    plog(L"helper %s gave no answer within %lu ms; stopped", mode.c_str(), timeoutMs);
+    TerminateProcess(pi.hProcess, 1);
+  }
+  WaitForSingleObject(pi.hProcess, 5000);
+  CloseHandle(pi.hThread);
+  CloseHandle(pi.hProcess);
+  return !timedOut;
+}
+

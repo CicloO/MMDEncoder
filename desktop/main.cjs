@@ -82,7 +82,8 @@ else {
             win.webContents.send("encoder:state", s);
         },
       });
-      ipcMain.handle("encoder:action", async (event, action, payload) => {
+      const { registerAction } = require("./actions.cjs");
+      registerAction(ipcMain, async (event, action, payload) => {
         if (
           event.sender !== win.webContents ||
           event.senderFrame !== win.webContents.mainFrame
@@ -126,7 +127,10 @@ else {
                   "png",
                 ],
               },
-              { name: "PNG 图片序列（选其中任意一张）", extensions: ["png"] },
+              {
+                name: "PNG 图片序列（选其中任意一张）",
+                extensions: ["png"],
+              },
               { name: "所有文件", extensions: ["*"] },
             ],
           });

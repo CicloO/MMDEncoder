@@ -11,6 +11,7 @@ import {
 import { Button, Modal } from "./components";
 import { draw, envelope, type Track } from "./alignWave";
 import { useAlignPlayer } from "./useAlignPlayer";
+import { ask, isCancelled } from "./alignRequests";
 
 // Nudge steps (seconds): an MMD frame, 10 ms, 1 ms, one sample at 48 kHz.
 const STEPS = [
@@ -26,21 +27,6 @@ const SLOTS = {
   reference: "align:reference",
   run: "align:run",
 };
-const isCancelled = (e: unknown) => /已取消$/.test((e as Error).message);
-// Straight to the service, not through the page's call(): the dialog shows
-// its own errors, and a cancelled request is none.
-async function ask(action: string, payload: unknown) {
-  try {
-    return await window.encoder.invoke(action, payload);
-  } catch (e) {
-    throw Error(
-      (e as Error).message.replace(
-        /^Error invoking remote method '[^']+': (?:Error: )?/,
-        "",
-      ),
-    );
-  }
-}
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 const seconds = (t: number) =>
   `${t < 0 ? "-" : ""}${Math.floor(Math.abs(t) / 60)}:${(Math.abs(t) % 60).toFixed(3).padStart(6, "0")}`;
