@@ -13,7 +13,29 @@ function createTrimQueue(ctx) {
   const { state, emit, emitProgress, locate, reorder, tools } = ctx;
   // Indexes stay here (they can be large); the window gets what it shows.
   const trimIndexes = new Map(); // clip id -> index
-  const indexAborts = new Map(); // clip id -> AbortController while indexing
+  // A file added again (same path, size and date) shares the index of the
+  // clips already there, or their reading still in progress; that reading
+  // stops only when every clip waiting for it is removed.
+  const fileKeys = new Map(); // clip id -> "path|size|mtime"
+  const reading = new Map(); // file key -> { promise, ctl, users: Set<clip id> }
+  function readIndex(clip, file, key) {
+    let r = reading.get(key);
+    if (!r) {
+      const ctl = new AbortController();
+      r = {
+        ctl,
+        users: new Set(),
+        promise: trim.index(state.engineInfo, file, { signal: ctl.signal }),
+      };
+      reading.set(key, r);
+      const entry = r;
+      r.promise
+        .finally(() => reading.get(key) === entry && reading.delete(key))
+        .catch(() => {});
+    }
+    r.users.add(clip.id);
+    return r.promise;
+  }
   let trimAbort = null,
     previewAbort = null;
   // A file's cached copy (non-MP4 H.264 / HEVC) goes once no clip uses it.
@@ -42,8 +64,12 @@ function createTrimQueue(ctx) {
   }
   function dropClips(clips) {
     for (const c of clips) {
-      indexAborts.get(c.id)?.abort();
-      indexAborts.delete(c.id);
+      const r = reading.get(fileKeys.get(c.id));
+      if (r) {
+        r.users.delete(c.id);
+        if (!r.users.size) r.ctl.abort();
+      }
+      fileKeys.delete(c.id);
       trimIndexes.delete(c.id); // other clips of the file keep their own
     }
     state.trim.clips = state.trim.clips.filter((c) => !clips.includes(c));
@@ -111,8 +137,11 @@ function createTrimQueue(ctx) {
     for (const raw of paths || []) {
       if (typeof raw !== "string" || !path.isAbsolute(raw)) continue;
       const file = path.resolve(raw);
+      let key;
       try {
-        if (!fs.statSync(file).isFile()) continue;
+        const st = fs.statSync(file);
+        if (!st.isFile()) continue;
+        key = [file.toLowerCase(), st.size, st.mtimeMs].join("|");
       } catch {
         continue;
       }
@@ -124,12 +153,15 @@ function createTrimQueue(ctx) {
       };
       state.trim.clips.push(clip);
       emit();
-      const ctl = new AbortController();
-      indexAborts.set(clip.id, ctl);
+      fileKeys.set(clip.id, key);
+      const shared = state.trim.clips.find(
+        (c) =>
+          c !== clip && fileKeys.get(c.id) === key && trimIndexes.has(c.id),
+      );
       try {
-        const idx = await trim.index(state.engineInfo, file, {
-          signal: ctl.signal,
-        });
+        const idx = shared
+          ? trimIndexes.get(shared.id)
+          : await readIndex(clip, file, key);
         if (!state.trim.clips.includes(clip)) continue; // removed meanwhile
         if (!idx.supported) throw Error(idx.reason);
         trimIndexes.set(clip.id, idx);
@@ -165,7 +197,7 @@ function createTrimQueue(ctx) {
         if (!state.trim.clips.includes(clip)) continue;
         Object.assign(clip, { status: "invalid", error: e.message });
       } finally {
-        indexAborts.delete(clip.id);
+        reading.get(key)?.users.delete(clip.id);
       }
       emit();
     }
@@ -299,6 +331,7 @@ function createTrimQueue(ctx) {
       if (clip.status !== "ready") throw Error("片段还没有读取完成");
       const copy = { ...clip, id: crypto.randomUUID() };
       trimIndexes.set(copy.id, trimIndexes.get(clip.id));
+      fileKeys.set(copy.id, fileKeys.get(clip.id));
       state.trim.clips.splice(state.trim.clips.indexOf(clip) + 1, 0, copy);
     },
     async trimReorder(payload) {
@@ -386,7 +419,7 @@ function createTrimQueue(ctx) {
     stop() {
       trimAbort?.abort();
       previewAbort?.abort();
-      for (const ctl of indexAborts.values()) ctl.abort();
+      for (const r of reading.values()) r.ctl.abort();
     },
   };
 }
