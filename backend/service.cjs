@@ -772,6 +772,8 @@ function createService({
               { timeout: 10000 },
             );
             state.engineInfo[key] = exe;
+            // Its configure flags are in there too (hasSoxr).
+            if (key === "ffmpeg") versionText = { exe, text: r.stdout || "" };
             state.detectionLog +=
               (r.stdout || r.stderr).split("\n")[0] + "\n" + exe + "\n";
             break;
@@ -815,7 +817,10 @@ function createService({
   }
   // Whether the installed FFmpeg has the soxr resampler; checked again when
   // FFmpeg changes (path, size or date).
+  // The flags are on the "configuration:" line of `ffmpeg -version`, which
+  // locate() has already run, so no extra FFmpeg start is needed.
   let soxrCache = { key: "", value: false };
+  let versionText = { exe: "", text: "" };
   async function hasSoxr() {
     const ff = state.engineInfo.ffmpeg;
     let key = ff;
@@ -826,10 +831,11 @@ function createService({
     if (soxrCache.key === key) return soxrCache.value;
     let value = false;
     try {
-      const r = await run(ff, ["-hide_banner", "-buildconf"], {
-        timeout: 15000,
-      });
-      value = /--enable-libsoxr/.test(r.stdout + (r.stderr || ""));
+      const text =
+        versionText.exe === ff
+          ? versionText.text
+          : (await run(ff, ["-version"], { timeout: 15000 })).stdout;
+      value = /--enable-libsoxr/.test(text);
     } catch {}
     soxrCache = { key, value };
     return value;
@@ -912,7 +918,12 @@ function createService({
       await detector.trialEncoders({
         listing,
         stopped: () => disposed,
-        found: (e) => state.engines.push(e),
+        // Trials finish out of order: keep the list in ENGINES order.
+        found: (e) => {
+          state.engines.push(e);
+          const at = (x) => core.ENGINES.findIndex((y) => y.id === x.id);
+          state.engines.sort((a, b) => at(a) - at(b));
+        },
         progress: emit,
       });
       if (key && !disposed && state.engines.length)

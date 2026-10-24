@@ -10,6 +10,7 @@ const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const core = require("./core.cjs");
+const { createLimit } = require("./limit.cjs");
 
 function createDetector({ run, dataDir, info, engines, logs }) {
   // Whether FFmpeg can run libplacebo on a Vulkan GPU (ArtCNN upscaling):
@@ -198,14 +199,13 @@ function createDetector({ run, dataDir, info, engines, logs }) {
           ],
           { timeout: 15000 },
         );
-      for (const e of core.ENGINES) {
-        if (stopped()) break;
-        if (
-          e.backend === "nvencc"
-            ? !info().nvencc
-            : !new RegExp("\\b" + e.id + "\\b").test(listing)
-        )
-          continue;
+      const available = core.ENGINES.filter((e) =>
+        e.backend === "nvencc"
+          ? !!info().nvencc
+          : new RegExp("\\b" + e.id + "\\b").test(listing),
+      );
+      const tryOne = async (e) => {
+        if (stopped()) return;
         const depths = [];
         for (const depth of e.depths) {
           try {
@@ -331,7 +331,21 @@ function createDetector({ run, dataDir, info, engines, logs }) {
           found({ ...e, depths, alpha });
         }
         progress();
-      }
+      };
+      // CPU encoders are tried 3 at a time beside the GPU ones, which go one
+      // at a time (encode sessions, video memory); found() gets each as it
+      // finishes.
+      const cpu = createLimit(3);
+      const gpu = async () => {
+        for (const e of available.filter((e) => e.backend !== "cpu"))
+          await tryOne(e);
+      };
+      await Promise.all([
+        gpu(),
+        ...available
+          .filter((e) => e.backend === "cpu")
+          .map((e) => cpu(() => tryOne(e))),
+      ]);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
