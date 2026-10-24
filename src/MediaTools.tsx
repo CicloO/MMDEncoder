@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowRight,
+  AudioLines,
   Check,
   FileAudio,
   FileVideo,
@@ -28,6 +29,8 @@ import {
   PAGE_SIZE,
 } from "./components";
 import { MediaDetails } from "./MediaDetails";
+import { AlignDialog } from "./AlignDialog";
+import { autoAlign, offsetText } from "./autoAlign";
 import { fadeOptions, fadeHint } from "./presentation";
 import { FileMeta, metaSummary } from "./FileMeta";
 import type { MediaJob, State } from "./types";
@@ -72,11 +75,12 @@ type Options = {
   audioFormat: string;
   audioBitrate: number;
   container: string;
-  shortest: boolean;
   // 24-bit, and twice the sample rate below 48 kHz (WAV / FLAC only).
   hiRes: boolean;
   // Seconds of fade in / out (0 = off); not with a copied audio track.
   audioFade: number;
+  // Merging: line the added audio up with the video's sound once chosen.
+  autoAlign: boolean;
   location: string;
   outputDir: string;
 };
@@ -85,9 +89,9 @@ const DEFAULT_OPTIONS: Options = {
   audioFormat: "wav",
   audioBitrate: 0,
   container: "mp4",
-  shortest: true,
   hiRes: false,
   audioFade: 0,
+  autoAlign: true,
   location: "source",
   outputDir: "",
 };
@@ -129,7 +133,9 @@ export function MediaTools({
     [error, setError] = useState(""),
     [details, setDetails] = useState<any>(null),
     [detailsOpen, setDetailsOpen] = useState(false),
-    [detailsError, setDetailsError] = useState("");
+    [detailsError, setDetailsError] = useState(""),
+    // The file whose 音频对齐 dialog is open.
+    [alignId, setAlignId] = useState("");
   const jobs = state.mediaJobs;
   // Same paging as the video queue.
   const [page, setPage] = useState(0);
@@ -200,9 +206,7 @@ export function MediaTools({
         setError("没有等待配对音频的视频，请先加入视频文件");
         break;
       }
-      current =
-        (await run("mediaSetAudio", { id: target.id, path }))?.mediaJobs ||
-        current;
+      current = (await setAudio(target, path))?.mediaJobs || current;
     }
   }
   useEffect(() => {
@@ -253,7 +257,18 @@ export function MediaTools({
   async function pickAudio(job: MediaJob) {
     const files = await run("pickMedia", { multiple: false });
     const file = Array.isArray(files) ? files[0] : files;
-    if (file) await run("mediaSetAudio", { id: job.id, path: file });
+    if (file) await setAudio(job, file);
+  }
+  // Pair an audio file with a video and, when chosen, line it up at once.
+  async function setAudio(job: MediaJob, file: string) {
+    const r = await run("mediaSetAudio", { id: job.id, path: file });
+    if (r && o.autoAlign) {
+      const note = await autoAlign(job.path, file, (offset) =>
+        run("mediaSetAudioOffset", { id: job.id, offset }),
+      );
+      if (note) setError(note);
+    }
+    return r;
   }
   async function pickFolder() {
     const dir = await run("pickDirectory", { title: "选择输出文件夹" });
@@ -292,8 +307,11 @@ export function MediaTools({
             {j.meta ? metaSummary(j.meta) : j.metaError || "正在读取文件信息"}
             {o.operation === "merge" &&
               (j.audioPath
-                ? ` · 音频：${baseName(j.audioPath)}`
+                ? ` · 音频：${baseName(j.audioPath)}${j.audioOffset !== undefined ? " · 对齐 " + offsetText(j.audioOffset) : ""}`
                 : " · 尚未选择替换音频")}
+            {o.operation === "audio" &&
+              j.align &&
+              ` · 对齐 ${j.align.offset >= 0 ? "+" : ""}${j.align.offset.toFixed(3)} 秒${j.align.length ? " · 截到参考长度" : ""}`}
           </span>
           <span className={`job-status ${j.status}`} title={j.error}>
             {j.status === "running" && (
@@ -315,6 +333,30 @@ export function MediaTools({
           onClick={() => pickAudio(j)}
         >
           <Music size={16} />
+        </Button>
+      )}
+      {o.operation === "merge" && j.status === "ready" && j.audioPath && (
+        <Button
+          variant={`ghost icon${j.audioOffset !== undefined ? " active" : ""}`}
+          aria-label={`对齐 ${j.name} 的合并音频`}
+          title="音频对齐：以视频自带的声音为参考检视、微调"
+          disabled={locked}
+          onClick={() => setAlignId(j.id)}
+        >
+          <AudioLines size={16} />
+        </Button>
+      )}
+      {o.operation === "audio" && j.status === "ready" && (
+        <Button
+          variant={`ghost icon${j.align ? " active" : ""}`}
+          aria-label={`对齐 ${j.name} 的音频`}
+          title={
+            j.align ? "音频对齐（已对齐）" : "音频对齐：按参考音频对齐起点"
+          }
+          disabled={locked}
+          onClick={() => setAlignId(j.id)}
+        >
+          <AudioLines size={16} />
         </Button>
       )}
       {["done", "cancelled", "failed"].includes(j.status) && (
@@ -627,10 +669,15 @@ export function MediaTools({
                     <input
                       type="checkbox"
                       disabled={locked}
-                      checked={o.shortest}
-                      onChange={(e) => set("shortest", e.target.checked)}
+                      checked={o.autoAlign}
+                      onChange={(e) => set("autoAlign", e.target.checked)}
                     />
-                    时长取较短的一方
+                    <span>
+                      选择音频后自动对齐
+                      <small className="hint hires-hint">
+                        以视频自带的声音为参考；对不上时不应用，可点队列里的波形按钮检视、微调。
+                      </small>
+                    </span>
                   </label>
                 )}
                 <Select
@@ -663,7 +710,7 @@ export function MediaTools({
                 <p className="hint">
                   {o.operation === "audio"
                     ? "只输出第一条音频流。"
-                    : `视频直接复制，不重新压制${o.container === "mp4" ? "；MP4 放不下时自动改用 MKV" : ""}。`}
+                    : `视频直接复制，不重新压制${o.container === "mp4" ? "；MP4 放不下时自动改用 MKV" : ""}。${o.operation === "merge" ? (o.audioFormat === "copy" ? "时长与视频相同，音频长了截掉。" : "时长与视频相同：音频长了截掉，短了补静音。") : ""}`}
                   已有文件不覆盖。
                 </p>
                 {error && (
@@ -738,7 +785,6 @@ export function MediaTools({
                   audioBitrate: bitrate,
                   container: o.container,
                   hiRes,
-                  shortest: o.shortest,
                   audioFade: o.audioFormat === "copy" ? 0 : o.audioFade,
                   location: o.location,
                   outputDir: o.outputDir,
@@ -761,6 +807,56 @@ export function MediaTools({
       >
         <MediaDetails details={details} media />
       </Modal>
+      {(() => {
+        const j = jobs.find((x) => x.id === alignId);
+        const merge = o.operation === "merge";
+        return (
+          <AlignDialog
+            open={!!j && (!merge || !!j.audioPath)}
+            call={call}
+            onClose={() => setAlignId("")}
+            {...(merge
+              ? {
+                  // The added audio against the video's own sound.
+                  targetPath: j?.audioPath,
+                  fixedReference: j?.path,
+                  initial:
+                    j?.audioOffset !== undefined
+                      ? { offset: j.audioOffset }
+                      : undefined,
+                  description: `把合并用的音频对齐到“${j?.name || ""}”自带的声音；合并时按这里的结果截取或补静音，时长仍与视频相同。`,
+                  onApply: (a) =>
+                    call("mediaSetAudioOffset", {
+                      id: j!.id,
+                      offset: a.offset,
+                    }),
+                  onClear:
+                    j?.audioOffset !== undefined
+                      ? () =>
+                          call("mediaSetAudioOffset", {
+                            id: j.id,
+                            offset: null,
+                          })
+                      : undefined,
+                }
+              : {
+                  targetPath: j?.path,
+                  initial: j?.align && {
+                    reference: j.align.reference,
+                    offset: j.align.offset,
+                    trim: !!j.align.length,
+                  },
+                  withTrim: true,
+                  description: `把“${j?.name || ""}”的音频起点对齐到参考音频；提取音频时按这里的结果截取或补静音。`,
+                  onApply: (a) =>
+                    call("mediaSetAlign", { id: j!.id, align: a }),
+                  onClear: j?.align
+                    ? () => call("mediaSetAlign", { id: j.id, align: null })
+                    : undefined,
+                })}
+          />
+        );
+      })()}
     </>
   );
 }

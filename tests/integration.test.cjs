@@ -56,7 +56,10 @@ test(
         input,
       ]);
       svc = createService({ engineDir, dataDir: path.join(dir, "data") });
+      // A video can be queued twice; the second copy is removed again here.
       await svc.invoke("add", { paths: [input, input] });
+      assert.equal(svc.getState().jobs.length, 2);
+      await svc.invoke("remove", { id: svc.getState().jobs[1].id });
       assert.equal(svc.getState().jobs.length, 1);
       assert.equal(svc.getState().jobs[0].meta.hasAlpha, true);
       await svc.invoke("settings", {
@@ -369,7 +372,8 @@ test(
       dataDir: path.join(dir, "data"),
       onUpdate: (st) => {
         const j = st.jobs.find(
-          (j) => j.status === "encoding" && j.stage === "Alpha 遮罩",
+          // Colour and mask run in one pass ("… + Alpha 遮罩").
+          (j) => j.status === "encoding" && j.stage?.includes("Alpha 遮罩"),
         );
         if (j && blockMask) {
           blockMask = false;

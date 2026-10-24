@@ -125,6 +125,23 @@ function mergeContainer(p, source = {}) {
   }
   return "mp4";
 }
+// 音频对齐: line the audio up with a reference. offset > 0 drops that much
+// from its start, offset < 0 puts that much silence before it, both counted
+// in samples at the source's rate; length ends the result there (silence
+// fills in if the audio runs out first).
+function alignFilter(a, rate) {
+  const n = Math.round(Math.abs(a.offset) * (Number(rate) || 48000));
+  const f = [];
+  if (a.offset > 0 && n)
+    f.push(`atrim=start_sample=${n}`, "asetpts=PTS-STARTPTS");
+  else if (a.offset < 0 && n) f.push(`adelay=delays=${n}S:all=1`);
+  if (a.length > 0)
+    f.push(
+      `apad=whole_dur=${a.length.toFixed(6)}`,
+      `atrim=end=${a.length.toFixed(6)}`,
+    );
+  return f.join(",");
+}
 function command(p, tools, output) {
   if (!["audio", "video", "merge"].includes(p.operation))
     throw Error("请选择提取音频、提取视频或音视频合并");
@@ -173,9 +190,45 @@ function command(p, tools, output) {
       ? hiResCodec(plan)
       : hiResArgs(plan, p.soxr)
     : ["-c:a", audio[0]];
-  codecArgs = withAudioFilter(codecArgs, fadeFilter(fade, p.fadeLength));
+  // A merge lasts as long as the video: the audio is read no further than
+  // the video's length, and (unless copied) a shorter one is padded with
+  // silence, stopped by -shortest at the video's end.
+  const merge = p.operation === "merge";
+  const pad = merge && p.audioFormat !== "copy";
+  // Extracting: p.align (with a reference length); merging: p.audioOffset
+  // for the added audio (it then lasts as long as the video, as above).
+  const aligned =
+    p.operation === "audio"
+      ? p.align
+      : merge && p.audioOffset
+        ? { offset: Number(p.audioOffset) }
+        : null;
+  if (aligned && p.audioFormat === "copy")
+    throw Error("对齐需要重新编码音频，请选择复制原音轨以外的格式");
+  codecArgs = withAudioFilter(
+    codecArgs,
+    [
+      aligned ? alignFilter(aligned, p.sourceAudio?.sampleRate) : "",
+      fadeFilter(fade, p.fadeLength),
+      pad ? "apad" : "",
+    ]
+      .filter(Boolean)
+      .join(","),
+  );
   const args = ["-hide_banner", "-nostdin", "-n", "-i", p.input];
-  if (p.operation === "merge") args.push("-i", p.audioInput);
+  if (merge)
+    args.push(
+      ...(Number(p.videoDuration) > 0
+        ? [
+            "-t",
+            (
+              Number(p.videoDuration) + Math.max(0, Number(p.audioOffset) || 0)
+            ).toFixed(6),
+          ]
+        : []),
+      "-i",
+      p.audioInput,
+    );
   if (p.operation === "audio") args.push("-map", "0:a:0", "-vn", ...codecArgs);
   else
     args.push(
@@ -193,7 +246,7 @@ function command(p, tools, output) {
       "-b:a",
       audioBitrate(p.audioBitrate, audio[0], p.sourceAudio) + "k",
     );
-  if (p.operation === "merge" && p.shortest !== false) args.push("-shortest");
+  if (pad) args.push("-shortest");
   if (ext === ".mp4") args.push("-movflags", "+faststart");
   args.push("-progress", "pipe:1", output);
   return { exe: tools.ffmpeg, args };
@@ -248,5 +301,6 @@ module.exports = {
   suggestOutput,
   audioBitrate,
   mergeContainer,
+  alignFilter,
   EXTENSIONS,
 };

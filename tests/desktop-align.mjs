@@ -1,0 +1,235 @@
+// 音频对齐 dialog on the media page: add a reference, align automatically,
+// nudge, play, apply, and extract the audio lined up with the reference.
+import { _electron as electron, expect } from "@playwright/test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const root = path.resolve(import.meta.dirname, "..");
+const evidence = path.resolve(root, "verification");
+const work = path.resolve(root, "verification/work");
+fs.mkdirSync(work, { recursive: true });
+const testDir = fs.mkdtempSync(path.join(work, "align-ui-"));
+const { ff } = require("./engines.cjs");
+const { align } = require("../backend/align.cjs");
+const run = (args) => execFileSync(ff, ["-v", "error", ...args]);
+const song = path.join(testDir, "原曲.flac");
+run([
+  "-f",
+  "lavfi",
+  "-i",
+  "anoisesrc=d=20:c=pink:r=44100:seed=11,tremolo=f=1.7:d=0.9",
+  song,
+]);
+const render = path.join(testDir, "渲染.mp4");
+run([
+  "-f",
+  "lavfi",
+  "-i",
+  "testsrc2=s=160x90:r=30:d=8",
+  "-ss",
+  "2.5",
+  "-t",
+  "8",
+  "-i",
+  song,
+  "-c:v",
+  "libx264",
+  "-c:a",
+  "aac",
+  "-shortest",
+  render,
+]);
+const app = await electron.launch({
+  executablePath: require("electron"),
+  args: [root],
+  env: {
+    ...process.env,
+    MMD_ENCODER_DATA: path.join(testDir, "data"),
+    MMD_ENCODER_TEST: "1",
+    MMD_ENCODER_TOOLS_ROOT: process.env.MMD_TEST_TOOLS_ROOT,
+    MMD_ENCODER_ENGINES: process.env.MMD_TEST_ENGINE_DIR,
+  },
+  timeout: 60000,
+});
+let passed = false;
+try {
+  const page = await app.firstWindow();
+  page.setDefaultTimeout(30000);
+  await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    w.setSize(1280, 900);
+    w.showInactive();
+  });
+  // The file picker answers with the reference (no native dialog in a test).
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = async () => ({
+      canceled: false,
+      filePaths: [file],
+    });
+  }, render);
+  const state = () => page.evaluate(() => window.encoder.invoke("state"));
+  await expect
+    .poll(
+      async () => {
+        const s = await state();
+        return s.located && !s.detecting;
+      },
+      { timeout: 120000 },
+    )
+    .toBe(true);
+  await page
+    .getByRole("button", { name: "音视频提取与合并", exact: true })
+    .click();
+  await page.evaluate(
+    (p) => window.encoder.invoke("mediaAdd", { paths: [p] }),
+    song,
+  );
+  await page.getByRole("button", { name: /对齐 原曲\.flac 的音频/ }).click();
+  const dialog = page.getByRole("dialog", { name: "音频对齐" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "添加参考音频" }).click();
+  await expect(dialog.getByText(/匹配可信/)).toBeVisible({ timeout: 60000 });
+  await expect(dialog.getByText(/目标开头多出 2\.500\d 秒/)).toBeVisible();
+  await page.screenshot({ path: path.join(evidence, "align-dialog.png") });
+
+  // Nudge one frame later and back with the keyboard, then play briefly.
+  const target = dialog.getByLabel(/目标音频波形/);
+  await target.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(dialog.getByText(/目标开头多出 2\.46\d\d 秒/)).toBeVisible();
+  await page.keyboard.press("ArrowLeft");
+  await expect(dialog.getByText(/目标开头多出 2\.500\d 秒/)).toBeVisible();
+  await dialog.getByRole("button", { name: "播放" }).click();
+  await expect(dialog.getByRole("button", { name: "暂停" })).toBeVisible();
+  await page.waitForTimeout(400);
+  await dialog.getByRole("button", { name: "暂停" }).click();
+
+  // Waveforms: right-drag pans the view (not the alignment), a left click
+  // sets the playhead; the zoom bar's edge zooms.
+  const ruler = dialog.locator(".align-ruler span");
+  const playheadText = dialog.locator(".align-time");
+  const box = await target.boundingBox();
+  const startBefore = await ruler.first().innerText();
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height / 2, {
+    steps: 5,
+  });
+  await page.mouse.up({ button: "right" });
+  assert.notEqual(await ruler.first().innerText(), startBefore, "view panned");
+  await expect(dialog.getByText(/目标开头多出 2\.500\d 秒/)).toBeVisible();
+  const headBefore = await playheadText.innerText();
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height / 2);
+  assert.notEqual(await playheadText.innerText(), headBefore, "playhead set");
+  await expect(dialog.getByText(/目标开头多出 2\.500\d 秒/)).toBeVisible();
+  const zoomBar = dialog.getByRole("scrollbar", { name: /视图范围/ });
+  const edge = await dialog.locator(".align-zoom-edge.right").boundingBox();
+  const endBefore = await ruler.last().innerText();
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(edge.x - 200, edge.y + edge.height / 2, { steps: 5 });
+  await page.mouse.up();
+  assert.notEqual(await ruler.last().innerText(), endBefore, "zoomed in");
+  await expect(zoomBar).toBeVisible();
+  await page.screenshot({ path: path.join(evidence, "align-zoom.png") });
+
+  await dialog.getByRole("button", { name: "应用" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText(/对齐 \+2\.500 秒 · 截到参考长度/)).toBeVisible();
+  await page.getByLabel("输出音频").selectOption("flac");
+  await page.getByRole("button", { name: "开始处理" }).click();
+  await expect
+    .poll(async () => (await state()).mediaJobs[0].status, { timeout: 60000 })
+    .toBe("done");
+  const out = (await state()).mediaJobs[0].output;
+  const check = await align({ ffmpeg: ff }, render, out);
+  assert.ok(
+    Math.abs(check.offset) < 0.0005,
+    "extracted audio lines up: " + check.offset,
+  );
+
+  // Merge: the render with the song added; chosen, it is aligned at once
+  // against the render's own sound (自动对齐 is on by default).
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = async () => ({
+      canceled: false,
+      filePaths: [file],
+    });
+  }, song);
+  await page.getByLabel("操作").selectOption("merge");
+  await page.evaluate(
+    (p) => window.encoder.invoke("mediaAdd", { paths: [p] }),
+    render,
+  );
+  await page.getByRole("button", { name: /为 渲染\.mp4 选择音频/ }).click();
+  await expect(page.getByText(/对齐 \+2\.500 秒/)).toBeVisible({
+    timeout: 60000,
+  });
+  // The dialog shows the video's own sound as the fixed reference.
+  await page.getByRole("button", { name: /对齐 渲染\.mp4 的合并音频/ }).click();
+  const mergeDialog = page.getByRole("dialog", { name: "音频对齐" });
+  await expect(mergeDialog.getByText(/视频自带的声音/)).toBeVisible();
+  await expect(
+    mergeDialog.getByRole("button", { name: "添加参考音频" }),
+  ).toHaveCount(0);
+  await expect(mergeDialog.getByText(/目标开头多出 2\.500\d 秒/)).toBeVisible();
+  await page.screenshot({ path: path.join(evidence, "align-merge.png") });
+  await mergeDialog.getByRole("button", { name: "取消" }).click();
+
+  // Video page: replacing the render's audio aligns it the same way.
+  await page.getByRole("button", { name: "视频压制", exact: true }).click();
+  await page.evaluate(
+    (p) => window.encoder.invoke("add", { paths: [p] }),
+    render,
+  );
+  await expect.poll(async () => (await state()).jobs[0]?.status).toBe("ready");
+  await page.getByRole("button", { name: /为 渲染\.mp4 选择音频/ }).click();
+  await expect
+    .poll(async () => (await state()).jobs[0].audioOffset, { timeout: 60000 })
+    .toBeCloseTo(2.5, 3);
+  await expect(page.getByText(/替换音频：.*对齐 \+2\.500 秒/)).toBeVisible();
+  // The queue row has the same alignment button as on the media page.
+  await page.getByRole("button", { name: /对齐 渲染\.mp4 的替换音频/ }).click();
+  const videoDialog = page.getByRole("dialog", { name: "音频对齐" });
+  await expect(videoDialog.getByText(/视频自带的声音/)).toBeVisible();
+  await videoDialog.getByRole("button", { name: "取消" }).click();
+  await expect(videoDialog).toBeHidden();
+  // Trim page: 起点偏移 filled in from the first clip's sound, and the same
+  // dialog to look at it (the picker still answers with the song).
+  await page.getByRole("button", { name: "无损剪辑", exact: true }).click();
+  await page.evaluate(
+    (p) => window.encoder.invoke("trimAdd", { paths: [p] }),
+    render,
+  );
+  await expect(page.locator(".trim-tick").first()).toBeVisible({
+    timeout: 30000,
+  });
+  await page.locator("#trim-audio").selectOption("replace");
+  await page.getByRole("button", { name: "选择音频" }).click();
+  await page.getByRole("button", { name: "自动填写" }).click();
+  const field = page.locator("#trim-offset");
+  const frames = (await page.getByText("起点偏移 · MMD 帧").count()) > 0;
+  await expect
+    .poll(async () => Number(await field.inputValue()), { timeout: 60000 })
+    .toBeCloseTo(frames ? 75 : 2.5, frames ? 0 : 2);
+  await page.getByRole("button", { name: "音频对齐" }).click();
+  const trimDialog = page.getByRole("dialog", { name: "音频对齐" });
+  await expect(trimDialog.getByText(/视频自带的声音/)).toBeVisible();
+  await expect(trimDialog.getByText(/目标开头多出 2\.50\d\d 秒/)).toBeVisible({
+    timeout: 30000,
+  });
+  await trimDialog.getByRole("button", { name: "应用" }).click();
+  await expect(trimDialog).toBeHidden();
+  assert.ok(
+    Math.abs(Number(await field.inputValue()) - (frames ? 75 : 2.5)) <
+      (frames ? 1 : 0.01),
+  );
+  console.log("Desktop align PASS");
+  passed = true;
+} finally {
+  await app.close();
+  if (passed) fs.rmSync(testDir, { recursive: true, force: true });
+}

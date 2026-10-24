@@ -1005,7 +1005,10 @@ function inputArgs(job) {
 // as long as the video so the output keeps the video's length.
 function audioInputArgs(job) {
   if (!job.audioPath) return [];
-  const d = Number(job.meta?.duration) || 0;
+  // Aligned later in the file (job.audioOffset > 0): read that much more.
+  const d =
+    (Number(job.meta?.duration) || 0) +
+    Math.max(0, Number(job.audioOffset) || 0);
   return [...(d > 0 ? ["-t", d.toFixed(6)] : []), "-i", job.audioPath];
 }
 // Written into each output's "comment" tag: how it was encoded, so the
@@ -1059,6 +1062,94 @@ function keyframes(s, meta) {
     (s.vfg ? Number(s.vfgMultiplier) || 1 : 1);
   return { ...s, gop: Math.max(1, Math.round(fps)) };
 }
+// The mask on the GPU when this machine's NVENC does lossless H.264
+// (engines.nvencLossless, checked with the encoder detection): the frames
+// are identical to x264's lossless ones, in the same High 4:4:4 Predictive
+// profile, at about twice the speed. NVENC takes 145 × 49 to 4096 × 4096
+// pixels; WebM masks stay VP9.
+function maskOnNvenc(s, meta, engines) {
+  if (!engines?.nvencLossless || s.container === "webm") return false;
+  const size = dimensions(s, meta);
+  return (
+    size.width >= 145 &&
+    size.height >= 49 &&
+    size.width <= 4096 &&
+    size.height <= 4096
+  );
+}
+const NVENC_LOSSLESS = [
+  "-c:v",
+  "h264_nvenc",
+  "-preset",
+  "p1",
+  "-tune",
+  "lossless",
+  "-pix_fmt",
+  "yuv420p",
+];
+// One FFmpeg run for two outputs from one decode: the colour video's
+// arguments with the mask's filter and encoder added as a second output.
+// Both come from buildCommands ("-map 0:v:0 -vf <filter>" then the output
+// options); the mask's progress option is dropped, as the colour run's
+// already reports (and may write to stdout, which can carry the frames).
+// flip: a filter applied to the input before the split (MMD's bottom-up frames).
+function joinMask(video, mask, flip = "") {
+  const part = (a) => {
+    const m = a.indexOf("-map");
+    if (m < 0 || a[m + 2] !== "-vf") throw Error("无法组合遮罩命令");
+    return { head: a.slice(0, m), filter: a[m + 3], rest: a.slice(m + 4) };
+  };
+  const v = part(video),
+    k = part(mask);
+  const rest = k.rest.filter(
+    (x, i, all) => x !== "-progress" && all[i - 1] !== "-progress",
+  );
+  return [
+    ...v.head,
+    "-filter_complex",
+    `[0:v]${flip}split=2[v0][m0];[v0]${v.filter}[vout];[m0]${k.filter}[mout]`,
+    "-map",
+    "[vout]",
+    ...v.rest,
+    "-map",
+    "[mout]",
+    ...rest,
+  ];
+}
+// Colour video and mask in one pass: buildCommands writes the mask with a
+// run of its own (still used to redo just the mask); here it joins the
+// colour's FFmpeg, or with NVEncC the FFmpeg that feeds NVEncC its frames.
+function singlePass(commands) {
+  const i = commands.findIndex((c) => c.mask);
+  if (i < 0 || commands.length < 2) return commands;
+  const mask = commands[i];
+  const rest = commands.filter((c) => c !== mask);
+  const piped = rest.find((c) => c.pipeFrom);
+  if (piped)
+    return rest.map((c) =>
+      c === piped
+        ? {
+            ...c,
+            pipeFrom: {
+              ...c.pipeFrom,
+              args: joinMask(c.pipeFrom.args, mask.args),
+            },
+            stage: c.stage + " + Alpha 遮罩",
+            mask: true,
+          }
+        : c,
+    );
+  const [colour] = rest;
+  return [
+    {
+      ...colour,
+      args: joinMask(colour.args, mask.args),
+      stage: colour.stage + " + Alpha 遮罩",
+      mask: true,
+    },
+    ...rest.slice(1),
+  ];
+}
 function buildCommands(job, s, engines, paths) {
   s = keyframes(s, job.meta);
   const errors = validate(s, job.meta);
@@ -1075,9 +1166,13 @@ function buildCommands(job, s, engines, paths) {
   // The audio's parameters and its stream: the source's, or a replacement
   // file (job.audioMeta, read when it was chosen) given as the next input.
   const sourceAudio = job.audioPath ? job.audioMeta : job.meta?.audio;
+  // 音频对齐 of a replacement (job.audioOffset, seconds: > 0 its start is
+  // cut, < 0 silence goes first); the audio then ends at the video's end or
+  // its own, whichever is first.
+  const audioOffset = job.audioPath ? Number(job.audioOffset) || 0 : 0;
   const audioLength = job.audioPath
     ? Math.min(
-        Number(job.audioDuration) || Infinity,
+        (Number(job.audioDuration) || Infinity) - audioOffset,
         Number(job.meta?.duration) || Infinity,
       )
     : job.meta?.duration;
@@ -1104,8 +1199,9 @@ function buildCommands(job, s, engines, paths) {
           ...media.withAudioFilter(
             s.hiRes
               ? // PCM becomes 24-bit PCM; see media.hiResPlan for the rules.
-                // A fade means re-encoding even where Hi-Res would copy.
-                s.audioFade && hiResPlan.action === "copy"
+                // A fade or an alignment means re-encoding even where
+                // Hi-Res would copy.
+                (s.audioFade || audioOffset) && hiResPlan.action === "copy"
                 ? media.hiResCodec(hiResPlan)
                 : media.hiResArgs(hiResPlan, engines?.soxr)
               : [
@@ -1117,7 +1213,22 @@ function buildCommands(job, s, engines, paths) {
                       ? ["-b:a", "192k"]
                       : []),
                 ],
-            media.fadeFilter(s.audioFade, audioLength),
+            [
+              audioOffset
+                ? media.alignFilter(
+                    // Ends with the video (silence padded in front must not
+                    // make it longer).
+                    {
+                      offset: audioOffset,
+                      length: Number(job.meta?.duration) || 0,
+                    },
+                    sourceAudio.sampleRate,
+                  )
+                : "",
+              media.fadeFilter(s.audioFade, audioLength),
+            ]
+              .filter(Boolean)
+              .join(","),
           ),
         ]
       : ["-an"];
@@ -1263,7 +1374,9 @@ function buildCommands(job, s, engines, paths) {
           "0:v:0",
           "-vf",
           filter(ms, job.meta || {}, mask),
-          ...videoOptions(ms),
+          ...(mask && maskOnNvenc(s, job.meta || {}, engines)
+            ? NVENC_LOSSLESS
+            : videoOptions(ms)),
           ...(mask ? ["-an"] : audio),
           ...colors,
           "-metadata",
@@ -1427,6 +1540,8 @@ function compatibility(s, engines = ENGINES) {
   return { errors, suggestions };
 }
 module.exports = {
+  joinMask,
+  singlePass,
   PRORES_QUALITY,
   encodeTag,
   readTag,

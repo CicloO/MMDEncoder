@@ -14,22 +14,8 @@ const trim = require("./trim.cjs");
 const { createTools, DEFAULT_ROOT } = require("./tools.cjs");
 const mmdExport = require("./mmd-export.cjs");
 const mmdPlugin = require("./mmd-plugin.cjs");
-const sequence = require("./sequence.cjs");
-// Frame rate a PNG sequence starts with; it can be changed per sequence.
-const SEQUENCE_FPS = 30;
-const SEQUENCE_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120];
-// The NTSC rates as exact fractions for FFmpeg.
-const sequenceRate = (fps) => ({
-  fps,
-  fpsText:
-    { 23.976: "24000/1001", 29.97: "30000/1001", 59.94: "60000/1001" }[fps] ||
-    String(fps),
-});
-// Output names come from the sequence name (frame_0001.png → frame).
-const nameSource = (job) =>
-  job.sequence
-    ? path.join(job.sequence.dir, job.sequence.name + ".png")
-    : job.path;
+const { createMediaQueue } = require("./media-queue.cjs");
+const { createEncodeQueue } = require("./encode-queue.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
   engineDir,
@@ -806,21 +792,6 @@ function createService({
     })();
     return locatePromise;
   }
-  // Media page queue: each file is processed on its own with the options chosen
-  // when the queue starts; the output name is generated per file and never reused.
-  function mediaLocation(o) {
-    return {
-      outputMode: ["source", "encoded", "custom"].includes(o.location)
-        ? o.location
-        : "source",
-      outputDir: o.outputDir || "",
-    };
-  }
-  function requireMediaJob(id) {
-    const job = state.mediaJobs.find((j) => j.id === id);
-    if (!job) throw Error("文件不在列表中");
-    return job;
-  }
   // First video / audio stream codecs and the audio bitrate, for the "follow
   // source" bitrate and the MP4 / MKV choice. Unreadable files give {}.
   async function probeMedia(file) {
@@ -909,159 +880,48 @@ function createService({
     placeboCache = { key, value };
     return value;
   }
-  // File parameters for the media queue, read like the video queue's. Audio-only
-  // files get an audio summary; a failed read leaves the file usable.
-  const mediaProbes = new Set();
-  async function probeMediaJob(job) {
+  // Whether this machine's NVENC encodes lossless H.264 (the GPU Alpha
+  // mask): a tiny real run, kept with the encoder detection like Vulkan.
+  let nvencLosslessCache = { key: "", value: false };
+  async function hasNvencLossless(force = false) {
+    const ff = state.engineInfo.ffmpeg;
+    let key = ff;
     try {
-      await locate();
-      if (!state.engineInfo.ffprobe) return;
-      const r = await run(
-        state.engineInfo.ffprobe,
+      const st = fs.statSync(ff);
+      key += "|" + st.size + "|" + st.mtimeMs;
+    } catch {}
+    if (!force && nvencLosslessCache.key === key)
+      return nvencLosslessCache.value;
+    let value = false;
+    try {
+      await run(
+        ff,
         [
+          "-hide_banner",
           "-v",
           "error",
-          "-show_streams",
-          "-show_format",
-          "-of",
-          "json",
-          job.path,
+          "-f",
+          "lavfi",
+          "-i",
+          "color=white:s=256x256:d=0.2",
+          "-c:v",
+          "h264_nvenc",
+          "-preset",
+          "p1",
+          "-tune",
+          "lossless",
+          "-pix_fmt",
+          "yuv420p",
+          "-f",
+          "null",
+          "-",
         ],
-        { timeout: 30000 },
+        { timeout: 20000 },
       );
-      const data = JSON.parse(r.stdout);
-      try {
-        job.meta = core.metadata(data);
-      } catch {
-        const a = data.streams?.find((s) => s.codec_type === "audio");
-        if (!a) throw Error("未找到音视频轨");
-        job.meta = {
-          audioOnly: true,
-          codec: a.codec_name || "未知",
-          duration: Number(data.format?.duration || a.duration) || 0,
-          size: Number(data.format?.size) || job.size,
-          audio: {
-            ...core.audioInfo(a),
-            // An audio-only file's overall rate is the audio rate.
-            bitRate:
-              core.audioInfo(a).bitRate || Number(data.format?.bit_rate) || 0,
-          },
-        };
-      }
-    } catch (e) {
-      job.metaError = "无法读取文件信息：" + e.message;
-    }
-    emit();
-  }
-  async function runMediaJob(job, o) {
-    job.status = "running";
-    job.error = undefined;
-    job.output = undefined;
-    job.log = "";
-    job.startedAt = Date.now();
-    emit();
-    let temp;
-    try {
-      if (o.operation === "merge" && !job.audioPath)
-        throw Error("缺少要合并的音频文件");
-      if (
-        o.hiRes &&
-        o.operation !== "video" &&
-        !["wav", "flac"].includes(o.audioFormat)
-      )
-        throw Error("Hi-Res 只支持 WAV / FLAC 输出");
-      const p = {
-        operation: o.operation,
-        input: job.path,
-        audioInput: job.audioPath,
-        audioFormat: o.audioFormat,
-        hiRes: !!o.hiRes && o.operation !== "video",
-        audioBitrate: Number(o.audioBitrate) || 0,
-        shortest: o.shortest !== false,
-        container: o.container === "mkv" ? "mkv" : "mp4",
-        fade: media.FADES.includes(Number(o.audioFade))
-          ? Number(o.audioFade)
-          : 0,
-      };
-      const source = await probeMedia(job.path);
-      const audioSource =
-        o.operation === "merge" ? await probeMedia(job.audioPath) : source;
-      p.sourceAudio = {
-        codec: audioSource.audioCodec,
-        bitRate: audioSource.audioBitRate,
-        sampleRate: audioSource.audio?.sampleRate,
-        bits: audioSource.audio?.bits,
-        float: audioSource.audio?.float,
-      };
-      // How long the output's audio runs, for the fade-out: the audio itself,
-      // or up to the video's end when a merge stops at the shorter stream.
-      p.fadeLength =
-        o.operation === "merge" && p.shortest && source.videoDuration
-          ? Math.min(audioSource.audioDuration, source.videoDuration)
-          : audioSource.audioDuration;
-      let hiResNote = "";
-      if (p.hiRes) {
-        p.soxr = await hasSoxr();
-        const plan = media.hiResPlan(p.audioFormat, p.sourceAudio);
-        hiResNote = `# Hi-Res：${plan.from} → ${plan.to}，${plan.reason}${plan.action === "resample" ? (p.soxr ? "（soxr 重采样）" : "（当前 FFmpeg 没有 soxr，用内置重采样）") : ""}
-`;
-      }
-      let note = hiResNote;
-      if (o.operation !== "audio") {
-        const container = media.mergeContainer(p, {
-          videoCodec: source.videoCodec,
-          audioCodec: audioSource.audioCodec,
-        });
-        if (container !== p.container) {
-          const audio =
-            o.operation !== "merge"
-              ? ""
-              : " / " +
-                (p.audioFormat === "copy"
-                  ? audioSource.audioCodec || "未知"
-                  : p.audioFormat);
-          note = `# MP4 放不下此编码（${source.videoCodec || "未知"}${audio}），已改用 MKV\n`;
-        }
-        p.container = container;
-      }
-      p.output = media.suggestOutput(p, mediaLocation(o), fs.existsSync);
-      if (!p.output) throw Error("无法生成输出文件名");
-      media.command(p, state.engineInfo, p.output);
-      fs.mkdirSync(path.dirname(p.output), { recursive: true });
-      temp = fs.mkdtempSync(path.join(path.dirname(p.output), ".mmd-media-"));
-      const target = path.join(temp, "output" + path.extname(p.output));
-      const cmd = media.command(p, state.engineInfo, target);
-      job.log = note + core.commandText([cmd]) + "\n";
-      await run(cmd.exe, cmd.args, {
-        encoding: true,
-        onData: (t) => {
-          job.log = (job.log + t).slice(-200000);
-          emitProgress();
-        },
-      });
-      if (stopped) throw Error("已取消");
-      commit(target, p.output);
-      job.output = p.output;
-      job.status = "done";
-    } catch (e) {
-      job.status = stopped ? "cancelled" : "failed";
-      job.error = e.message;
-      job.log += "\n" + e.message;
-    } finally {
-      if (temp) fs.rmSync(temp, { recursive: true, force: true });
-      job.elapsed = (Date.now() - job.startedAt) / 1000;
-      try {
-        fs.mkdirSync(path.join(dataDir, "logs"), { recursive: true });
-        fs.writeFileSync(
-          path.join(dataDir, "logs", "media-" + job.id + ".log"),
-          job.log,
-        );
-      } catch (e) {
-        job.error =
-          (job.error ? job.error + "；" : "") + "日志保存失败：" + e.message;
-      }
-      emit();
-    }
+      value = true;
+    } catch {}
+    nvencLosslessCache = { key, value };
+    return value;
   }
   // Detection runs real trial encodes, so its result is cached in dataDir and
   // reused until the tools, the display adapters/drivers or the engine list change.
@@ -1134,6 +994,7 @@ function createService({
             detectedAt: new Date().toISOString(),
             engines: state.engines,
             libplacebo: !!state.engineInfo.libplacebo,
+            nvencLossless: !!state.engineInfo.nvencLossless,
             log,
           },
           null,
@@ -1165,10 +1026,18 @@ function createService({
         typeof cached?.libplacebo === "boolean"
           ? cached.libplacebo
           : await hasLibplacebo(force);
+      // The Alpha mask goes to NVENC when it encodes lossless.
+      state.engineInfo.nvencLossless =
+        typeof cached?.nvencLossless === "boolean"
+          ? cached.nvencLossless
+          : await hasNvencLossless(force);
       if (cached) {
         state.engines = cached.engines;
-        // A cache from before the Vulkan check: add its result.
-        if (typeof cached.libplacebo !== "boolean")
+        // A cache from before the Vulkan / NVENC lossless checks: add them.
+        if (
+          typeof cached.libplacebo !== "boolean" ||
+          typeof cached.nvencLossless !== "boolean"
+        )
           writeDetectionCache(key, cached.log || "");
         state.detectionLog +=
           (cached.log || "") +
@@ -1365,190 +1234,6 @@ function createService({
       });
     return detectPromise;
   }
-  // Presentation times (seconds, ascending) of about the first 120 frames.
-  // Packet timestamps need no decoding (a 4K intermediate took seconds to
-  // decode); packets come in decode order, so a few more are read and the
-  // last ones dropped in case a reordered frame falls past the sample.
-  // Without packet timestamps the frames are decoded as before.
-  const SAMPLE = 120,
-    REORDER = 16;
-  async function sampleTimes(input) {
-    const probe = async (entries, extra = []) =>
-      JSON.parse(
-        (
-          await run(
-            state.engineInfo.ffprobe,
-            [
-              "-v",
-              "error",
-              "-select_streams",
-              "v:0",
-              "-read_intervals",
-              "%+#" + (SAMPLE + REORDER),
-              ...extra,
-              "-show_entries",
-              entries,
-              "-of",
-              "json",
-              input,
-            ],
-            { timeout: 15000 },
-          )
-        ).stdout,
-      );
-    const packets = (await probe("packet=pts_time")).packets || [];
-    const pts = packets.map((p) => Number(p.pts_time));
-    if (packets.length && pts.every(Number.isFinite)) {
-      pts.sort((a, b) => a - b);
-      // Fewer packets than asked: the whole file was read, nothing is missing.
-      return packets.length < SAMPLE + REORDER ? pts : pts.slice(0, SAMPLE);
-    }
-    const frames = (await probe("frame=best_effort_timestamp_time")).frames;
-    return (frames || [])
-      .slice(0, SAMPLE)
-      .map((f) => Number(f.best_effort_timestamp_time))
-      .filter(Number.isFinite);
-  }
-  async function add(paths) {
-    if (!Array.isArray(paths) || paths.length > 1000)
-      throw Error("请选择最多 1000 个视频文件");
-    await locate();
-    const folders = new Map(); // picked PNGs of one folder: read it once
-    for (const input of paths) {
-      if (typeof input !== "string" || !path.isAbsolute(input))
-        throw Error("素材必须为绝对路径");
-      let resolved = path.resolve(input);
-      // A PNG, or a folder of them, is read as an image sequence; picking
-      // several frames of one sequence adds it once.
-      let seq = null,
-        isDir = false;
-      try {
-        isDir = fs.statSync(resolved).isDirectory();
-        if (isDir || /\.png$/i.test(resolved))
-          seq = sequence.find(resolved, folders);
-      } catch {}
-      if (isDir && !seq) {
-        state.notice = "文件夹里没有 PNG 序列：" + path.basename(input);
-        continue;
-      }
-      if (seq) resolved = seq.first;
-      if (
-        state.jobs.some(
-          (j) =>
-            j.path.toLowerCase() === resolved.toLowerCase() ||
-            (seq &&
-              j.sequence?.pattern.toLowerCase() === seq.pattern.toLowerCase()),
-        )
-      ) {
-        if (!seq || paths.length === 1)
-          state.notice =
-            "已跳过重复素材：" + (seq ? seq.name : path.basename(input));
-        continue;
-      }
-      const job = {
-        id: crypto.randomUUID(),
-        path: resolved,
-        name: seq ? seq.name + "（PNG 序列）" : path.basename(input),
-        status: "probing",
-        progress: 0,
-        ...(seq ? { sequence: { ...seq, ...sequenceRate(SEQUENCE_FPS) } } : {}),
-      };
-      state.jobs.push(job);
-      emit();
-      try {
-        if (!state.engineInfo.ffprobe)
-          throw Error("未找到 ffprobe，无法读取素材");
-        if (/\.png$/i.test(resolved) && !seq)
-          throw Error(
-            "只有一张 PNG，不是图片序列（需要 name_0001.png 这样带连续编号的文件）",
-          );
-        if (seq?.missing !== null && seq?.missing !== undefined)
-          throw Error(
-            `PNG 序列不连续：缺少第 ${seq.missing} 帧（从 ${seq.start} 开始找到 ${seq.total} 张）`,
-          );
-        if (seq) {
-          job.meta = await sequenceMeta(job);
-          job.status = "ready";
-          emit();
-          continue;
-        }
-        const stat = fs.statSync(input);
-        if (!stat.isFile()) throw Error("输入不是文件");
-        const r = await run(
-          state.engineInfo.ffprobe,
-          [
-            "-v",
-            "error",
-            "-show_streams",
-            "-show_format",
-            "-of",
-            "json",
-            input,
-          ],
-          { timeout: 30000 },
-        );
-        job.meta = core.metadata(JSON.parse(r.stdout));
-        // Stream rates often both say 30/1 even when individual timestamps vary.
-        // A bounded sample of the first frames' times establishes positive VFR
-        // evidence without scanning an entire multi-hour source during import.
-        try {
-          const ts = await sampleTimes(input);
-          const gaps = ts
-            .slice(1)
-            .map((v, i) => v - ts[i])
-            .filter((v) => v > 0)
-            .sort((a, b) => a - b);
-          if (gaps.length > 2) {
-            const median = gaps[Math.floor(gaps.length / 2)];
-            job.meta.vfr ||= gaps.some(
-              (g) => Math.abs(g - median) > Math.max(0.002, median * 0.1),
-            );
-          }
-        } catch (e) {
-          job.log = "帧时间戳抽样未完成：" + e.message;
-        }
-        job.meta.size = stat.size;
-        job.status = "ready";
-      } catch (e) {
-        job.status = "invalid";
-        job.error = "素材探测失败：" + e.message;
-      }
-      emit();
-    }
-    return clone(state);
-  }
-  // A PNG sequence has no frame rate of its own: the user sets it (default
-  // SEQUENCE_FPS), and length and timing follow from it.
-  async function sequenceMeta(job) {
-    const q = job.sequence;
-    const r = await run(
-      state.engineInfo.ffprobe,
-      [
-        "-v",
-        "error",
-        "-show_streams",
-        "-show_format",
-        "-of",
-        "json",
-        ...core.inputArgs(job),
-      ],
-      { timeout: 30000 },
-    );
-    return withSequenceRate(core.metadata(JSON.parse(r.stdout)), q);
-  }
-  function withSequenceRate(meta, q) {
-    return {
-      ...meta,
-      fps: q.fps,
-      fpsText: q.fpsText,
-      duration: q.count / q.fps,
-      size: q.size,
-      // Bits per second over the whole sequence, as for a video file.
-      videoBitRate: Math.round((q.size * 8 * q.fps) / q.count),
-      vfr: false,
-      sequence: { count: q.count, start: q.start },
-    };
-  }
   // Apply a drag-sort result: ids must be exactly the current list's ids.
   function reorder(list, ids) {
     if (
@@ -1561,81 +1246,6 @@ function createService({
     if (ids.some((id) => !byId.has(id))) throw Error("排序数据无效，请重试");
     return ids.map((id) => byId.get(id));
   }
-  function requireJob(id) {
-    const j = state.jobs.find((j) => j.id === id);
-    if (!j) throw Error("未找到此任务");
-    return j;
-  }
-  function preview(job, s = state.settings) {
-    const errors = core.validate(s, job.meta);
-    if (
-      (s.vsr || s.vfg) &&
-      (!state.enhancements.verified ||
-        state.enhancements.signature !== enhancementSignature(s))
-    )
-      errors.push("RTX 设置尚未通过本机验证，请在“超分补帧”页验证所选设置");
-    if (!job.meta) errors.push("素材信息尚未读取成功");
-    if (!state.engineInfo.ffmpeg) errors.push("未找到 FFmpeg");
-    // Mask only encodes with FFmpeg's lossless x264 / VP9, not the chosen encoder.
-    const maskOnly = s.alphaMode === "mask";
-    if (
-      !maskOnly &&
-      s.encoder.startsWith("nvencc:") &&
-      !state.engineInfo.nvencc
-    )
-      errors.push("未找到 NVEncC");
-    if (
-      !maskOnly &&
-      !state.detecting &&
-      !state.engines.some((e) => e.id === s.encoder)
-    )
-      errors.push("编码器当前不可用，请重新检测或选择其他编码器");
-    const available = state.engines.find((e) => e.id === s.encoder);
-    if (!maskOnly && available && !available.depths.includes(s.bitDepth))
-      errors.push("此编码器未通过所选位深的实测");
-    if (
-      s.encoder === "nvencc:hevc" &&
-      s.alphaMode === "preserve" &&
-      !available?.alpha
-    )
-      errors.push(
-        "本机 NVEncC HEVC Alpha 试编码未通过；请检查显卡支持和驱动，或选择 ProRes 4444 / VP9",
-      );
-    let paths = { output: "" },
-      commands = [];
-    try {
-      paths = core.outputPaths(
-        nameSource(job),
-        s,
-        state.jobs.indexOf(job) + 1,
-        fs.existsSync,
-      );
-      if (job.meta && errors.length === 0)
-        commands = core.buildCommands(job, s, state.engineInfo, paths);
-    } catch (e) {
-      errors.push(e.message);
-    }
-    const target = (() => {
-      try {
-        return core.parseFps(s.fps)?.value;
-      } catch {
-        return null;
-      }
-    })();
-    const meta = job.meta;
-    const summary = !meta
-      ? ""
-      : maskOnly
-        ? `${meta.width} × ${meta.height} · ${meta.fpsText || "未知"}${target ? " → " + s.fps : ""} FPS / 分离 Alpha · 仅黑白遮罩 · ${s.container === "webm" ? "VP9" : "H.264"} 无损 · 无音频 · ${s.container.toUpperCase()}`
-        : `${meta.width} × ${meta.height} · ${meta.fpsText || "未知"}${target ? " → " + s.fps : ""} FPS / ${core.ENGINES.find((e) => e.id === s.encoder)?.label || s.encoder} · ${s.bitDepth}-bit · ${s.audio === "none" ? "无音频" : s.audio.toUpperCase()} · ${s.container.toUpperCase()}${target > meta.fps ? "；通过重复帧提高帧率，不生成新的运动细节" : ""}${s.encoder.startsWith("nvencc:") ? "；NVEncC 预处理需要额外临时磁盘空间" : ""}`;
-    return {
-      ...paths,
-      dimensions: meta ? core.dimensions(s, meta) : null,
-      summary,
-      command: core.commandText(commands, { prepare: true }),
-      errors: [...new Set(errors)],
-    };
-  }
   function commit(tmp, dest) {
     try {
       fs.linkSync(tmp, dest);
@@ -1647,204 +1257,6 @@ function createService({
       fs.copyFileSync(tmp, dest, fs.constants.COPYFILE_EXCL);
     }
     fs.unlinkSync(tmp);
-  }
-  function append(job, text) {
-    job.log = ((job.log || "") + text).slice(-200000);
-    const pieces = pendingLogs.get(job.id) || [];
-    pieces.push(text);
-    pendingLogs.set(job.id, pieces);
-  }
-  async function encode(job) {
-    const s = job.settings;
-    const maskOnly =
-      job.status === "partial" && job.output && fs.existsSync(job.output);
-    job.status = "encoding";
-    job.error = undefined;
-    job.progress = 0;
-    job.startedAt = Date.now();
-    job.stage = maskOnly ? "重试 Alpha 遮罩" : "准备";
-    emit();
-    let tempDir;
-    try {
-      const errors = core.validate(s, job.meta);
-      if (
-        (s.vsr || s.vfg) &&
-        (!state.enhancements.verified ||
-          state.enhancements.signature !== enhancementSignature(s))
-      )
-        errors.push("RTX 设置未通过本机验证");
-      // Selected but not applicable here (too small an enlargement, mask only):
-      // say so instead of silently scaling another way.
-      const skipped = core.artcnnSkipped(s, job.meta);
-      if (skipped) append(job, "ArtCNN：" + skipped + "\n");
-      if (core.usesArtcnn(s, job.meta) && !state.engineInfo.libplacebo)
-        errors.push(
-          "本机无法运行 ArtCNN 放大（FFmpeg 需要支持 Vulkan 的显卡和驱动），请改用 Lanczos",
-        );
-      if (errors.length) throw Error(errors.join("；"));
-      const engine = state.engines.find((e) => e.id === s.encoder);
-      if (
-        s.alphaMode !== "mask" &&
-        (!engine || !engine.depths.includes(s.bitDepth))
-      )
-        throw Error("所选编码器或位深未通过本机试编码，请调整参数");
-      if (
-        s.encoder === "nvencc:hevc" &&
-        s.alphaMode === "preserve" &&
-        !engine?.alpha
-      )
-        throw Error("本机未通过 HEVC Alpha 试编码，已停止以避免丢失透明通道");
-      let paths = maskOnly
-        ? { output: job.output, maskOutput: job.maskOutput }
-        : core.outputPaths(
-            nameSource(job),
-            s,
-            state.jobs.indexOf(job) + 1,
-            fs.existsSync,
-          );
-      const dir = path.dirname(paths.output);
-      fs.mkdirSync(dir, { recursive: true });
-      fs.accessSync(dir, fs.constants.W_OK);
-      tempDir = fs.mkdtempSync(path.join(dir, ".mmd-"));
-      const temps = {
-        output: path.join(tempDir, "video." + s.container),
-        maskOutput: s.alphaMask
-          ? path.join(tempDir, "mask." + s.container)
-          : undefined,
-      };
-      let commands = core.buildCommands(job, s, state.engineInfo, temps);
-      if (maskOnly) commands = commands.filter((c) => c.mask);
-      job.output = maskOnly ? job.output : undefined;
-      job.maskOutput = paths.maskOutput;
-      for (let i = 0; i < commands.length; i++) {
-        if (stopped) throw Error("已取消");
-        const c = commands[i];
-        job.stage = c.stage;
-        append(job, "\n" + core.commandText([c]) + "\n");
-        emit();
-        let progressBuffer = "";
-        await (c.pipeFrom ? runPiped : (c, o) => run(c.exe, c.args, o))(c, {
-          encoding: true,
-          onData: (t, stream) => {
-            append(job, t);
-            progressBuffer = (progressBuffer + t).slice(-8192);
-            const matches = [...progressBuffer.matchAll(/out_time_us=(\d+)/g)];
-            if (matches.length && job.meta.duration) {
-              const seconds = Number(matches.at(-1)[1]) / 1000000;
-              job.progress = Math.min(
-                99,
-                Math.max(
-                  job.progress,
-                  (100 * (i + Math.min(1, seconds / job.meta.duration))) /
-                    commands.length,
-                ),
-              );
-            } else if (c.exe === state.engineInfo.nvencc) {
-              const m = t.match(/(\d+(?:\.\d+)?)%/);
-              if (m)
-                job.progress = Math.min(
-                  99,
-                  (100 * (i + Number(m[1]) / 100)) / commands.length,
-                );
-            }
-            job.elapsed = (Date.now() - job.startedAt) / 1000;
-            emitProgress();
-          },
-        });
-        if (c.output === temps.output) {
-          try {
-            commit(temps.output, paths.output);
-          } catch (e) {
-            if (e.code !== "EEXIST") throw e;
-            paths = core.outputPaths(
-              nameSource(job),
-              s,
-              state.jobs.indexOf(job) + 1,
-              fs.existsSync,
-            );
-            commit(temps.output, paths.output);
-            job.maskOutput = paths.maskOutput;
-          }
-          job.output = paths.output;
-        }
-        if (c.mask) {
-          commit(temps.maskOutput, paths.maskOutput);
-          job.maskOutput = paths.maskOutput;
-        }
-      }
-      job.status = "done";
-      job.progress = 100;
-      job.stage = "完成";
-    } catch (e) {
-      append(job, "\n" + e.message + "\n");
-      job.status =
-        job.output && fs.existsSync(job.output)
-          ? "partial"
-          : stopped
-            ? "cancelled"
-            : "failed";
-      job.error = stopped ? "任务已取消" : e.message;
-      job.stage =
-        job.status === "partial" ? "主视频已完成，遮罩未完成" : "已停止";
-    } finally {
-      if (tempDir)
-        try {
-          fs.rmSync(tempDir, { recursive: true, force: true });
-        } catch (e) {
-          append(job, "临时文件清理失败：" + e.message);
-        }
-      job.elapsed = (Date.now() - job.startedAt) / 1000;
-      emit();
-    }
-  }
-  async function queue(jobs) {
-    if (tools.state.busy || state.enhancements.busy)
-      throw Error("工具管理或 RTX 验证中，请稍后处理队列");
-    if (state.running) throw Error("队列正在运行");
-    if (state.trim.running) throw Error("无损剪辑正在导出，请等它结束");
-    // Validate the frozen per-job settings first; a bad alpha source must not
-    // prevent valid items from continuing, or be mislabeled as an engine fault.
-    jobs = jobs.filter((j) => {
-      j.settings = clone(j._retrySettings || state.settings);
-      const errors = core.validate(j.settings, j.meta);
-      if (!errors.length) return true;
-      j.status = "invalid";
-      j.error = errors.join("；");
-      return false;
-    });
-    if (!jobs.length) {
-      state.notice = "没有可编码的待处理任务";
-      emit();
-      return;
-    }
-    state.running = true;
-    stopped = false;
-    emit();
-    (async () => {
-      await detectPromise;
-      state.engineInfo.soxr = await hasSoxr();
-      // Take jobs in the queue's current order so drag-sorting during a run applies.
-      const pending = new Set(jobs);
-      while (pending.size) {
-        const job =
-          state.jobs.find((j) => pending.has(j)) ||
-          pending.values().next().value;
-        pending.delete(job);
-        // Removed from the queue while waiting: withdrawn, not run.
-        if (!state.jobs.includes(job)) continue;
-        if (stopped) {
-          if (job.status !== "partial") job.status = "cancelled";
-          continue;
-        }
-        await encode(job);
-      }
-    })()
-      .catch((e) => (state.notice = e.message))
-      .finally(() => {
-        state.running = false;
-        flushEvidence();
-        emit();
-      });
   }
   // ---- lossless trim ----
   // Indexes stay here (they can be large); the window gets what it shows.
@@ -2120,7 +1532,50 @@ function createService({
     })();
   }
 
+  // Shared with the queue modules. `stopped`, `detectPromise` and the running
+  // encoder change in several places, so the modules read them through ctx.
+  const ctx = {
+    state,
+    emit,
+    emitProgress,
+    run,
+    locate,
+    probeMedia,
+    hasSoxr,
+    commit,
+    reorder,
+    flushEvidence,
+    schema,
+    tools,
+    children,
+    pendingLogs,
+    dataDir,
+    get stopped() {
+      return stopped;
+    },
+    set stopped(v) {
+      stopped = v;
+    },
+    get detectPromise() {
+      return detectPromise;
+    },
+    killActive: () => active?.kill(),
+  };
+  const mediaQueue = createMediaQueue(ctx);
+  const encodeQueue = createEncodeQueue(ctx);
+  const modules = [mediaQueue, encodeQueue];
+
   async function invoke(action, payload = {}) {
+    // Queries return their own answer; actions change state, which is then
+    // sent to the window and returned.
+    for (const m of modules) {
+      if (Object.hasOwn(m.queries, action)) return m.queries[action](payload);
+      if (Object.hasOwn(m.actions, action)) {
+        await m.actions[action](payload);
+        emit();
+        return clone(state);
+      }
+    }
     switch (action) {
       case "state":
         return clone(state);
@@ -2128,8 +1583,8 @@ function createService({
         if (tools.state.busy) throw Error("工具安装中，请稍后查看详情");
         // payload.media: a job from the audio / video tools queue
         const job = payload.media
-          ? requireMediaJob(payload.id)
-          : requireJob(payload.id);
+          ? mediaQueue.requireMediaJob(payload.id)
+          : encodeQueue.requireJob(payload.id);
         await locate();
         const result = {};
         for (const [key, file] of payload.media
@@ -2179,75 +1634,6 @@ function createService({
           }
         }
         return result;
-      }
-      case "mediaSuggest":
-        return media.suggestOutput(
-          {
-            ...(payload || {}),
-            // Hi-Res merges go to MKV (see media.mergeContainer).
-            ...(payload?.hiRes && payload.operation === "merge"
-              ? { container: "mkv" }
-              : {}),
-          },
-          mediaLocation(payload || {}),
-          fs.existsSync,
-        );
-      case "mediaAdd": {
-        for (const raw of payload?.paths || []) {
-          if (typeof raw !== "string" || !path.isAbsolute(raw)) continue;
-          const file = path.resolve(raw); // same separators as the video queue
-          let stat;
-          try {
-            stat = fs.statSync(file);
-          } catch {
-            continue;
-          }
-          if (!stat.isFile()) continue;
-          if (
-            state.mediaJobs.some(
-              (j) =>
-                j.status === "ready" &&
-                j.path.toLowerCase() === file.toLowerCase(),
-            )
-          )
-            continue;
-          state.mediaJobs.push({
-            id: crypto.randomUUID(),
-            path: file,
-            name: path.basename(file),
-            size: stat.size,
-            status: "ready",
-          });
-          const probe = probeMediaJob(state.mediaJobs.at(-1));
-          mediaProbes.add(probe);
-          void probe.finally(() => mediaProbes.delete(probe));
-        }
-        break;
-      }
-      case "mediaSetAudio": {
-        const job = requireMediaJob(payload?.id);
-        if (job.status === "running") throw Error("处理中的文件不能更换音频");
-        const file = payload?.path || "";
-        if (file && (!path.isAbsolute(file) || !fs.statSync(file).isFile()))
-          throw Error("请选择有效的音频文件");
-        if (file) job.audioPath = file;
-        else delete job.audioPath;
-        delete job.audioMeta;
-        // The replacement audio's own parameters (Hi-Res preview, checks).
-        if (file) {
-          await locate();
-          const info = await probeMedia(file);
-          if (job.audioPath === file && info.audio) job.audioMeta = info.audio;
-        }
-        break;
-      }
-      case "mediaLog":
-        return requireMediaJob(payload?.id).log || "";
-      case "mediaRemove": {
-        const job = requireMediaJob(payload?.id);
-        if (job.status === "running") throw Error("处理中的文件不能移除");
-        state.mediaJobs = state.mediaJobs.filter((j) => j !== job);
-        break;
       }
       case "trimAdd":
         await trimAdd(payload?.paths);
@@ -2344,76 +1730,6 @@ function createService({
           progress: 0,
         });
         break;
-      case "mediaClearCompleted":
-        state.mediaJobs = state.mediaJobs.filter(
-          (j) => !["done", "cancelled"].includes(j.status),
-        );
-        break;
-      case "mediaRequeue": {
-        if (state.running) throw Error("请等待当前处理结束后再重新导出");
-        const job = requireMediaJob(payload?.id);
-        if (!["done", "cancelled", "failed"].includes(job.status))
-          throw Error("只有已完成、已取消或失败的文件可以重新导出");
-        for (const key of ["output", "error", "log", "elapsed", "startedAt"])
-          delete job[key];
-        job.status = "ready";
-        break;
-      }
-      case "mediaStart": {
-        // File-info reads started by mediaAdd are short; let them finish
-        // instead of reporting them as a busy task.
-        await Promise.all([...mediaProbes]);
-        if (
-          state.running ||
-          state.trim.running ||
-          state.detecting ||
-          tools.state.busy ||
-          state.enhancements.busy ||
-          children.size
-        )
-          throw Error("请等待当前任务结束");
-        const options = payload || {};
-        if (!["audio", "video", "merge"].includes(options.operation))
-          throw Error("请选择提取音频、提取视频或音视频合并");
-        if (
-          options.location === "custom" &&
-          !(
-            typeof options.outputDir === "string" &&
-            path.isAbsolute(options.outputDir)
-          )
-        )
-          throw Error("请选择有效的自定义输出目录");
-        await locate();
-        if (!state.engineInfo.ffmpeg || !state.engineInfo.ffprobe)
-          throw Error("请先安装 FFmpeg / ffprobe");
-        const jobs = state.mediaJobs.filter((j) => j.status === "ready");
-        if (!jobs.length) throw Error("没有待处理的文件");
-        state.running = true;
-        stopped = false;
-        emit();
-        (async () => {
-          const pending = new Set(jobs);
-          while (pending.size) {
-            const job =
-              state.mediaJobs.find((j) => pending.has(j)) ||
-              pending.values().next().value;
-            pending.delete(job);
-            // Removed from the queue while waiting: withdrawn, not run.
-            if (!state.mediaJobs.includes(job)) continue;
-            if (stopped) {
-              job.status = "cancelled";
-              continue;
-            }
-            await runMediaJob(job, options);
-          }
-        })()
-          .catch((e) => (state.notice = e.message))
-          .finally(() => {
-            state.running = false;
-            emit();
-          });
-        break;
-      }
       case "testEnhancements": {
         if (
           state.running ||
@@ -2509,67 +1825,6 @@ function createService({
         if (state.trim.running) throw Error("无损剪辑正在导出，请稍后重新检测");
         await detect({ force: true });
         break;
-      case "add":
-        if (state.enhancements.busy) throw Error("RTX 验证中，请稍后添加素材");
-        if (tools.state.busy) throw Error("工具安装中，请稍后添加素材");
-        return add(payload.paths);
-      case "remove": {
-        const job = requireJob(payload.id);
-        if (job.status === "encoding" || (state.running && job.settings))
-          throw Error("已提交任务不能在运行中移除");
-        state.jobs = state.jobs.filter((j) => j.id !== job.id);
-        break;
-      }
-      case "setAudio": {
-        // Replace one video's audio with another file (empty path: use the
-        // video's own audio again), as on the media page's merge.
-        const job = requireJob(payload?.id);
-        if (job.status === "encoding" || (state.running && job.settings))
-          throw Error("已提交任务不能更换音频");
-        const file = payload?.path || "";
-        if (file && (!path.isAbsolute(file) || !fs.statSync(file).isFile()))
-          throw Error("请选择有效的音频文件");
-        delete job.audioMeta;
-        delete job.audioDuration;
-        if (!file) {
-          delete job.audioPath;
-          break;
-        }
-        await locate();
-        const info = await probeMedia(file);
-        if (!info.audio) throw Error("这个文件没有音轨");
-        job.audioPath = file;
-        job.audioMeta = info.audio;
-        job.audioDuration = info.audioDuration;
-        break;
-      }
-      case "requeue": {
-        // Put a finished or cancelled item back in the queue; the next start
-        // freezes the current settings, and existing outputs get a numbered name.
-        if (state.running) throw Error("请等待当前队列结束后再重新导出");
-        const job = requireJob(payload.id);
-        if (!["done", "cancelled"].includes(job.status))
-          throw Error("只有已完成或已取消的任务可以重新导出");
-        if (!job.meta) throw Error("素材探测失败，请重新添加");
-        for (const key of [
-          "settings",
-          "output",
-          "maskOutput",
-          "error",
-          "stage",
-          "elapsed",
-          "startedAt",
-        ])
-          delete job[key];
-        job.status = "ready";
-        job.progress = 0;
-        break;
-      }
-      case "clearCompleted":
-        state.jobs = state.jobs.filter(
-          (j) => !["done", "cancelled"].includes(j.status),
-        );
-        break;
       case "settings":
         schema(payload.patch);
         state.settings = { ...state.settings, ...payload.patch };
@@ -2582,70 +1837,15 @@ function createService({
         }
         persist();
         break;
-      case "preview":
-        return preview(requireJob(payload.id));
-      case "logs":
-        return payload.id
-          ? requireJob(payload.id).log || "暂无日志"
-          : state.detectionLog;
-      case "start":
-        if (state.enhancements.busy) throw Error("RTX 验证中，请稍后开始编码");
-        if (tools.state.busy) throw Error("工具安装中，请稍后开始编码");
-        await locate();
-        if (state.detecting) await detectPromise;
-        await queue(
-          state.jobs.filter(
-            (j) => j.status === "ready" || (j.status === "invalid" && j.meta),
-          ),
-        );
-        break;
-      case "cancel":
-        stopped = true;
-        active?.kill();
-        break;
-      case "retry": {
-        if (state.running) throw Error("请等待当前队列停止");
-        const j = requireJob(payload.id);
-        if (!["failed", "partial", "cancelled", "invalid"].includes(j.status))
-          throw Error("此任务不需要重试");
-        if (!j.meta) throw Error("素材探测失败，请重新添加");
-        let s = clone(j.settings || state.settings);
-        if (payload.software) {
-          if (s.vsr || s.vfg)
-            throw Error(
-              "RTX VSR / VFG 不能软件回退；请修复本机 RTX 功能，或在“超分补帧”里关闭后重试",
-            );
-          if (s.alphaMode === "preserve" && s.encoder === "nvencc:hevc")
-            throw Error(
-              "HEVC Alpha 无软件回退；请修复 NVEncC，或明确改选 ProRes 4444 / VP9 后重试",
-            );
-          const e = core.ENGINES.find((e) => e.id === s.encoder);
-          s.encoder =
-            {
-              h264: "libx264",
-              hevc: "libx265",
-              av1: "libsvtav1",
-              vp9: "libvpx-vp9",
-              prores: "prores_ks",
-            }[e?.codec] || "libx264";
-          s.quality = 18;
-          s.preset = s.encoder === "libsvtav1" ? "6" : "medium";
-          s.rateControl = "quality";
-          s.lookahead = 0;
-          s.lookaheadLevel = 0;
-          state.notice = "软件重试使用 CRF 18；CQ 与 CRF 数值不等效";
-        } else if (j.status !== "partial") s = clone(state.settings);
-        const errors = core.validate(s, j.meta);
-        if (errors.length) throw Error(errors.join("；"));
-        j._retrySettings = s;
-        await queue([j]);
-        delete j._retrySettings;
-        break;
-      }
       case "savePreset": {
+        // payload.settings: a video's own settings ("单独设置"), saved
+        // without changing the page's.
+        const own = payload.settings
+          ? { ...state.settings, ...schema(payload.settings) }
+          : null;
         const valid = presetValid({
           name: payload.name,
-          settings: state.settings,
+          settings: own || state.settings,
         });
         if (
           state.presets.some(
@@ -2666,7 +1866,7 @@ function createService({
           });
           state.presets = state.presets.map((x) => (x.id === p.id ? valid : x));
         } else state.presets.push(valid);
-        state.settings.presetName = valid.name;
+        if (!own) state.settings.presetName = valid.name;
         persist();
         break;
       }
@@ -2762,31 +1962,6 @@ function createService({
         persist();
         break;
       }
-      case "reorderJobs":
-        state.jobs = reorder(state.jobs, payload.ids);
-        break;
-      case "setSequenceFps": {
-        const job = requireJob(payload?.id);
-        if (!job.sequence) throw Error("这个素材不是图片序列");
-        if (!SEQUENCE_RATES.includes(payload.fps)) throw Error("帧率无效");
-        if (
-          ![
-            "ready",
-            "invalid",
-            "done",
-            "failed",
-            "cancelled",
-            "partial",
-          ].includes(job.status)
-        )
-          throw Error("正在处理的素材不能改帧率");
-        Object.assign(job.sequence, sequenceRate(payload.fps));
-        if (job.meta) job.meta = withSequenceRate(job.meta, job.sequence);
-        break;
-      }
-      case "mediaReorder":
-        state.mediaJobs = reorder(state.mediaJobs, payload.ids);
-        break;
       case "importPresets": {
         if (!Array.isArray(payload.presets) || payload.presets.length > 200)
           throw Error("预设文件格式无效或超过 200 项");

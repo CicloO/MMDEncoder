@@ -84,10 +84,14 @@ export type Job = {
   output?: string;
   maskOutput?: string;
   settings?: Settings;
+  // "单独设置": this video's own settings (else the page's).
+  ownSettings?: Settings;
   // Replacement audio (as the media page's merge) and its parameters.
   audioPath?: string;
   audioMeta?: Meta["audio"];
   audioDuration?: number;
+  // 音频对齐 of the replacement with the video's own sound (seconds).
+  audioOffset?: number;
   // PNG sequence source: FFmpeg pattern and the frame rate the user gave it.
   sequence?: {
     pattern: string;
@@ -140,6 +144,11 @@ export type MediaJob = {
   size: number;
   status: string;
   audioPath?: string;
+  // 音频对齐 of the added audio with the video's own sound (merge).
+  audioOffset?: number;
+  // 音频对齐: line the extracted audio up with a reference (offset seconds,
+  // > 0 cut, < 0 padded; length: end with the reference).
+  align?: { reference: string; offset: number; length?: number };
   // The replacement audio's parameters, read when it is chosen.
   audioMeta?: Meta["audio"];
   output?: string;

@@ -6,16 +6,12 @@ import {
   ArrowDownToLine,
   Plus,
   FolderOpen,
-  Film,
   Layers,
   Settings2,
   SlidersHorizontal,
   Copy,
   Check,
-  ChevronLeft,
-  ChevronRight,
   Trash2,
-  FileVideo,
   RefreshCw,
   Play,
   Square,
@@ -24,16 +20,13 @@ import {
   Cpu,
   X,
   LoaderCircle,
-  Terminal,
   Folder,
   Save,
   FilePlus2,
-  ExternalLink,
   Clapperboard,
   Eye,
   EyeOff,
   GripVertical,
-  Music,
 } from "lucide-react";
 import {
   Button,
@@ -45,15 +38,14 @@ import {
 } from "./components";
 import { MediaTools } from "./MediaTools";
 import { TrimTools } from "./TrimTools";
+import { EncodeQueue } from "./EncodeQueue";
+import { autoAlign } from "./autoAlign";
 import { MediaDetails } from "./MediaDetails";
-import { FileMeta, metaSummary } from "./FileMeta";
 import { RtxSettings } from "./RtxSettings";
 import { AboutDialog } from "./AboutDialog";
 import {
   formatFPS,
-  formatDuration,
   formatSize,
-  statusLabels,
   audioLabels,
   compatibilityErrors,
   fadeOptions,
@@ -87,6 +79,19 @@ function mmdUnsupported(p: Preset) {
     return "NVEncC 暂不支持";
   return "";
 }
+// Which kind of encoder an id names, for encoders not detected here.
+const encoderBackend = (id: string) =>
+  id.startsWith("nvencc:")
+    ? "nvencc"
+    : id.endsWith("_nvenc")
+      ? "nvenc"
+      : id.endsWith("_qsv")
+        ? "qsv"
+        : id.endsWith("_amf")
+          ? "amf"
+          : "cpu";
+// Audio files dropped on the video page replace a video's audio.
+const AUDIO_EXT = /\.(wav|flac|mp3|aac|m4a|opus|ogg|mka)$/i;
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 export default function App() {
   // Light is the default. A new key so the old auto-saved "dark" default does not stick.
@@ -107,6 +112,22 @@ export default function App() {
       /* Theme still works for this session. */
     }
   }, [theme]);
+  // Video page: line a replacement audio up with the video's own sound
+  // when it is chosen (remembered per computer, like the theme).
+  const [autoAlignAudio, setAutoAlignAudio] = useState(() => {
+    try {
+      return localStorage.getItem("mmd-auto-align") !== "off";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("mmd-auto-align", autoAlignAudio ? "on" : "off");
+    } catch {
+      /* Still applies for this session. */
+    }
+  }, [autoAlignAudio]);
   const [state, setState] = useState<State | null>(null),
     [compatibility, setCompatibility] = useState<{
       errors: string[];
@@ -142,6 +163,8 @@ export default function App() {
     stateRef = useRef<State | null>(null),
     lastNotice = useRef(""),
     draftRef = useRef<Settings | null>(null),
+    // "" = the page's settings, else the id of the video being set on its own.
+    draftTarget = useRef(""),
     previewSequence = useRef(0),
     saveChain = useRef(Promise.resolve()),
     autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
@@ -279,17 +302,7 @@ export default function App() {
     s = draft,
     activePreset = state?.presets.find((p) => p.id === presetId),
     engine = state?.engines.find((e) => e.id === s?.encoder),
-    backend =
-      engine?.backend ||
-      (s?.encoder.startsWith("nvencc:")
-        ? "nvencc"
-        : s?.encoder.endsWith("_nvenc")
-          ? "nvenc"
-          : s?.encoder.endsWith("_qsv")
-            ? "qsv"
-            : s?.encoder.endsWith("_amf")
-              ? "amf"
-              : "cpu"),
+    backend = engine?.backend || encoderBackend(s?.encoder || ""),
     pageCount = Math.max(1, Math.ceil(jobs.length / PAGE_SIZE));
   const sortJob = useDragSort(
     jobs.map((j) => j.id),
@@ -302,8 +315,6 @@ export default function App() {
     true,
     { handle: true },
   );
-  // Frame rates a PNG sequence can play at (backend SEQUENCE_RATES).
-  const SEQUENCE_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120];
   // Every preset shows unless the user hid it with the hide / show button.
   const presetHidden = (p: Preset) => p.hidden ?? false;
   useEffect(() => {
@@ -369,16 +380,59 @@ export default function App() {
   function action(actionName: string, payload?: unknown, message?: string) {
     void call(actionName, payload, message).catch(() => {});
   }
-  // Replace one video's audio, as the media page's merge does.
+  // Replace one video's audio, as the media page's merge does, and line it
+  // up with the video's own sound when "自动对齐" is on and there is one.
   async function pickAudio(j: Job) {
     const file = await call("pickMedia", { multiple: false }).catch(() => null);
-    if (typeof file === "string")
-      action("setAudio", { id: j.id, path: file }, "已替换音频");
+    if (typeof file === "string") await replaceAudio(j, file);
   }
-  function persist(settings: Settings) {
+  async function replaceAudio(j: Job, file: string) {
+    try {
+      await call("setAudio", { id: j.id, path: file }, "已替换音频");
+    } catch {
+      return;
+    }
+    if (!autoAlignAudio || !j.meta?.audio || j.sequence) return;
+    const note = await autoAlign(j.path, file, (offset) =>
+      call("setAudioOffset", { id: j.id, offset }),
+    );
+    notify(note || "已替换音频，并按视频自带的声音自动对齐");
+  }
+  // Dropped on the video page: videos join the queue; audio files replace
+  // the audio of the selected video, or of the first one still without a
+  // replacement (as the media page's merge pairs them).
+  async function dropOnQueue(paths: string[]) {
+    const audio = paths.filter((p) => AUDIO_EXT.test(p));
+    const videos = paths.filter((p) => !audio.includes(p));
+    let current = stateRef.current?.jobs || [];
+    if (videos.length) {
+      const r = await call("add", { paths: videos }).catch(() => null);
+      current = r?.jobs || current;
+    }
+    const open = (j?: Job) =>
+      !!j &&
+      !j.audioPath &&
+      !["encoding", "done"].includes(j.status) &&
+      !!j.meta;
+    for (const file of audio) {
+      const chosen = current.find((j) => j.id === job?.id);
+      const target = open(chosen) ? chosen : current.find((j) => open(j));
+      if (!target) {
+        setError("没有等待替换音频的视频，请先加入视频");
+        break;
+      }
+      await replaceAudio(target, file);
+      current = stateRef.current?.jobs || current;
+    }
+  }
+  function persist(settings: Settings, to = draftTarget.current) {
     const task = saveChain.current
       .catch(() => {})
-      .then(() => window.encoder.invoke("settings", { patch: settings }))
+      .then(() =>
+        to
+          ? window.encoder.invoke("setJobSettings", { id: to, patch: settings })
+          : window.encoder.invoke("settings", { patch: settings }),
+      )
       .then((r: State) => {
         receive(r);
       });
@@ -427,6 +481,50 @@ export default function App() {
     state?.enhancements.verified,
     state?.enhancements.signature,
   ]);
+  // "单独设置": with it on for the selected video, the settings panel edits
+  // that video's own settings; otherwise the page's. Switching between them
+  // first saves what was being edited, then loads the other.
+  const target = job?.ownSettings ? job.id : "";
+  useEffect(() => {
+    if (!state || draftTarget.current === target) return;
+    if (autoSaveTimer.current) {
+      clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = null;
+      if (draftRef.current && stillEditable(draftTarget.current))
+        void persist(draftRef.current).catch(() => {});
+    }
+    draftTarget.current = target;
+    const next = (target && job?.ownSettings) || state.settings;
+    changed(next);
+    setPresetId(
+      state.presets.find((p) => p.name === next.presetName)?.id || "",
+    );
+    setCustomFPS(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target]);
+  // A video's own settings are saved only while it still has them.
+  function stillEditable(id: string) {
+    return (
+      !id || !!stateRef.current?.jobs.find((j) => j.id === id)?.ownSettings
+    );
+  }
+  async function setOwn(on: boolean) {
+    if (!job) return;
+    // Turning it off drops the video's settings, unsaved edits included.
+    if (!on && autoSaveTimer.current) {
+      clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = null;
+    }
+    try {
+      if (on && draftRef.current && !draftTarget.current)
+        await persist(draftRef.current);
+      await call(
+        "setJobSettings",
+        { id: job.id, own: on },
+        on ? "已为这个视频开启单独设置" : "已关闭单独设置，改回跟随压制设置",
+      );
+    } catch {}
+  }
   const modified = !!(
     s &&
     activePreset &&
@@ -455,8 +553,18 @@ export default function App() {
     try {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       await saveChain.current.catch(() => {});
-      const result: State = await call("applyPreset", { id: p.id });
-      changed(result.settings);
+      if (draftTarget.current) {
+        // A video's own settings: the preset replaces them, keeping where to save.
+        changed({
+          ...p.settings,
+          outputMode: draftRef.current?.outputMode ?? p.settings.outputMode,
+          outputDir: draftRef.current?.outputDir ?? p.settings.outputDir,
+          presetName: p.name,
+        });
+      } else {
+        const result: State = await call("applyPreset", { id: p.id });
+        changed(result.settings);
+      }
       setPresetId(p.id);
       setCustomFPS(false);
       setPendingPreset(null);
@@ -487,8 +595,13 @@ export default function App() {
       const r: State = await call("savePreset", {
         name: presetName.trim(),
         ...(saveId ? { id: saveId } : {}),
+        ...(draftTarget.current ? { settings: s } : {}),
       });
-      changed(r.settings);
+      changed(
+        draftTarget.current
+          ? { ...s, presetName: presetName.trim() }
+          : r.settings,
+      );
       setPresetId(
         r.presets.find((p) => p.name === presetName.trim())?.id || "",
       );
@@ -508,8 +621,13 @@ export default function App() {
       const r: State = await call("savePreset", {
         id: activePreset.id,
         name: activePreset.name,
+        ...(draftTarget.current ? { settings: s } : {}),
       });
-      changed(r.settings);
+      changed(
+        draftTarget.current
+          ? { ...s, presetName: activePreset.name }
+          : r.settings,
+      );
       setPresetId(activePreset.id);
       notify(`已保存到“${activePreset.name}”`);
     } catch {
@@ -613,16 +731,6 @@ export default function App() {
       (j) => j.status === "ready" || (j.status === "invalid" && j.meta),
     ).length,
     doneCount = jobs.filter((j) => j.status === "done").length;
-  const renderMeta = () =>
-    job?.meta ? (
-      <FileMeta meta={job.meta} />
-    ) : (
-      <p className="muted">
-        {job?.status === "probing"
-          ? "正在读取视频信息…"
-          : "选中视频后显示分辨率、帧率与音轨信息。"}
-      </p>
-    );
   return (
     <div
       className="app-shell"
@@ -640,7 +748,7 @@ export default function App() {
         if (!paths.length) return;
         if (workspace === "media") setMediaDrop({ paths, seq: Date.now() });
         else if (workspace === "trim") setTrimDrop({ paths, seq: Date.now() });
-        else action("add", { paths });
+        else void dropOnQueue(paths);
       }}
     >
       <header className="app-header">
@@ -747,354 +855,65 @@ export default function App() {
       <div className="page" hidden={workspace !== "encode"}>
         <div className="page-scroll">
           <main className="workspace">
-            <section className="queue-column" aria-label="视频队列">
-              <div className="section-heading">
-                <div>
-                  <span className="eyebrow">工作区</span>
-                  <h2>
-                    视频队列 <span className="count">{jobs.length}</span>
-                  </h2>
-                </div>
-                <Button variant="primary" onClick={add} disabled={busy}>
-                  <Plus size={17} />
-                  添加视频
-                </Button>
-              </div>
-              <div className={`queue-panel ${drag ? "dragging" : ""}`}>
-                <div className="queue-toolbar">
-                  <span>
-                    <FileVideo size={15} /> 源文件
-                  </span>
-                  <Button
-                    variant="ghost"
-                    disabled={!doneCount}
-                    onClick={() =>
-                      action(
-                        "clearCompleted",
-                        undefined,
-                        "已移除完成项，输出文件保留",
-                      )
-                    }
-                  >
-                    清除已完成
-                  </Button>
-                </div>
-                {!jobs.length ? (
-                  <div className="empty-queue">
-                    <div className="film-emblem">
-                      <Film size={42} />
-                      <div className="frame-ticks" />
-                    </div>
-                    <h3>把视频放进来</h3>
-                    <p>
-                      拖入多个视频，或从文件夹中选择
-                      <br />
-                      PNG 序列：拖入文件夹，或选其中任意一张。
-                    </p>
-                    <Button onClick={add} disabled={busy}>
-                      <FolderOpen size={17} />
-                      选择视频文件
-                    </Button>
-                    <small>AVI · MOV · MP4 · MKV · WebM 等常见视频格式</small>
-                  </div>
-                ) : (
-                  <ol className="job-list">
-                    {jobs
-                      .slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
-                      .map((j, i) => (
-                        <li
-                          key={j.id}
-                          className={`job-row ${j.id === job?.id ? "selected" : ""}`}
-                          {...sortJob(j.id)}
-                        >
-                          <button
-                            className="job-select"
-                            onClick={() => setSelected(j.id)}
-                            aria-pressed={j.id === job?.id}
-                          >
-                            <span
-                              className={`file-tile ${j.status === "done" ? "complete" : ""}`}
-                            >
-                              {j.status === "done" ? (
-                                <Check size={22} />
-                              ) : (
-                                <FileVideo size={23} />
-                              )}
-                              <small>
-                                {j.name
-                                  .split(".")
-                                  .pop()
-                                  ?.slice(0, 5)
-                                  .toUpperCase()}
-                              </small>
-                            </span>
-                            <span className="job-copy">
-                              <strong title={j.name}>{j.name}</strong>
-                              <span className="job-sub">
-                                {j.meta
-                                  ? metaSummary(j.meta)
-                                  : "正在读取素材信息"}
-                                {j.audioPath &&
-                                  ` · 音频：${baseName(j.audioPath)}`}
-                              </span>
-                              <span className={`job-status ${j.status}`}>
-                                {j.status === "encoding" && (
-                                  <LoaderCircle size={12} className="spin" />
-                                )}
-                                {statusLabels[j.status] || j.status}
-                                {j.status === "encoding"
-                                  ? ` · ${Math.round(j.progress)}% · ${j.stage || "编码"} · ${formatDuration(j.elapsed || 0)}`
-                                  : ""}
-                              </span>
-                            </span>
-                          </button>
-                          {!["encoding", "done"].includes(j.status) && (
-                            <Button
-                              variant="ghost icon"
-                              aria-label={`为 ${j.name} 选择音频`}
-                              title="替换音频"
-                              disabled={state.running}
-                              onClick={() => pickAudio(j)}
-                            >
-                              <Music size={16} />
-                            </Button>
-                          )}
-                          {["done", "cancelled"].includes(j.status) && (
-                            <Button
-                              variant="ghost icon"
-                              aria-label={`重新导出 ${j.name}`}
-                              title="重新导出：放回队列，按当前设置压制，已有文件不覆盖"
-                              disabled={state.running}
-                              onClick={() =>
-                                action(
-                                  "requeue",
-                                  { id: j.id },
-                                  "已放回队列，开始压制时使用当前设置",
-                                )
-                              }
-                            >
-                              <RefreshCw size={16} />
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost icon"
-                            aria-label={`移除 ${j.name}`}
-                            title="从队列移除"
-                            disabled={j.status === "encoding" || state.running}
-                            onClick={() => action("remove", { id: j.id })}
-                          >
-                            <X size={16} />
-                          </Button>
-                          <span className="row-index">
-                            {String(page * PAGE_SIZE + i + 1).padStart(2, "0")}
-                          </span>
-                          {j.status === "encoding" && (
-                            <progress
-                              max={100}
-                              value={j.progress}
-                              aria-label={`${j.name} 压制进度`}
-                            />
-                          )}
-                        </li>
-                      ))}
-                  </ol>
-                )}
-                {jobs.length > 0 && (
-                  <div className="queue-pagination">
-                    <span>
-                      {page * PAGE_SIZE + 1}–
-                      {Math.min((page + 1) * PAGE_SIZE, jobs.length)} /{" "}
-                      {jobs.length} 个视频
-                    </span>
-                    <div>
-                      <Button
-                        aria-label="上一页"
-                        disabled={page === 0}
-                        onClick={() => setPage(page - 1)}
-                      >
-                        <ChevronLeft size={16} />
-                      </Button>
-                      <Button
-                        aria-label="下一页"
-                        disabled={page + 1 >= pageCount}
-                        onClick={() => setPage(page + 1)}
-                      >
-                        <ChevronRight size={16} />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              {job && (
-                <section className="detail-card">
-                  <div className="detail-title">
-                    <span className="eyebrow">当前素材</span>
-                    <div className="detail-actions">
-                      <Button
-                        variant="ghost"
-                        title="转换前 / 后的 ffprobe 参数"
-                        disabled={!!state.tools?.busy}
-                        onClick={async () => {
-                          setDetails(null);
-                          setModal("details");
-                          try {
-                            setDetails(await call("details", { id: job.id }));
-                          } catch (e) {
-                            setError((e as Error).message);
-                          }
-                        }}
-                      >
-                        <Info size={14} />
-                        文件详情
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        onClick={() => action("reveal", { path: job.path })}
-                      >
-                        <FolderOpen size={14} />
-                        打开位置
-                      </Button>
-                    </div>
-                  </div>
-                  <h3 title={job.name}>{job.name}</h3>
-                  {renderMeta()}
-                  {job.sequence && (
-                    // Pictures carry no frame rate: the user says how fast they play.
-                    <div className="sequence-rate">
-                      <Select
-                        id="sequence-fps"
-                        label="序列帧率"
-                        value={String(job.sequence.fps)}
-                        disabled={
-                          state.running ||
-                          ![
-                            "ready",
-                            "invalid",
-                            "done",
-                            "failed",
-                            "cancelled",
-                            "partial",
-                          ].includes(job.status)
-                        }
-                        hint={`${job.sequence.count} 张图片按这个帧率播放，时长随之改变。`}
-                        options={SEQUENCE_RATES.map((r) => ({
-                          value: String(r),
-                          label: `${r} FPS`,
-                        }))}
-                        onChange={(v) =>
-                          action("setSequenceFps", {
-                            id: job.id,
-                            fps: Number(v),
-                          })
-                        }
-                      />
-                    </div>
-                  )}
-                  <p
-                    className="path-text"
-                    title={job.sequence ? job.sequence.pattern : job.path}
-                  >
-                    {job.sequence
-                      ? job.sequence.pattern.replace(/%%/g, "%")
-                      : job.path}
-                  </p>
-                  {job.audioPath && (
-                    <div className="replace-audio">
-                      <Music size={14} />
-                      <span className="path-text" title={job.audioPath}>
-                        替换音频：{job.audioPath}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        disabled={state.running}
-                        onClick={() =>
-                          action("setAudio", { id: job.id, path: "" })
-                        }
-                      >
-                        改回原音轨
-                      </Button>
-                    </div>
-                  )}
-                  {job.error && (
-                    <div className="inline-error" role="alert">
-                      {job.error}
-                    </div>
-                  )}
-                  {["failed", "partial", "cancelled", "invalid"].includes(
-                    job.status,
-                  ) && (
-                    <div className="recovery">
-                      <Button onClick={() => openLog(job)}>
-                        <Terminal size={14} />
-                        查看日志
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          setTab("encoding");
-                          document.getElementById("encoder")?.focus();
-                        }}
-                      >
-                        调整参数
-                      </Button>
-                      <Button
-                        disabled={state.running}
-                        onClick={() => {
-                          if (s)
-                            persist(s)
-                              .then(() => call("retry", { id: job.id }))
-                              .catch((e) => setError(e.message));
-                        }}
-                      >
-                        重试
-                      </Button>
-                      {job.status === "failed" &&
-                        !/磁盘|空间|权限|ENOENT|EACCES|ENOSPC/.test(
-                          job.error || "",
-                        ) &&
-                        /nvenc|qsv|amf/.test(
-                          job.settings?.encoder || s.encoder,
-                        ) && (
-                          <Button
-                            disabled={state.running}
-                            onClick={() => setFallback(job)}
-                          >
-                            改用软件编码重试
-                          </Button>
-                        )}
-                    </div>
-                  )}
-                  {job.output && (
-                    <Button
-                      variant="ghost"
-                      onClick={() => action("reveal", { path: job.output })}
-                    >
-                      <FolderOpen size={15} />
-                      查看输出文件
-                    </Button>
-                  )}
-                </section>
-              )}
-              <div className="workflow-note">
-                <span className="note-icon">
-                  <Info size={17} />
-                </span>
-                <div>
-                  <strong>从素材到成片，路径清晰可见</strong>
-                  <p>
-                    原视频始终保留。同名输出自动编号，每个任务独立记录结果。
-                  </p>
-                </div>
-              </div>
-            </section>
+            <EncodeQueue
+              state={state}
+              jobs={jobs}
+              job={job}
+              s={s}
+              page={page}
+              setPage={setPage}
+              pageCount={pageCount}
+              setSelected={setSelected}
+              drag={drag}
+              busy={busy}
+              doneCount={doneCount}
+              sortJob={sortJob}
+              add={add}
+              call={call}
+              action={action}
+              pickAudio={pickAudio}
+              persist={persist}
+              openLog={openLog}
+              setDetails={setDetails}
+              setModal={setModal}
+              setError={setError}
+              setTab={setTab}
+              setFallback={setFallback}
+            />
             <aside className="settings-column" aria-label="压制设置">
               <div className="section-heading">
                 <div>
                   <span className="eyebrow">输出控制</span>
                   <h2>压制设置</h2>
                 </div>
-                <SlidersHorizontal size={20} className="muted" />
+                <label
+                  className="job-own-toggle"
+                  title="开启后，下面的设置只用于当前选中的视频"
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!job?.ownSettings}
+                    disabled={
+                      !job ||
+                      job.status === "encoding" ||
+                      (state.running && !!job.settings)
+                    }
+                    onChange={(e) => void setOwn(e.target.checked)}
+                  />
+                  <SlidersHorizontal size={16} />
+                  单独设置
+                </label>
               </div>
               <div className="settings-panel">
+                {job?.ownSettings && (
+                  <div className="job-preset-note" role="status">
+                    <Info size={16} />
+                    <p>
+                      正在单独设置“{job.name}
+                      ”：这里的修改只用于这个视频；关闭“单独设置”后这些修改会清除。
+                    </p>
+                  </div>
+                )}
                 <div className="preset-bar">
                   <Select
                     id="preset-select"
@@ -1587,6 +1406,19 @@ export default function App() {
                           为该视频选择，按视频时长截取。
                         </p>
                       </div>
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={autoAlignAudio}
+                          onChange={(e) => setAutoAlignAudio(e.target.checked)}
+                        />
+                        <span>
+                          替换音频后自动对齐
+                          <small className="hint hires-hint">
+                            以视频自带的声音为参考；对不上时不应用，可在“当前素材”里点“对齐”检视、微调。
+                          </small>
+                        </span>
+                      </label>
                       {(job?.audioPath ? job.audioMeta : job?.meta?.audio) &&
                         (() => {
                           const a = (

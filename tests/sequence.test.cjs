@@ -120,8 +120,12 @@ test(
       assert.equal(job.meta.sequence.count, 24);
       assert.equal(job.meta.width, 160);
       assert.ok(job.meta.hasAlpha, "RGBA PNG keeps alpha");
-      // The folder itself is the same sequence.
+      // The folder itself is the same sequence; adding it again queues it
+      // again (a video can be queued twice), here removed again.
       await svc.invoke("add", { paths: [frames] });
+      assert.equal(state().jobs.length, 2);
+      assert.equal(state().jobs[1].sequence.pattern, job.sequence.pattern);
+      await svc.invoke("remove", { id: state().jobs[1].id });
       assert.equal(state().jobs.length, 1);
 
       await svc.invoke("setSequenceFps", { id: job.id, fps: 24 });
