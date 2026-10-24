@@ -169,7 +169,7 @@ function createMediaQueue(ctx) {
         },
       });
       if (ctx.stopped) throw Error("已取消");
-      ctx.commit(target, p.output);
+      await ctx.commit(target, p.output);
       job.output = p.output;
       job.status = "done";
     } catch (e) {

@@ -438,7 +438,7 @@ function createEncodeQueue(ctx) {
         });
         if (c.output === temps.output) {
           try {
-            ctx.commit(temps.output, paths.output);
+            await ctx.commit(temps.output, paths.output);
           } catch (e) {
             if (e.code !== "EEXIST") throw e;
             paths = core.outputPaths(
@@ -447,13 +447,13 @@ function createEncodeQueue(ctx) {
               state.jobs.indexOf(job) + 1,
               fs.existsSync,
             );
-            ctx.commit(temps.output, paths.output);
+            await ctx.commit(temps.output, paths.output);
             job.maskOutput = paths.maskOutput;
           }
           job.output = paths.output;
         }
         if (c.mask) {
-          ctx.commit(temps.maskOutput, paths.maskOutput);
+          await ctx.commit(temps.maskOutput, paths.maskOutput);
           job.maskOutput = paths.maskOutput;
         }
       }

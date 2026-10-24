@@ -73,8 +73,8 @@ test(
       assert.equal(fs.existsSync(path.dirname(pre.output)), false);
       // exFAT removable drives cannot create hard links. Exercise the exclusive
       // copy fallback using the real output files while simulating that FS limit.
-      const originalLink = fs.linkSync;
-      fs.linkSync = () => {
+      const originalLink = fs.promises.link;
+      fs.promises.link = async () => {
         throw Object.assign(new Error("hard links unsupported"), {
           code: "ENOTSUP",
         });
@@ -83,7 +83,7 @@ test(
         await svc.invoke("start");
         await until(() => !svc.getState().running);
       } finally {
-        fs.linkSync = originalLink;
+        fs.promises.link = originalLink;
       }
       const job = svc.getState().jobs[0];
       assert.equal(job.status, "done", job.log);

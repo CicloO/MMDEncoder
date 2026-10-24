@@ -4,16 +4,18 @@
 // name without ever overwriting an existing file.
 const fs = require("node:fs");
 
-function commit(tmp, dest) {
+// Asynchronous, so copying a large file (no hard links on the volume) does
+// not hold up the app while it runs.
+async function commit(tmp, dest) {
   try {
-    fs.linkSync(tmp, dest);
+    await fs.promises.link(tmp, dest);
   } catch (e) {
     if (!["ENOTSUP", "ENOSYS", "EPERM", "EXDEV", "EINVAL"].includes(e.code))
       throw e;
     // Removable exFAT/FAT volumes have no hard links. COPYFILE_EXCL still
     // refuses existing destinations; Node removes incomplete copies on error.
-    fs.copyFileSync(tmp, dest, fs.constants.COPYFILE_EXCL);
+    await fs.promises.copyFile(tmp, dest, fs.constants.COPYFILE_EXCL);
   }
-  fs.unlinkSync(tmp);
+  await fs.promises.unlink(tmp);
 }
 module.exports = { commit };
