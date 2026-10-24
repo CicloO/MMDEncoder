@@ -233,8 +233,16 @@ try {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
   }, exported);
   await page.getByRole("button", { name: "导出预设", exact: true }).click();
-  await expect.poll(() => fs.existsSync(exported)).toBe(true);
-  const contents = JSON.parse(fs.readFileSync(exported, "utf8"));
+  // The file appears before it is fully written: wait until it parses.
+  const readExported = () => {
+    try {
+      return JSON.parse(fs.readFileSync(exported, "utf8"));
+    } catch {
+      return null;
+    }
+  };
+  await expect.poll(readExported).not.toBeNull();
+  const contents = readExported();
   assert.equal(contents.presets.length, 1);
   const presetCount = (
     await page.evaluate(() => window.encoder.invoke("state"))
