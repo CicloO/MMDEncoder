@@ -21,6 +21,7 @@ const { uiState } = require("./ui-state.cjs");
 const { createDetector } = require("./detect.cjs");
 const { createAlignService } = require("./align-service.cjs");
 const { createTrimQueue } = require("./trim-queue.cjs");
+const { commit } = require("./commit.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
   engineDir,
@@ -953,18 +954,6 @@ function createService({
     const byId = new Map(list.map((x) => [x.id, x]));
     if (ids.some((id) => !byId.has(id))) throw Error("排序数据无效，请重试");
     return ids.map((id) => byId.get(id));
-  }
-  function commit(tmp, dest) {
-    try {
-      fs.linkSync(tmp, dest);
-    } catch (e) {
-      if (!["ENOTSUP", "ENOSYS", "EPERM", "EXDEV", "EINVAL"].includes(e.code))
-        throw e;
-      // Removable exFAT/FAT volumes have no hard links. COPYFILE_EXCL still
-      // refuses existing destinations; Node removes incomplete copies on error.
-      fs.copyFileSync(tmp, dest, fs.constants.COPYFILE_EXCL);
-    }
-    fs.unlinkSync(tmp);
   }
   // Whether anything is using the encoders, the tools or the GPU: encoding
   // or media processing, a trim export, detection, a tool install, the RTX
