@@ -2038,8 +2038,8 @@ html[data-theme="light"] {
   position: relative;
   flex: 1;
   min-width: 0;
-  height: 8px;
-  margin: 7px 0;
+  height: 12px;
+  margin: 5px 0;
   border-radius: 999px;
   background: var(--color-border);
   cursor: pointer;
@@ -2053,7 +2053,7 @@ html[data-theme="light"] {
   position: absolute;
   top: 0;
   bottom: 0;
-  min-width: 14px;
+  min-width: 28px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-primary) 45%, transparent);
   cursor: grab;
@@ -2061,29 +2061,26 @@ html[data-theme="light"] {
 .align-zoom-window:active {
   cursor: grabbing;
 }
-/* Round handles centred on the window's ends. */
+/* Round handles at the window's ends, as tall as the bar. */
 .align-zoom-edge {
   position: absolute;
-  top: 50%;
-  width: 14px;
-  height: 14px;
-  margin-top: -7px;
+  top: 0;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--color-primary);
-  border: 2px solid var(--color-surface);
-  box-shadow: 0 0 0 1px var(--color-primary);
   cursor: ew-resize;
 }
 .align-zoom-edge.left {
-  left: -7px;
+  left: 0;
 }
 .align-zoom-edge.right {
-  right: -7px;
+  right: 0;
 }
 .align-zoom-head {
   position: absolute;
-  top: -3px;
-  bottom: -3px;
+  top: 0;
+  bottom: 0;
   width: 2px;
   margin-left: -1px;
   background: var(--color-danger);
