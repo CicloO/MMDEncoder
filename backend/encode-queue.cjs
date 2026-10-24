@@ -80,6 +80,7 @@ function createEncodeQueue(ctx) {
     // A video can be queued more than once (e.g. two different settings);
     // only several pictures of one sequence picked together count once.
     const sequences = new Set();
+    const added = [];
     for (const input of paths) {
       if (typeof input !== "string" || !path.isAbsolute(input))
         throw Error("素材必须为绝对路径");
@@ -112,68 +113,73 @@ function createEncodeQueue(ctx) {
         ...(seq ? { sequence: { ...seq, ...sequenceRate(SEQUENCE_FPS) } } : {}),
       };
       state.jobs.push(job);
-      emit();
-      try {
-        if (!state.engineInfo.ffprobe)
-          throw Error("未找到 ffprobe，无法读取素材");
-        if (/\.png$/i.test(resolved) && !seq)
-          throw Error(
-            "只有一张 PNG，不是图片序列（需要 name_0001.png 这样带连续编号的文件）",
-          );
-        if (seq?.missing !== null && seq?.missing !== undefined)
-          throw Error(
-            `PNG 序列不连续：缺少第 ${seq.missing} 帧（从 ${seq.start} 开始找到 ${seq.total} 张）`,
-          );
-        if (seq) {
-          job.meta = await sequenceMeta(job);
-          job.status = "ready";
-          emit();
-          continue;
-        }
-        const stat = fs.statSync(input);
-        if (!stat.isFile()) throw Error("输入不是文件");
-        const r = await run(
-          state.engineInfo.ffprobe,
-          [
-            "-v",
-            "error",
-            "-show_streams",
-            "-show_format",
-            "-of",
-            "json",
-            input,
-          ],
-          { timeout: 30000 },
-        );
-        job.meta = core.metadata(JSON.parse(r.stdout));
-        // Stream rates often both say 30/1 even when individual timestamps vary.
-        // A bounded sample of the first frames' times establishes positive VFR
-        // evidence without scanning an entire multi-hour source during import.
-        try {
-          const ts = await sampleTimes(input);
-          const gaps = ts
-            .slice(1)
-            .map((v, i) => v - ts[i])
-            .filter((v) => v > 0)
-            .sort((a, b) => a - b);
-          if (gaps.length > 2) {
-            const median = gaps[Math.floor(gaps.length / 2)];
-            job.meta.vfr ||= gaps.some(
-              (g) => Math.abs(g - median) > Math.max(0.002, median * 0.1),
-            );
-          }
-        } catch (e) {
-          job.log = "帧时间戳抽样未完成：" + e.message;
-        }
-        job.meta.size = stat.size;
-        job.status = "ready";
-      } catch (e) {
-        job.status = "invalid";
-        job.error = "素材探测失败：" + e.message;
-      }
-      emit();
+      added.push({ job, input, seq });
     }
+    // All files are in the queue (in order) before any is read; then a few
+    // are read at a time. A file removed meanwhile is not read.
+    emit();
+    await Promise.all(
+      added.map((a) =>
+        ctx.probeLimit(() =>
+          state.jobs.includes(a.job) ? probeJob(a) : undefined,
+        ),
+      ),
+    );
     return clone(state);
+  }
+  async function probeJob({ job, input, seq }) {
+    const resolved = job.path;
+    try {
+      if (!state.engineInfo.ffprobe)
+        throw Error("未找到 ffprobe，无法读取素材");
+      if (/\.png$/i.test(resolved) && !seq)
+        throw Error(
+          "只有一张 PNG，不是图片序列（需要 name_0001.png 这样带连续编号的文件）",
+        );
+      if (seq?.missing !== null && seq?.missing !== undefined)
+        throw Error(
+          `PNG 序列不连续：缺少第 ${seq.missing} 帧（从 ${seq.start} 开始找到 ${seq.total} 张）`,
+        );
+      if (seq) {
+        job.meta = await sequenceMeta(job);
+        job.status = "ready";
+        emit();
+        return;
+      }
+      const stat = fs.statSync(input);
+      if (!stat.isFile()) throw Error("输入不是文件");
+      const r = await run(
+        state.engineInfo.ffprobe,
+        ["-v", "error", "-show_streams", "-show_format", "-of", "json", input],
+        { timeout: 30000 },
+      );
+      job.meta = core.metadata(JSON.parse(r.stdout));
+      // Stream rates often both say 30/1 even when individual timestamps vary.
+      // A bounded sample of the first frames' times establishes positive VFR
+      // evidence without scanning an entire multi-hour source during import.
+      try {
+        const ts = await sampleTimes(input);
+        const gaps = ts
+          .slice(1)
+          .map((v, i) => v - ts[i])
+          .filter((v) => v > 0)
+          .sort((a, b) => a - b);
+        if (gaps.length > 2) {
+          const median = gaps[Math.floor(gaps.length / 2)];
+          job.meta.vfr ||= gaps.some(
+            (g) => Math.abs(g - median) > Math.max(0.002, median * 0.1),
+          );
+        }
+      } catch (e) {
+        job.log = "帧时间戳抽样未完成：" + e.message;
+      }
+      job.meta.size = stat.size;
+      job.status = "ready";
+    } catch (e) {
+      job.status = "invalid";
+      job.error = "素材探测失败：" + e.message;
+    }
+    emit();
   }
   // A PNG sequence has no frame rate of its own: the user sets it (default
   // SEQUENCE_FPS), and length and timing follow from it.

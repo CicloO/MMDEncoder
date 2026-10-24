@@ -222,7 +222,12 @@ function createMediaQueue(ctx) {
           size: stat.size,
           status: "ready",
         });
-        const probe = probeMediaJob(state.mediaJobs.at(-1));
+        // A few at a time (shared with the video queue); a file removed
+        // before its turn is not read.
+        const job = state.mediaJobs.at(-1);
+        const probe = ctx.probeLimit(() =>
+          state.mediaJobs.includes(job) ? probeMediaJob(job) : undefined,
+        );
         mediaProbes.add(probe);
         void probe.finally(() => mediaProbes.delete(probe));
       }

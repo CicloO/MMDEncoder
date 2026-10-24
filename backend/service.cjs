@@ -16,6 +16,7 @@ const mmdExport = require("./mmd-export.cjs");
 const mmdPlugin = require("./mmd-plugin.cjs");
 const { createMediaQueue } = require("./media-queue.cjs");
 const { createEncodeQueue } = require("./encode-queue.cjs");
+const { createLimit } = require("./limit.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
   engineDir,
@@ -1550,6 +1551,8 @@ function createService({
     children,
     pendingLogs,
     dataDir,
+    // Reading files on import, shared by both queues: 4 at a time.
+    probeLimit: createLimit(4),
     get stopped() {
       return stopped;
     },
