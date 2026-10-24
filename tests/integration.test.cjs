@@ -63,7 +63,7 @@ test(
       assert.equal(svc.getState().jobs.length, 1);
       assert.equal(svc.getState().jobs[0].meta.hasAlpha, true);
       await svc.invoke("settings", {
-        patch: { fps: "30", alphaMask: true, alphaMode: "green" },
+        patch: { fps: "30", alphaMask: true, alphaMode: "color" },
       });
       const pre = await svc.invoke("preview", {
         id: svc.getState().jobs[0].id,

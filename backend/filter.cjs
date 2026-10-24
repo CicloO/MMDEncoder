@@ -57,12 +57,9 @@ function pix(s) {
     (s.bitDepth === 10 ? "10le" : "")
   );
 }
-// Background colours for compositing alpha away; green is the chroma-key green screen.
-const BACKGROUNDS = {
-  green: [0, 255, 0],
-  black: [0, 0, 0],
-  white: [255, 255, 255],
-};
+// The background of alphaMode "color" as [r, g, b] (0–255).
+const background = (s) =>
+  [1, 3, 5].map((i) => parseInt(s.alphaBackground.slice(i, i + 2), 16));
 const artcnnPath = (s) =>
   path.join(
     __dirname,
@@ -116,14 +113,14 @@ function filter(s, meta, mask) {
   )
     f.push("setparams=colorspace=bt709");
   if (mask) f.push("alphaextract");
-  else if (meta.hasAlpha && BACKGROUNDS[s.alphaMode]) {
+  else if (meta.hasAlpha && s.alphaMode === "color") {
     // A copy of the frame turned into the opaque background colour, with the
     // frame laid over it: overlay blends with SIMD, about 8× faster at 4K
     // than a per-pixel geq, and gives the same pixels (±1 from rounding).
     // The background must be opaque, or overlay darkens it by its alpha.
     // Packed RGBA as before: FFmpeg turns YUVA into planar gbrap with other
     // chroma upsampling, up to ~130 levels off at sharp colour edges.
-    const [r, g, b] = BACKGROUNDS[s.alphaMode];
+    const [r, g, b] = background(s);
     f.push(
       "format=rgba",
       `split[bg][fg];[bg]lutrgb=r=${r}:g=${g}:b=${b}:a=255[bgc];[bgc][fg]overlay=format=rgb`,
@@ -149,7 +146,7 @@ function filter(s, meta, mask) {
     // beside it and merged back.
     const keepAlpha = meta.hasAlpha && s.alphaMode === "preserve";
     const yuv =
-      !(meta.hasAlpha && BACKGROUNDS[s.alphaMode]) &&
+      !(meta.hasAlpha && s.alphaMode === "color") &&
       /^(?:yuv|yuva|nv12|nv21|p0|p2|p4|gray)/.test(meta.pixFmt || "");
     const colour = [];
     if (!yuv)

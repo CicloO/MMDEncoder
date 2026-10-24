@@ -43,6 +43,7 @@ import { autoAlign } from "./autoAlign";
 import { MediaDetails } from "./MediaDetails";
 import { RtxSettings } from "./RtxSettings";
 import { AboutDialog } from "./AboutDialog";
+import { BackgroundColor } from "./BackgroundColor";
 import {
   formatFPS,
   formatSize,
@@ -1471,13 +1472,7 @@ export default function App() {
                             label: "分离 Alpha · 彩色视频 + 黑白遮罩",
                           },
                           { value: "mask", label: "分离 Alpha · 仅黑白遮罩" },
-                          { value: "green", label: "合成到绿幕（#00FF00）" },
-                          // Older presets may still use black / white.
-                          ...(s.alphaMode === "black"
-                            ? [{ value: "black", label: "合成到黑色背景" }]
-                            : s.alphaMode === "white"
-                              ? [{ value: "white", label: "合成到白色背景" }]
-                              : []),
+                          { value: "color", label: "合成到纯色" },
                         ]}
                         onChange={(v) =>
                           changed({
@@ -1493,6 +1488,14 @@ export default function App() {
                           })
                         }
                       />
+                      {s.alphaMode === "color" && (
+                        <BackgroundColor
+                          value={s.alphaBackground}
+                          onChange={(hex) =>
+                            changed({ ...s, alphaBackground: hex })
+                          }
+                        />
+                      )}
                       {s.alphaMask && (
                         <>
                           <div className="alpha-diagram">

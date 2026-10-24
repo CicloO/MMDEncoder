@@ -22,6 +22,8 @@ export type Settings = {
   // A keyframe every second (automatic GOP only), for lossless cutting.
   editFriendly: boolean;
   alphaMode: string;
+  // alphaMode "color": #RRGGBB under the picture.
+  alphaBackground: string;
   outputMode: string;
   outputDir: string;
   nameTemplate: string;

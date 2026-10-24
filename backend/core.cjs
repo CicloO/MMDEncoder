@@ -34,6 +34,8 @@ const DEFAULTS = {
   hiRes: false,
   alphaMask: false,
   alphaMode: "discard",
+  // alphaMode "color": the background composited under the picture.
+  alphaBackground: "#00FF00",
   outputMode: "encoded",
   outputDir: "",
   nameTemplate: "{name}",
@@ -348,9 +350,9 @@ function validate(s, meta) {
     chroma: ["420", "422", "444"],
     rateControl: ["quality", "qp", "bitrate"],
     audio: ["aac", "flac", "pcm_s16le", "libopus", "none"],
-    // black / white are kept so presets saved before 1.3.0 still load.
-    // mask = only the black-and-white alpha mask, no colour video.
-    alphaMode: ["discard", "green", "black", "white", "preserve", "mask"],
+    // color = composited over alphaBackground; mask = only the
+    // black-and-white alpha mask, no colour video.
+    alphaMode: ["discard", "color", "preserve", "mask"],
     resizeMode: ["source", "custom", "long"],
     resizeAxis: ["width", "height"],
     outputMode: ["source", "encoded", "custom"],
@@ -399,6 +401,7 @@ function validate(s, meta) {
     "音频淡入淡出无效，请选择列表中的时长",
   );
   check(typeof s.alphaMask === "boolean", "透明遮罩开关无效");
+  check(/^#[0-9a-f]{6}$/i.test(s.alphaBackground), "背景颜色须为 #RRGGBB");
   check(typeof s.hiRes === "boolean", "Hi-Res 开关无效");
   check(typeof s.editFriendly === "boolean", "剪辑友好开关无效");
   if (s.hiRes)

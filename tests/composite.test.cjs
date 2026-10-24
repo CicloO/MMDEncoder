@@ -9,9 +9,12 @@ const { filter } = require("../backend/filter.cjs");
 const { ff } = require("./engines.cjs");
 
 // The per-pixel geq that compositing used up to 1.6.0, as the reference.
-const BG = { green: [0, 255, 0], black: [0, 0, 0], white: [255, 255, 255] };
-function geq(mode) {
-  const [r, g, b] = BG[mode];
+// The presets (green screen, black, white) and a colour of one's own.
+const COLORS = ["#00FF00", "#000000", "#FFFFFF", "#3366CC"];
+const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const over = (hex) => ({ alphaMode: "color", alphaBackground: hex });
+function geq(hex) {
+  const [r, g, b] = rgbOf(hex);
   const mix = (c, bg) => `${c}(X,Y)*alpha(X,Y)/255+${bg}*(1-alpha(X,Y)/255)`;
   return `format=rgba,geq=r='${mix("r", r)}':g='${mix("g", g)}':b='${mix("b", b)}'`;
 }
@@ -73,10 +76,10 @@ function source(name, pixFmt) {
 
 test("compositing over a colour uses overlay, not a per-pixel geq", () => {
   const meta = { width: 256, height: 64, pixFmt: "rgba", hasAlpha: true };
-  for (const mode of ["green", "black", "white"]) {
-    const vf = filter(settings({ alphaMode: mode }), meta);
+  for (const hex of COLORS) {
+    const vf = filter(settings(over(hex)), meta);
     assert.doesNotMatch(vf, /geq/);
-    const [r, g, b] = BG[mode];
+    const [r, g, b] = rgbOf(hex);
     assert.match(vf, new RegExp(`lutrgb=r=${r}:g=${g}:b=${b}:a=255`));
     assert.match(vf, /overlay=format=rgb/);
   }
@@ -91,16 +94,16 @@ test("overlay compositing gives the same pixels as the old geq (RGBA and YUVA so
     ["yuva.mkv", "yuva420p"],
   ]) {
     const src = source(name, pixFmt);
-    for (const mode of ["green", "black", "white"]) {
+    for (const hex of COLORS) {
       const meta = { width: 256, height: 64, pixFmt, hasAlpha: true };
       // Only the composite step: the rest of the chain (scale to YUV) is the
       // same on both sides.
-      const vf = filter(settings({ alphaMode: mode }), meta)
+      const vf = filter(settings(over(hex)), meta)
         .split(",scale=")[0]
         .replace(/^setparams=colorspace=bt709,/, "");
       assert.ok(
-        maxDiff(rgb(src, geq(mode)), rgb(src, vf)) <= 1,
-        `${name} ${mode}`,
+        maxDiff(rgb(src, geq(hex)), rgb(src, vf)) <= 1,
+        `${name} ${hex}`,
       );
     }
   }
@@ -119,12 +122,12 @@ test("a composited encode keeps every frame, with resizing and with the mask in 
     hasAlpha: true,
   };
   for (const [name, s] of [
-    ["plain", { alphaMode: "green" }],
+    ["plain", over("#00FF00")],
     [
       "resized",
-      { alphaMode: "white", resizeMode: "custom", width: 128, height: 32 },
+      { ...over("#FFFFFF"), resizeMode: "custom", width: 128, height: 32 },
     ],
-    ["mask", { alphaMode: "black", alphaMask: true }],
+    ["mask", { ...over("#3366CC"), alphaMask: true }],
   ]) {
     const output = path.join(dir, name + ".mp4");
     const maskOutput = path.join(dir, name + "_alpha.mp4");
