@@ -72,7 +72,6 @@ type Options = {
   audioFormat: string;
   audioBitrate: number;
   container: string;
-  shortest: boolean;
   // 24-bit, and twice the sample rate below 48 kHz (WAV / FLAC only).
   hiRes: boolean;
   // Seconds of fade in / out (0 = off); not with a copied audio track.
@@ -85,7 +84,6 @@ const DEFAULT_OPTIONS: Options = {
   audioFormat: "wav",
   audioBitrate: 0,
   container: "mp4",
-  shortest: true,
   hiRes: false,
   audioFade: 0,
   location: "source",
@@ -622,17 +620,6 @@ export function MediaTools({
                     onChange={(v) => set("container", v)}
                   />
                 )}
-                {o.operation === "merge" && (
-                  <label className="checkbox-row">
-                    <input
-                      type="checkbox"
-                      disabled={locked}
-                      checked={o.shortest}
-                      onChange={(e) => set("shortest", e.target.checked)}
-                    />
-                    时长取较短的一方
-                  </label>
-                )}
                 <Select
                   id="media-location"
                   label="输出位置"
@@ -663,7 +650,7 @@ export function MediaTools({
                 <p className="hint">
                   {o.operation === "audio"
                     ? "只输出第一条音频流。"
-                    : `视频直接复制，不重新压制${o.container === "mp4" ? "；MP4 放不下时自动改用 MKV" : ""}。`}
+                    : `视频直接复制，不重新压制${o.container === "mp4" ? "；MP4 放不下时自动改用 MKV" : ""}。${o.operation === "merge" ? (o.audioFormat === "copy" ? "时长与视频相同，音频长了截掉。" : "时长与视频相同：音频长了截掉，短了补静音。") : ""}`}
                   已有文件不覆盖。
                 </p>
                 {error && (
@@ -738,7 +725,6 @@ export function MediaTools({
                   audioBitrate: bitrate,
                   container: o.container,
                   hiRes,
-                  shortest: o.shortest,
                   audioFade: o.audioFormat === "copy" ? 0 : o.audioFade,
                   location: o.location,
                   outputDir: o.outputDir,

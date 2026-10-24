@@ -173,9 +173,26 @@ function command(p, tools, output) {
       ? hiResCodec(plan)
       : hiResArgs(plan, p.soxr)
     : ["-c:a", audio[0]];
-  codecArgs = withAudioFilter(codecArgs, fadeFilter(fade, p.fadeLength));
+  // A merge lasts as long as the video: the audio is read no further than
+  // the video's length, and (unless copied) a shorter one is padded with
+  // silence, stopped by -shortest at the video's end.
+  const merge = p.operation === "merge";
+  const pad = merge && p.audioFormat !== "copy";
+  codecArgs = withAudioFilter(
+    codecArgs,
+    [fadeFilter(fade, p.fadeLength), pad ? "apad" : ""]
+      .filter(Boolean)
+      .join(","),
+  );
   const args = ["-hide_banner", "-nostdin", "-n", "-i", p.input];
-  if (p.operation === "merge") args.push("-i", p.audioInput);
+  if (merge)
+    args.push(
+      ...(Number(p.videoDuration) > 0
+        ? ["-t", Number(p.videoDuration).toFixed(6)]
+        : []),
+      "-i",
+      p.audioInput,
+    );
   if (p.operation === "audio") args.push("-map", "0:a:0", "-vn", ...codecArgs);
   else
     args.push(
@@ -193,7 +210,7 @@ function command(p, tools, output) {
       "-b:a",
       audioBitrate(p.audioBitrate, audio[0], p.sourceAudio) + "k",
     );
-  if (p.operation === "merge" && p.shortest !== false) args.push("-shortest");
+  if (pad) args.push("-shortest");
   if (ext === ".mp4") args.push("-movflags", "+faststart");
   args.push("-progress", "pipe:1", output);
   return { exe: tools.ffmpeg, args };

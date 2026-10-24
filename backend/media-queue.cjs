@@ -93,7 +93,6 @@ function createMediaQueue(ctx) {
         audioFormat: o.audioFormat,
         hiRes: !!o.hiRes && o.operation !== "video",
         audioBitrate: Number(o.audioBitrate) || 0,
-        shortest: o.shortest !== false,
         container: o.container === "mkv" ? "mkv" : "mp4",
         fade: media.FADES.includes(Number(o.audioFade))
           ? Number(o.audioFade)
@@ -109,10 +108,12 @@ function createMediaQueue(ctx) {
         bits: audioSource.audio?.bits,
         float: audioSource.audio?.float,
       };
-      // How long the output's audio runs, for the fade-out: the audio itself,
-      // or up to the video's end when a merge stops at the shorter stream.
+      // A merge is as long as the video (see media.command). The fade-out
+      // ends where the audio does: at the video's end, or earlier when the
+      // audio is shorter (silence follows).
+      if (o.operation === "merge") p.videoDuration = source.videoDuration;
       p.fadeLength =
-        o.operation === "merge" && p.shortest && source.videoDuration
+        o.operation === "merge" && source.videoDuration
           ? Math.min(audioSource.audioDuration, source.videoDuration)
           : audioSource.audioDuration;
       let hiResNote = "";

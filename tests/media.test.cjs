@@ -228,7 +228,6 @@ test(
       await runQueue({
         operation: "merge",
         audioFormat: "aac",
-        shortest: true,
         location: "custom",
         outputDir: custom,
       });
