@@ -11,6 +11,7 @@
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { createLimit } = require("./limit.cjs");
+const { appError } = require("./errors.cjs");
 
 const WORKER = path.join(__dirname, "align-worker.cjs");
 // Preview: mono 16-bit at this rate, up to this long (as the dialog draws).
@@ -19,7 +20,7 @@ const PREVIEW_LENGTH = 20 * 60;
 const PREVIEW_TIMEOUT = 2 * 60 * 1000;
 const ALIGN_TIMEOUT = 5 * 60 * 1000;
 // The window treats this message as "replaced or closed", not an error.
-const CANCELLED = "已取消";
+const CANCELLED = appError("ALIGN_CANCELLED").message;
 
 // engineInfo(): the tool paths; locate(): finds the tools first.
 function createAlignService({ engineInfo, locate }) {
@@ -50,7 +51,7 @@ function createAlignService({ engineInfo, locate }) {
   }
   function worker(t, job, timeout) {
     return new Promise((resolve, reject) => {
-      if (t.cancelled) return reject(Error(CANCELLED));
+      if (t.cancelled) return reject(appError("ALIGN_CANCELLED"));
       const child = spawn(process.execPath, [WORKER], {
         windowsHide: true,
         env: {
@@ -74,10 +75,13 @@ function createAlignService({ engineInfo, locate }) {
       child.on("close", (code) => {
         clearTimeout(timer);
         running.delete(t);
-        if (t.timedOut) return reject(Error("音频读取或对齐超时"));
-        if (t.cancelled) return reject(Error(CANCELLED));
+        if (t.timedOut) return reject(appError("ALIGN_TIMEOUT"));
+        if (t.cancelled) return reject(appError("ALIGN_CANCELLED"));
         if (code === 0) resolve(Buffer.concat(chunks));
-        else reject(Error(err.trim() || "自动对齐失败"));
+        else
+          reject(
+            appError("ALIGN_FAILED", { detail: err.trim() || String(code) }),
+          );
       });
     });
   }
@@ -92,7 +96,7 @@ function createAlignService({ engineInfo, locate }) {
     async alignPreview(payload) {
       const file = payload?.path;
       if (typeof file !== "string" || !path.isAbsolute(file))
-        throw Error("请选择有效的音频或视频文件");
+        throw appError("ALIGN_INPUT_INVALID");
       await locate();
       let buf = await start(
         payload.slot,
@@ -105,7 +109,7 @@ function createAlignService({ engineInfo, locate }) {
         },
         PREVIEW_TIMEOUT,
       );
-      if (!buf.length) throw Error("这个文件没有可用的音轨");
+      if (!buf.length) throw appError("ALIGN_NO_AUDIO");
       // An Int16Array over the bytes needs an even offset.
       if (buf.byteOffset % 2) buf = Buffer.from(buf);
       const pcm = new Int16Array(buf.buffer, buf.byteOffset, buf.length >> 1);
@@ -115,7 +119,7 @@ function createAlignService({ engineInfo, locate }) {
     async alignRun(payload) {
       for (const f of [payload?.reference, payload?.target])
         if (typeof f !== "string" || !path.isAbsolute(f))
-          throw Error("请选择参考音频与目标音频");
+          throw appError("ALIGN_TRACKS_REQUIRED");
       await locate();
       const out = await start(
         payload.slot,

@@ -58,6 +58,23 @@ let passed = false;
 try {
   const page = await app.firstWindow();
   page.setDefaultTimeout(30000);
+  const errorTransport = await page.evaluate(async () => {
+    const structured = await window.encoder.invokeResult("alignPreview", {
+      path: "relative.wav",
+    });
+    let legacy = "";
+    try {
+      await window.encoder.invoke("alignPreview", { path: "relative.wav" });
+    } catch (error) {
+      legacy = error.message;
+    }
+    return { structured, legacy };
+  });
+  assert.equal(
+    errorTransport.structured.__mmdError.code,
+    "ALIGN_INPUT_INVALID",
+  );
+  assert.equal(errorTransport.legacy, "请选择有效的音频或视频文件");
   await app.evaluate(({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows()[0];
     w.setSize(1280, 900);

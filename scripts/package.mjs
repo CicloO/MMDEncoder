@@ -117,7 +117,7 @@ if (
 )
   throw new Error("Invalid generated path");
 await fs.rm(generatedDist, { recursive: true, force: true });
-for (const name of ["desktop", "backend", "dist", "assets"])
+for (const name of ["desktop", "backend", "dist", "assets", "locales"])
   await fs.cp(path.join(root, name), path.join(appDir, name), {
     recursive: true,
   });

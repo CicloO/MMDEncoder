@@ -10,6 +10,7 @@
     "build": "node scripts/tokens.mjs && tsc --noEmit && vite build",
     "test": "node --test tests/*.test.cjs",
     "typecheck": "tsc --noEmit",
+    "i18n:scan": "node scripts/i18n-scan.mjs",
     "format": "prettier --write src desktop backend scripts tests *.json README.md DESIGN.md UX-CONTRACT.md docs/CHANGELOG.md docs/THIRD-PARTY-NOTICES.md",
     "format:check": "prettier --check src desktop backend scripts tests *.json README.md DESIGN.md UX-CONTRACT.md docs/CHANGELOG.md docs/THIRD-PARTY-NOTICES.md",
     "start": "electron .",

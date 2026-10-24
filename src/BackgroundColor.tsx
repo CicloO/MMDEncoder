@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
+import { t } from "./i18n";
 
 // The colour of 合成到纯色: green screen, black and white to pick, or any
 // colour from the picker or typed as #RRGGBB.
 const PRESETS = [
-  ["#00FF00", "绿幕"],
-  ["#000000", "黑"],
-  ["#FFFFFF", "白"],
+  ["#00FF00", t("background.green")],
+  ["#000000", t("background.black")],
+  ["#FFFFFF", t("background.white")],
 ];
 const HEX = /^#[0-9a-f]{6}$/i;
 export function BackgroundColor({
@@ -22,7 +23,7 @@ export function BackgroundColor({
   return (
     <div className="field">
       <span className="field-label" id="alpha-background-label">
-        背景颜色
+        {t("background.label")}
       </span>
       <div className="background-color">
         <div
@@ -44,17 +45,17 @@ export function BackgroundColor({
           ))}
         </div>
         <label className="color-custom">
-          自选
+          {t("background.custom")}
           <input
             type="color"
-            aria-label="自选背景颜色"
+            aria-label={t("background.customLabel")}
             value={current.toLowerCase()}
             onChange={(e) => onChange(e.target.value.toUpperCase())}
           />
         </label>
         <input
           className="color-hex"
-          aria-label="背景颜色（#RRGGBB）"
+          aria-label={t("background.hexLabel")}
           value={text}
           spellCheck={false}
           maxLength={7}

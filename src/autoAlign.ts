@@ -3,13 +3,15 @@
 // clear. Returns what to tell the user when it was not applied ("" when it
 // was). Errors stay here: a video without sound is not a failure of the
 // page, so the window-wide error banner is not used.
+import { errorMessage } from "./i18n";
+import { invoke } from "./ipc";
 export async function autoAlign(
   video: string,
   audio: string,
   apply: (offset: number) => Promise<unknown>,
 ) {
   try {
-    const r = await window.encoder.invoke("alignRun", {
+    const r = await invoke("alignRun", {
       reference: video,
       target: audio,
     });
@@ -17,11 +19,7 @@ export async function autoAlign(
     await apply(r.offset);
     return "";
   } catch (e) {
-    const message = (e as Error).message.replace(
-      /^Error invoking remote method '[^']+': (?:Error: )?/,
-      "",
-    );
-    return "没有自动对齐：" + message;
+    return "没有自动对齐：" + errorMessage(e);
   }
 }
 // "+1.234 秒" / "-0.500 秒" for queue rows.

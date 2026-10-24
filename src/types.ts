@@ -279,6 +279,7 @@ declare global {
   const __APP_VERSION__: string;
   interface Window {
     encoder: {
+      invokeResult: (action: string, payload?: unknown) => Promise<any>;
       invoke: (action: string, payload?: unknown) => Promise<any>;
       onCloseRequest: (fn: () => void) => () => void;
       onUpdate: (fn: (state: State) => void) => () => void;
