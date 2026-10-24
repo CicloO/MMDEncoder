@@ -142,6 +142,9 @@ export type MediaJob = {
   size: number;
   status: string;
   audioPath?: string;
+  // 音频对齐: line the extracted audio up with a reference (offset seconds,
+  // > 0 cut, < 0 padded; length: end with the reference).
+  align?: { reference: string; offset: number; length?: number };
   // The replacement audio's parameters, read when it is chosen.
   audioMeta?: Meta["audio"];
   output?: string;

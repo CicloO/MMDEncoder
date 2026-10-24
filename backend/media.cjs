@@ -125,6 +125,23 @@ function mergeContainer(p, source = {}) {
   }
   return "mp4";
 }
+// 音频对齐: line the audio up with a reference. offset > 0 drops that much
+// from its start, offset < 0 puts that much silence before it, both counted
+// in samples at the source's rate; length ends the result there (silence
+// fills in if the audio runs out first).
+function alignFilter(a, rate) {
+  const n = Math.round(Math.abs(a.offset) * (Number(rate) || 48000));
+  const f = [];
+  if (a.offset > 0 && n)
+    f.push(`atrim=start_sample=${n}`, "asetpts=PTS-STARTPTS");
+  else if (a.offset < 0 && n) f.push(`adelay=delays=${n}S:all=1`);
+  if (a.length > 0)
+    f.push(
+      `apad=whole_dur=${a.length.toFixed(6)}`,
+      `atrim=end=${a.length.toFixed(6)}`,
+    );
+  return f.join(",");
+}
 function command(p, tools, output) {
   if (!["audio", "video", "merge"].includes(p.operation))
     throw Error("请选择提取音频、提取视频或音视频合并");
@@ -178,9 +195,16 @@ function command(p, tools, output) {
   // silence, stopped by -shortest at the video's end.
   const merge = p.operation === "merge";
   const pad = merge && p.audioFormat !== "copy";
+  const aligned = p.operation === "audio" && p.align;
+  if (aligned && p.audioFormat === "copy")
+    throw Error("对齐需要重新编码音频，请选择复制原音轨以外的格式");
   codecArgs = withAudioFilter(
     codecArgs,
-    [fadeFilter(fade, p.fadeLength), pad ? "apad" : ""]
+    [
+      aligned ? alignFilter(p.align, p.sourceAudio?.sampleRate) : "",
+      fadeFilter(fade, p.fadeLength),
+      pad ? "apad" : "",
+    ]
       .filter(Boolean)
       .join(","),
   );
@@ -265,5 +289,6 @@ module.exports = {
   suggestOutput,
   audioBitrate,
   mergeContainer,
+  alignFilter,
   EXTENSIONS,
 };

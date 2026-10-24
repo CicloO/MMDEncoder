@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowRight,
+  AudioLines,
   Check,
   FileAudio,
   FileVideo,
@@ -28,6 +29,7 @@ import {
   PAGE_SIZE,
 } from "./components";
 import { MediaDetails } from "./MediaDetails";
+import { AlignDialog } from "./AlignDialog";
 import { fadeOptions, fadeHint } from "./presentation";
 import { FileMeta, metaSummary } from "./FileMeta";
 import type { MediaJob, State } from "./types";
@@ -127,7 +129,9 @@ export function MediaTools({
     [error, setError] = useState(""),
     [details, setDetails] = useState<any>(null),
     [detailsOpen, setDetailsOpen] = useState(false),
-    [detailsError, setDetailsError] = useState("");
+    [detailsError, setDetailsError] = useState(""),
+    // The file whose 音频对齐 dialog is open.
+    [alignId, setAlignId] = useState("");
   const jobs = state.mediaJobs;
   // Same paging as the video queue.
   const [page, setPage] = useState(0);
@@ -292,6 +296,9 @@ export function MediaTools({
               (j.audioPath
                 ? ` · 音频：${baseName(j.audioPath)}`
                 : " · 尚未选择替换音频")}
+            {o.operation === "audio" &&
+              j.align &&
+              ` · 对齐 ${j.align.offset >= 0 ? "+" : ""}${j.align.offset.toFixed(3)} 秒${j.align.length ? " · 截到参考长度" : ""}`}
           </span>
           <span className={`job-status ${j.status}`} title={j.error}>
             {j.status === "running" && (
@@ -313,6 +320,19 @@ export function MediaTools({
           onClick={() => pickAudio(j)}
         >
           <Music size={16} />
+        </Button>
+      )}
+      {o.operation === "audio" && j.status === "ready" && (
+        <Button
+          variant={`ghost icon${j.align ? " active" : ""}`}
+          aria-label={`对齐 ${j.name} 的音频`}
+          title={
+            j.align ? "音频对齐（已对齐）" : "音频对齐：按参考音频对齐起点"
+          }
+          disabled={locked}
+          onClick={() => setAlignId(j.id)}
+        >
+          <AudioLines size={16} />
         </Button>
       )}
       {["done", "cancelled", "failed"].includes(j.status) && (
@@ -747,6 +767,12 @@ export function MediaTools({
       >
         <MediaDetails details={details} media />
       </Modal>
+      <AlignDialog
+        open={!!alignId && jobs.some((j) => j.id === alignId)}
+        job={jobs.find((j) => j.id === alignId)}
+        call={call}
+        onClose={() => setAlignId("")}
+      />
     </>
   );
 }
