@@ -65,12 +65,15 @@ const LOCATIONS: Record<string, string> = {
   encoded: "其目录下的 Encoded 子文件夹",
   custom: "自定义文件夹",
 };
+// Choices are remembered between sessions, but not a replacement audio
+// file or its offset: they belong to the clips of that session.
 function loadOptions(): Options {
   try {
-    return {
-      ...DEFAULT_OPTIONS,
-      ...JSON.parse(localStorage.getItem(OPTIONS_KEY) || "{}"),
-    };
+    const saved = JSON.parse(localStorage.getItem(OPTIONS_KEY) || "{}");
+    delete saved.audioFile;
+    delete saved.offset;
+    if (saved.audioMode === "replace") delete saved.audioMode;
+    return { ...DEFAULT_OPTIONS, ...saved };
   } catch {
     return DEFAULT_OPTIONS;
   }
@@ -931,15 +934,13 @@ export function TrimTools({
         targetPath={o.audioFile}
         fixedReference={exportable[0]?.path}
         initial={
-          o.offset.trim() !== ""
+          Number(o.offset)
             ? { offset: offsetSeconds() - clipStart() }
             : undefined
         }
         description={`把替换音频对齐到“${exportable[0]?.name || ""}”自带的声音；应用后填入起点偏移（按第一个片段的起点换算）。`}
         onApply={async (a) => setOffsetSeconds(a.offset + clipStart())}
-        onClear={
-          o.offset.trim() !== "" ? async () => set("offset", "") : undefined
-        }
+        onClear={Number(o.offset) ? async () => set("offset", "0") : undefined}
       />
     </>
   );

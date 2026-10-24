@@ -421,29 +421,69 @@ export function AlignDialog({
           start: view.start,
           moved: false,
         };
-        if (e.button === 2) setPlayhead(timeAt(e));
       },
       onPointerMove: (e: React.PointerEvent<HTMLCanvasElement>) => {
         const p = pointer.current;
         if (!p) return;
-        if (p.button === 2) return setPlayhead(timeAt(e));
         const dx = e.clientX - p.x;
         if (Math.abs(dx) > 2) p.moved = true;
         if (!p.moved) return;
         const dt =
           (dx / e.currentTarget.getBoundingClientRect().width) * view.span;
-        if (kind === "target") setOffset(p.offset - dt);
+        if (p.button === 0 && kind === "target") setOffset(p.offset - dt);
         else setView((v) => ({ ...v, start: p.start - dt }));
       },
       onPointerUp: (e: React.PointerEvent<HTMLCanvasElement>) => {
         const p = pointer.current;
         pointer.current = null;
         if (!p) return;
-        // Heard at once from where it now is.
-        if (playing && (p.button === 2 || (kind === "target" && p.moved)))
-          play(p.button === 2 ? timeAt(e) : playhead);
+        if (!p.moved && p.button === 0) seek(timeAt(e));
+        // A moved target is heard at once from where it now is.
+        else if (playing && p.button === 0 && kind === "target") play(playhead);
       },
     };
+  }
+  // The zoom bar (as in a video editor): the whole of both recordings, the
+  // part shown as a window on it. Drag the window to move it, its edges to
+  // zoom; a press beside it centres it there.
+  const whole = {
+    lo: Math.min(0, -offset, view.start),
+    hi: Math.max(length, view.start + view.span),
+  };
+  const share = (x: number) => ((x - whole.lo) / (whole.hi - whole.lo)) * 100;
+  const zoomBar = useRef<HTMLDivElement>(null);
+  const zoomDrag = useRef<{
+    edge: string;
+    x: number;
+    start: number;
+    span: number;
+  } | null>(null);
+  function zoomDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const at =
+      whole.lo + ((e.clientX - r.left) / r.width) * (whole.hi - whole.lo);
+    const edge = (e.target as HTMLElement).dataset.edge || "move";
+    let start = view.start;
+    if (edge === "move" && (at < view.start || at > view.start + view.span)) {
+      start = at - view.span / 2;
+      setView((v) => ({ ...v, start }));
+    }
+    e.currentTarget.setPointerCapture(e.pointerId);
+    zoomDrag.current = { edge, x: e.clientX, start, span: view.span };
+  }
+  function zoomMove(e: React.PointerEvent<HTMLDivElement>) {
+    const d = zoomDrag.current;
+    if (!d) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const dt = ((e.clientX - d.x) / r.width) * (whole.hi - whole.lo);
+    const min = 0.01;
+    if (d.edge === "left") {
+      const start = Math.min(d.start + dt, d.start + d.span - min);
+      setView({ start, span: d.span - (start - d.start) });
+    } else if (d.edge === "right")
+      setView({ start: d.start, span: Math.max(min, d.span + dt) });
+    else setView({ start: d.start + dt, span: d.span });
   }
   function seek(t: number) {
     setPlayhead(t);
@@ -452,7 +492,10 @@ export function AlignDialog({
   function zoom(factor: number, around = view.start + view.span / 2) {
     const span = Math.min(Math.max(0.01, view.span * factor), length * 1.2);
     const start = around - ((around - view.start) * span) / view.span;
-    setView({ start: Math.max(-span * 0.1, start), span });
+    setView({
+      start: Math.max(Math.min(0, -offset) - span * 0.1, start),
+      span,
+    });
   }
   async function apply() {
     if (!refPath) return;
@@ -592,23 +635,58 @@ export function AlignDialog({
           <div className="align-ruler">
             <span>{seconds(view.start)}</span>
             <span>
-              虚线：起点（灰为参考 0 秒，蓝为目标开头）· 左键拖动：对齐 / 平移 ·
-              右键拖动：播放位置
+              虚线：起点（灰为参考 0 秒，蓝为目标开头）· 左键点击：播放位置 ·
+              左键拖动目标：对齐 · 右键拖动：平移 · 滚轮：缩放
             </span>
             <span>{seconds(view.start + view.span)}</span>
           </div>
-          <span className="align-label">进度</span>
+          <span className="align-label">视图</span>
           <div className="align-seek">
-            <input
-              type="range"
-              aria-label="播放位置"
-              min={Math.min(0, -offset)}
-              max={length}
-              step="any"
-              value={Math.min(Math.max(playhead, Math.min(0, -offset)), length)}
-              onChange={(e) => seek(Number(e.target.value))}
-            />
-            <span>{seconds(playhead)}</span>
+            <div
+              ref={zoomBar}
+              className="align-zoom"
+              role="scrollbar"
+              aria-orientation="horizontal"
+              aria-label="视图范围：拖动中间平移，拖动两端缩放；方向键平移"
+              aria-valuemin={Math.round(whole.lo * 1000)}
+              aria-valuemax={Math.round(whole.hi * 1000)}
+              aria-valuenow={Math.round(view.start * 1000)}
+              tabIndex={0}
+              onPointerDown={zoomDown}
+              onPointerMove={zoomMove}
+              onPointerUp={() => (zoomDrag.current = null)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                  e.preventDefault();
+                  const dir = e.key === "ArrowRight" ? 1 : -1;
+                  setView((v) => ({
+                    ...v,
+                    start: v.start + dir * v.span * 0.1,
+                  }));
+                }
+              }}
+            >
+              <div
+                className="align-zoom-window"
+                style={{
+                  left: share(view.start) + "%",
+                  width:
+                    share(view.start + view.span) - share(view.start) + "%",
+                }}
+              >
+                <span data-edge="left" className="align-zoom-edge left" />
+                <span data-edge="right" className="align-zoom-edge right" />
+              </div>
+              <div
+                className="align-zoom-head"
+                style={{
+                  left:
+                    share(Math.min(Math.max(playhead, whole.lo), whole.hi)) +
+                    "%",
+                }}
+              />
+            </div>
+            <span title="播放位置">{seconds(playhead)}</span>
           </div>
         </div>
         <div className="align-controls">

@@ -2032,14 +2032,71 @@ html[data-theme="light"] {
   align-items: center;
   gap: 10px;
 }
-.align-seek input[type="range"] {
+/* Zoom bar: the whole length, the shown part as a window with edges to
+   drag (as in a video editor), the playhead as a thin line. */
+.align-zoom {
+  position: relative;
   flex: 1;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  accent-color: var(--color-primary);
+  min-width: 0;
+  height: 8px;
+  margin: 7px 0;
+  border-radius: 999px;
+  background: var(--color-border);
+  cursor: pointer;
+  touch-action: none;
 }
-.align-seek span {
+.align-zoom:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.align-zoom-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 45%, transparent);
+  cursor: grab;
+}
+.align-zoom-window:active {
+  cursor: grabbing;
+}
+/* Round handles centred on the window's ends. */
+.align-zoom-edge {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid var(--color-surface);
+  box-shadow: 0 0 0 1px var(--color-primary);
+  cursor: ew-resize;
+}
+.align-zoom-edge.left {
+  left: -7px;
+}
+.align-zoom-edge.right {
+  right: -7px;
+}
+.align-zoom-head {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-danger);
+  pointer-events: none;
+}
+@media (forced-colors: active) {
+  .align-zoom-window,
+  .align-zoom-edge {
+    border-color: Highlight;
+    background: Highlight;
+  }
+}
+.align-seek > span {
   font: 12px var(--font-mono);
   color: var(--color-muted);
   min-width: 80px;

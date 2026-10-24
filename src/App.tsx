@@ -90,6 +90,8 @@ const encoderBackend = (id: string) =>
         : id.endsWith("_amf")
           ? "amf"
           : "cpu";
+// Audio files dropped on the video page replace a video's audio.
+const AUDIO_EXT = /\.(wav|flac|mp3|aac|m4a|opus|ogg|mka)$/i;
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 export default function App() {
   // Light is the default. A new key so the old auto-saved "dark" default does not stick.
@@ -382,7 +384,9 @@ export default function App() {
   // up with the video's own sound when "自动对齐" is on and there is one.
   async function pickAudio(j: Job) {
     const file = await call("pickMedia", { multiple: false }).catch(() => null);
-    if (typeof file !== "string") return;
+    if (typeof file === "string") await replaceAudio(j, file);
+  }
+  async function replaceAudio(j: Job, file: string) {
     try {
       await call("setAudio", { id: j.id, path: file }, "已替换音频");
     } catch {
@@ -393,6 +397,33 @@ export default function App() {
       call("setAudioOffset", { id: j.id, offset }),
     );
     notify(note || "已替换音频，并按视频自带的声音自动对齐");
+  }
+  // Dropped on the video page: videos join the queue; audio files replace
+  // the audio of the selected video, or of the first one still without a
+  // replacement (as the media page's merge pairs them).
+  async function dropOnQueue(paths: string[]) {
+    const audio = paths.filter((p) => AUDIO_EXT.test(p));
+    const videos = paths.filter((p) => !audio.includes(p));
+    let current = stateRef.current?.jobs || [];
+    if (videos.length) {
+      const r = await call("add", { paths: videos }).catch(() => null);
+      current = r?.jobs || current;
+    }
+    const open = (j?: Job) =>
+      !!j &&
+      !j.audioPath &&
+      !["encoding", "done"].includes(j.status) &&
+      !!j.meta;
+    for (const file of audio) {
+      const chosen = current.find((j) => j.id === job?.id);
+      const target = open(chosen) ? chosen : current.find((j) => open(j));
+      if (!target) {
+        setError("没有等待替换音频的视频，请先加入视频");
+        break;
+      }
+      await replaceAudio(target, file);
+      current = stateRef.current?.jobs || current;
+    }
   }
   function persist(settings: Settings, to = draftTarget.current) {
     const task = saveChain.current
@@ -717,7 +748,7 @@ export default function App() {
         if (!paths.length) return;
         if (workspace === "media") setMediaDrop({ paths, seq: Date.now() });
         else if (workspace === "trim") setTrimDrop({ paths, seq: Date.now() });
-        else action("add", { paths });
+        else void dropOnQueue(paths);
       }}
     >
       <header className="app-header">

@@ -107,35 +107,34 @@ try {
   await page.waitForTimeout(400);
   await dialog.getByRole("button", { name: "暂停" }).click();
 
-  // Right-drag on a waveform moves the playhead (the seek bar follows);
-  // left-drag on the reference pans the view, not the alignment.
-  const seekBar = dialog.getByRole("slider", { name: "播放位置" });
+  // Waveforms: right-drag pans the view (not the alignment), a left click
+  // sets the playhead; the zoom bar's edge zooms.
+  const ruler = dialog.locator(".align-ruler span");
+  const playheadText = dialog.locator(".align-seek > span");
   const box = await target.boundingBox();
-  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2);
+  const startBefore = await ruler.first().innerText();
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2);
   await page.mouse.down({ button: "right" });
-  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2, {
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height / 2, {
     steps: 5,
   });
   await page.mouse.up({ button: "right" });
-  const at = Number(await seekBar.inputValue());
-  // The view spans from the target's start (-2.5 s) to its end (17.5 s).
-  assert.ok(at > 7 && at < 12, "playhead moved to about 60 %: " + at);
+  assert.notEqual(await ruler.first().innerText(), startBefore, "view panned");
   await expect(dialog.getByText(/目标开头多出 2\.500\d 秒/)).toBeVisible();
-  const refBox = await dialog.getByLabel(/参考音频波形/).boundingBox();
-  const startText = () =>
-    dialog.locator(".align-ruler span").first().innerText();
-  const before = await startText();
-  await page.mouse.move(refBox.x + refBox.width * 0.6, refBox.y + 20);
+  const headBefore = await playheadText.innerText();
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height / 2);
+  assert.notEqual(await playheadText.innerText(), headBefore, "playhead set");
+  await expect(dialog.getByText(/目标开头多出 2\.500\d 秒/)).toBeVisible();
+  const zoomBar = dialog.getByRole("scrollbar", { name: /视图范围/ });
+  const edge = await dialog.locator(".align-zoom-edge.right").boundingBox();
+  const endBefore = await ruler.last().innerText();
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
   await page.mouse.down();
-  await page.mouse.move(refBox.x + refBox.width * 0.3, refBox.y + 20, {
-    steps: 5,
-  });
+  await page.mouse.move(edge.x - 200, edge.y + edge.height / 2, { steps: 5 });
   await page.mouse.up();
-  assert.notEqual(await startText(), before, "view panned");
-  await expect(dialog.getByText(/目标开头多出 2\.500\d 秒/)).toBeVisible();
-  // The seek bar sets the playhead too.
-  await seekBar.fill("1");
-  await expect(dialog.locator(".align-seek span")).toHaveText("0:01.000");
+  assert.notEqual(await ruler.last().innerText(), endBefore, "zoomed in");
+  await expect(zoomBar).toBeVisible();
+  await page.screenshot({ path: path.join(evidence, "align-zoom.png") });
 
   await dialog.getByRole("button", { name: "应用" }).click();
   await expect(dialog).toBeHidden();
