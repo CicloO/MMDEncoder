@@ -52,6 +52,9 @@ export function useAlignPlayer(onTime: (t: number) => void) {
     length,
   }: PlayOptions) {
     stop();
+    // Sound of tracks no longer shown (a reference replaced) is let go.
+    for (const t of buffers.current.keys())
+      if (t !== reference && t !== target) buffers.current.delete(t);
     const ctx = audio.current?.ctx || new AudioContext();
     const when = ctx.currentTime + 0.05;
     const nodes: AudioScheduledSourceNode[] = [];
@@ -88,5 +91,13 @@ export function useAlignPlayer(onTime: (t: number) => void) {
     };
     setPlaying(true);
   }
-  return { playing, play, stop };
+  // The dialog closed: stop, and free the decoded sound (two 20-minute
+  // tracks are about 230 MB as audio buffers) and the audio device.
+  function release() {
+    stop();
+    buffers.current.clear();
+    void audio.current?.ctx.close().catch(() => {});
+    audio.current = null;
+  }
+  return { playing, play, stop, release };
 }

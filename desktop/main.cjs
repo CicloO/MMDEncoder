@@ -393,6 +393,7 @@ else {
           "setAudioOffset",
           "alignPreview",
           "alignRun",
+          "alignCancel",
           "mmdStatus",
           "mmdInstall",
           "mmdUninstall",

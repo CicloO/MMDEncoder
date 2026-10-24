@@ -34,6 +34,7 @@ const allowed = new Set([
   "setAudioOffset",
   "alignPreview",
   "alignRun",
+  "alignCancel",
   "mmdStatus",
   "mmdInstall",
   "mmdUninstall",

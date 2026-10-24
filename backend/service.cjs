@@ -1799,6 +1799,7 @@ function createService({
       clearTimeout(pushTimer);
       clearInterval(interruptTimer);
       for (const child of children) child.kill();
+      alignService.stopAll();
       trimAbort?.abort();
       previewAbort?.abort();
       for (const ctl of indexAborts.values()) ctl.abort();

@@ -19,6 +19,28 @@ const STEPS = [
   { value: "0.001", label: "1 毫秒" },
   { value: String(1 / 48000), label: "1 个采样" },
 ];
+// The dialog's requests: one of each at a time; a newer one, or closing,
+// stops the older (align-service.cjs), which then fails with "已取消".
+const SLOTS = {
+  target: "align:target",
+  reference: "align:reference",
+  run: "align:run",
+};
+const isCancelled = (e: unknown) => /已取消$/.test((e as Error).message);
+// Straight to the service, not through the page's call(): the dialog shows
+// its own errors, and a cancelled request is none.
+async function ask(action: string, payload: unknown) {
+  try {
+    return await window.encoder.invoke(action, payload);
+  } catch (e) {
+    throw Error(
+      (e as Error).message.replace(
+        /^Error invoking remote method '[^']+': (?:Error: )?/,
+        "",
+      ),
+    );
+  }
+}
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 const seconds = (t: number) =>
   `${t < 0 ? "-" : ""}${Math.floor(Math.abs(t) / 60)}:${(Math.abs(t) % 60).toFixed(3).padStart(6, "0")}`;
@@ -77,6 +99,7 @@ export function AlignDialog({
     playing,
     play: playFrom,
     stop,
+    release,
   } = useAlignPlayer((t) => {
     setPlayhead(t);
     if (t > length) return; // playback ends there
@@ -114,22 +137,28 @@ export function AlignDialog({
     setView({ start: lo - pad, span: hi - lo + 2 * pad });
   }
 
-  async function load(path: string) {
-    const t = (await call("alignPreview", { path })) as Track;
-    // The structured clone may arrive as a plain array buffer view.
-    return { ...t, pcm: new Int16Array(t.pcm) };
+  async function load(path: string, slot: string) {
+    const t = (await ask("alignPreview", { path, slot })) as Track;
+    // Used as it arrives; copied only if it came as another kind of view.
+    return t.pcm instanceof Int16Array
+      ? t
+      : { ...t, pcm: new Int16Array(t.pcm) };
   }
   async function run(ref = refPath, refDuration = reference?.duration || 0) {
     if (!targetPath || !ref) return;
     setBusy("正在自动对齐…");
     setError("");
     try {
-      const r = await call("alignRun", { reference: ref, target: targetPath });
+      const r = await ask("alignRun", {
+        reference: ref,
+        target: targetPath,
+        slot: SLOTS.run,
+      });
       setOffset(r.offset);
       fit(r.offset, refDuration);
       setResult({ confidence: r.confidence, reliable: r.reliable });
     } catch (e) {
-      setError((e as Error).message);
+      if (!isCancelled(e)) setError((e as Error).message);
     } finally {
       setBusy("");
     }
@@ -143,14 +172,14 @@ export function AlignDialog({
     setBusy("正在读取参考音频…");
     setError("");
     try {
-      const r = await load(file);
+      const r = await load(file, SLOTS.reference);
       setReference(r);
       setRefPath(file);
       fit(offset, r.duration);
       setBusy("");
       await run(file, r.duration);
     } catch (e) {
-      setError((e as Error).message);
+      if (!isCancelled(e)) setError((e as Error).message);
       setBusy("");
     }
   }
@@ -171,12 +200,12 @@ export function AlignDialog({
     setBusy("正在读取音频…");
     (async () => {
       try {
-        const t = await load(targetPath);
+        const t = await load(targetPath, SLOTS.target);
         if (cancelled) return;
         setTarget(t);
         let span = t.duration;
         if (ref) {
-          const r = await load(ref);
+          const r = await load(ref, SLOTS.reference);
           if (cancelled) return;
           setReference(r);
           span = r.duration;
@@ -189,14 +218,19 @@ export function AlignDialog({
           await run(ref, span);
         }
       } catch (e) {
-        if (!cancelled) setError((e as Error).message);
+        if (!cancelled && !isCancelled(e)) setError((e as Error).message);
       } finally {
         if (!cancelled) setBusy("");
       }
     })();
+    // Closed (or opened on another file): stop what is still being read or
+    // aligned, and let go of the sound.
     return () => {
       cancelled = true;
-      stop();
+      release();
+      void ask("alignCancel", { slots: Object.values(SLOTS) }).catch(() => {});
+      setTarget(null);
+      setReference(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, targetPath, fixedReference]);
