@@ -14,7 +14,7 @@ const touch = (dir, names) => {
 const range = (a, b, f) =>
   Array.from({ length: b - a + 1 }, (_, i) => f(a + i));
 
-test("PNG sequences: padded and plain numbering, folders, gaps, single images", () => {
+test("PNG sequences: padded and plain numbering, folders, gaps, single images", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "seq-"));
   try {
     // Zero-padded, starting at 1, with an unrelated file around.
@@ -23,15 +23,19 @@ test("PNG sequences: padded and plain numbering, folders, gaps, single images", 
       ...range(1, 12, (n) => `frame_${String(n).padStart(4, "0")}.png`),
       "cover.png",
     ]);
-    const s = sequence.find(path.join(a, "frame_0007.png"));
+    const s = await sequence.find(path.join(a, "frame_0007.png"));
     assert.equal(s.first, path.join(a, "frame_0001.png"));
     assert.equal(s.pattern, path.join(a.replace("%", "%%"), "frame_%04d.png"));
+    // Size comes afterwards: 12 frames of one byte (cover.png not counted).
+    assert.equal(s.size, undefined);
+    assert.equal(await sequence.size(s), 12);
+    assert.equal(await sequence.size(s, () => false), undefined);
     assert.deepEqual(
       [s.start, s.count, s.missing, s.name],
       [1, 12, null, "frame"],
     );
     // The folder picks its largest sequence.
-    assert.equal(sequence.find(a).pattern, s.pattern);
+    assert.equal((await sequence.find(a)).pattern, s.pattern);
 
     // Plain numbers 0–10, no separator, so the folder names the output.
     const b = path.join(root, "镜头 B");
@@ -39,7 +43,7 @@ test("PNG sequences: padded and plain numbering, folders, gaps, single images", 
       b,
       range(0, 10, (n) => `${n}.png`),
     );
-    const p = sequence.find(path.join(b, "3.png"));
+    const p = await sequence.find(path.join(b, "3.png"));
     assert.deepEqual([p.start, p.count, p.name], [0, 11, "镜头 B"]);
     assert.ok(p.pattern.endsWith(path.sep + "%d.png"));
 
@@ -49,20 +53,21 @@ test("PNG sequences: padded and plain numbering, folders, gaps, single images", 
       c,
       range(998, 1002, (n) => `cut-${String(n).padStart(4, "0")}.png`),
     );
-    assert.equal(sequence.find(c).count, 5);
+    assert.equal((await sequence.find(c)).count, 5);
 
     // A missing frame is reported, since FFmpeg would stop there.
     const d = path.join(root, "d");
     touch(d, ["x_001.png", "x_002.png", "x_004.png"]);
-    const g = sequence.find(d);
+    const g = await sequence.find(d);
     assert.deepEqual([g.count, g.total, g.missing], [2, 3, 3]);
+    assert.equal(await sequence.size(g), 2);
 
     // One numbered image, or none: not a sequence.
     const e = path.join(root, "e");
     touch(e, ["only_0001.png", "logo.png"]);
-    assert.equal(sequence.find(path.join(e, "only_0001.png")), null);
-    assert.equal(sequence.find(path.join(e, "logo.png")), null);
-    assert.equal(sequence.find(e), null);
+    assert.equal(await sequence.find(path.join(e, "only_0001.png")), null);
+    assert.equal(await sequence.find(path.join(e, "logo.png")), null);
+    assert.equal(await sequence.find(e), null);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -194,3 +199,28 @@ test(
     }
   },
 );
+
+test("a 10,000-frame folder is read without blocking the event loop", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "seq-big-"));
+  try {
+    touch(
+      root,
+      range(1, 10000, (n) => `big_${String(n).padStart(5, "0")}.png`),
+    );
+    let longest = 0,
+      last = Date.now();
+    const timer = setInterval(() => {
+      longest = Math.max(longest, Date.now() - last);
+      last = Date.now();
+    }, 5);
+    const s = await sequence.find(root);
+    const total = await sequence.size(s);
+    clearInterval(timer);
+    assert.equal(s.count, 10000);
+    assert.equal(total, 10000);
+    // The old synchronous stat of every frame held the loop for the whole scan.
+    assert.ok(longest < 200, `event loop held for ${longest} ms`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

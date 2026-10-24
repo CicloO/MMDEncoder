@@ -50,6 +50,8 @@ export type Meta = {
   fpsText: string;
   duration: number;
   size: number;
+  // PNG sequence: size still being added up.
+  sizing?: boolean;
   codec: string;
   pixFmt: string;
   bitDepth: number;

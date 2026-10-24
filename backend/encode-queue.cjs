@@ -90,9 +90,9 @@ function createEncodeQueue(ctx) {
       let seq = null,
         isDir = false;
       try {
-        isDir = fs.statSync(resolved).isDirectory();
+        isDir = (await fs.promises.stat(resolved)).isDirectory();
         if (isDir || /\.png$/i.test(resolved))
-          seq = sequence.find(resolved, folders);
+          seq = await sequence.find(resolved, folders);
       } catch {}
       if (isDir && !seq) {
         state.notice = "文件夹里没有 PNG 序列：" + path.basename(input);
@@ -144,6 +144,16 @@ function createEncodeQueue(ctx) {
         job.meta = await sequenceMeta(job);
         job.status = "ready";
         emit();
+        // Usable now; the total size (one stat per frame) follows, outside
+        // the import limit so other files are not held up.
+        void sequence
+          .size(seq, () => state.jobs.includes(job))
+          .then((total) => {
+            if (total === undefined || !job.sequence || !job.meta) return;
+            job.sequence.size = total;
+            job.meta = withSequenceRate(job.meta, job.sequence);
+            emit();
+          });
         return;
       }
       const stat = fs.statSync(input);
@@ -206,9 +216,14 @@ function createEncodeQueue(ctx) {
       fps: q.fps,
       fpsText: q.fpsText,
       duration: q.count / q.fps,
+      // Unknown (undefined) while the frames are still being added up.
       size: q.size,
+      sizing: q.size === undefined,
       // Bits per second over the whole sequence, as for a video file.
-      videoBitRate: Math.round((q.size * 8 * q.fps) / q.count),
+      videoBitRate:
+        q.size === undefined
+          ? undefined
+          : Math.round((q.size * 8 * q.fps) / q.count),
       vfr: false,
       sequence: { count: q.count, start: q.start },
     };

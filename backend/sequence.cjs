@@ -7,10 +7,11 @@ const path = require("node:path");
 
 const PNG = /^(.*?)(\d+)\.png$/i;
 
-// Sequences in a folder, keyed by name prefix and digit layout.
-function scan(dir) {
+// Sequences in a folder, keyed by name prefix and digit layout. Read
+// without blocking: a long MMD sequence is tens of thousands of files.
+async function scan(dir) {
   const groups = new Map();
-  for (const file of fs.readdirSync(dir)) {
+  for (const file of await fs.promises.readdir(dir)) {
     const m = PNG.exec(file);
     if (!m) continue;
     const [, prefix, digits] = m;
@@ -52,12 +53,7 @@ function describe(dir, g) {
   // image2 stops at the first missing number, so a gap must be reported.
   const missing = count < frames.length ? start + count : null;
   const base = g.prefix.replace(/[\s._-]+$/, "");
-  let size = 0;
-  for (const f of frames.slice(0, count))
-    try {
-      size += fs.statSync(path.join(dir, f.file)).size;
-    } catch {}
-  return {
+  const result = {
     dir,
     first: path.join(dir, frames[0].file),
     // %% keeps a literal percent sign in folder or file names.
@@ -71,22 +67,50 @@ function describe(dir, g) {
     missing,
     // Output name: the prefix without its trailing separator, or the folder.
     name: base || path.basename(dir),
-    size,
+    // Total size: added up afterwards by size() (one stat per frame).
+    size: undefined,
   };
+  frameFiles.set(
+    result,
+    frames.slice(0, count).map((f) => path.join(dir, f.file)),
+  );
+  return result;
+}
+// The frame files of a described sequence, kept out of the result itself
+// (which is copied into the job and sent to the window).
+const frameFiles = new WeakMap();
+// Total size of a sequence's frames, 32 files at a time; `alive()` false
+// stops early (the sequence was removed) and gives undefined.
+async function size(seq, alive = () => true) {
+  const files = frameFiles.get(seq) || [];
+  let total = 0;
+  for (let i = 0; i < files.length; i += 32) {
+    if (!alive()) return undefined;
+    const sizes = await Promise.all(
+      files.slice(i, i + 32).map((file) =>
+        fs.promises.stat(file).then(
+          (s) => s.size,
+          () => 0,
+        ),
+      ),
+    );
+    for (const s of sizes) total += s;
+  }
+  return total;
 }
 
 // The sequence a PNG file belongs to, or the largest one in a folder; null
 // when there is no sequence of at least two frames. Pass the same memo (a
 // Map) for many picks at once: each folder is then read and described once.
-function find(target, memo = new Map()) {
+async function find(target, memo = new Map()) {
   const scanned = (dir) => {
     if (!memo.has(dir)) memo.set(dir, scan(dir));
     return memo.get(dir);
   };
   const described = (dir, g) => (g.described ||= describe(dir, g));
-  const stat = fs.statSync(target);
+  const stat = await fs.promises.stat(target);
   if (stat.isDirectory()) {
-    const groups = [...scanned(target)].sort(
+    const groups = [...(await scanned(target))].sort(
       (a, b) => b.frames.length - a.frames.length,
     );
     const g = groups.find((g) => g.frames.length >= 2);
@@ -95,7 +119,7 @@ function find(target, memo = new Map()) {
   const dir = path.dirname(target);
   const m = PNG.exec(path.basename(target));
   if (!m) return null;
-  const g = scanned(dir).find((g) =>
+  const g = (await scanned(dir)).find((g) =>
     g.frames.some(
       (f) => f.file.toLowerCase() === path.basename(target).toLowerCase(),
     ),
@@ -103,4 +127,4 @@ function find(target, memo = new Map()) {
   return g && g.frames.length >= 2 ? described(dir, g) : null;
 }
 
-module.exports = { find };
+module.exports = { find, size };
