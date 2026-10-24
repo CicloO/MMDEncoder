@@ -292,7 +292,10 @@ function createEncodeQueue(ctx) {
     };
   }
   function append(job, text) {
-    job.log = ((job.log || "") + text).slice(-200000);
+    // The last 200 KB in memory (the whole log goes to disk): cut back only
+    // past 256 KB, so a long encode does not copy 200 KB on every line.
+    job.log = (job.log || "") + text;
+    if (job.log.length > 256000) job.log = job.log.slice(-200000);
     const pieces = ctx.pendingLogs.get(job.id) || [];
     pieces.push(text);
     ctx.pendingLogs.set(job.id, pieces);
