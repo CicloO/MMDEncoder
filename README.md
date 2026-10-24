@@ -166,4 +166,4 @@ FFmpeg、NVEncC 等编码工具由用户另行下载，遵循各自的许可证�
 
 ## 作者
 
-作者：CicloO　协作：Claude、ChatGPT
+作者：CicloO　协作：Claude、ChatGPT、DeepSeek

@@ -549,14 +549,15 @@ test("built-in presets can be edited, hidden, deleted, reordered and restored ac
   const ids = () => svc.getState().presets.map((p) => p.id);
   const find = (id) => svc.getState().presets.find((p) => p.id === id);
   try {
-    // Recommended presets first, then Alpha; software variants have no explicit hidden flag.
+    // Recommended presets first, then Alpha (split before kept); software
+    // variants have no explicit hidden flag.
     assert.deepEqual(ids(), [
       "builtin-4k",
       "builtin-4k-sw",
       "builtin-1080",
       "builtin-1080-sw",
-      "builtin-alpha",
       "builtin-alpha-mask",
+      "builtin-alpha",
       "builtin-prores422",
     ]);
     assert.equal(find("builtin-4k-sw").hidden, undefined);

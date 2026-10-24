@@ -269,7 +269,7 @@ export function AboutDialog({
           </div>
           <div>
             <dt>协作</dt>
-            <dd>Claude、ChatGPT</dd>
+            <dd>Claude、ChatGPT、DeepSeek</dd>
           </div>
           <div>
             <dt>许可证</dt>

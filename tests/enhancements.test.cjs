@@ -97,8 +97,8 @@ test("recommended presets pair hardware and software variants and scale by the l
       "默认 4K · 软件",
       "默认 1080p · 硬件",
       "默认 1080p · 软件",
-      "保留 Alpha · ProRes 4444",
       "分离 Alpha · H.264 MP4",
+      "保留 Alpha · ProRes 4444",
       "剪辑素材 · ProRes 422 HQ",
     ],
   );

@@ -163,6 +163,25 @@ BUILTINS.splice(
       },
     ];
   }),
+  // Split: the recommended hardware encoder at the source size with a higher
+  // quality (CQ 19, it is meant for editing), plus a separate lossless
+  // grayscale mask (smaller than lossy masks, measured) used as a luma matte.
+  {
+    id: "builtin-alpha-mask",
+    name: "分离 Alpha · H.264 MP4",
+    settings: {
+      ...DEFAULTS,
+      encoder: "h264_nvenc",
+      container: "mp4",
+      quality: 19,
+      preset: "p4",
+      lookahead: 32,
+      lookaheadLevel: 0,
+      audioBitrate: 320,
+      alphaMode: "discard",
+      alphaMask: true,
+    },
+  },
   // Transparent output at the source size for editing (After Effects etc.).
   // ProRes 4444 in MOV: HEVC alpha lives in an auxiliary layer that only Apple's
   // decoder reads, so AE on Windows imports it without transparency.
@@ -182,25 +201,6 @@ BUILTINS.splice(
       quality: PRORES_QUALITY,
       lookahead: 0,
       lookaheadLevel: 0,
-    },
-  },
-  // Split: the recommended hardware encoder at the source size with a higher
-  // quality (CQ 19, it is meant for editing), plus a separate lossless
-  // grayscale mask (smaller than lossy masks, measured) used as a luma matte.
-  {
-    id: "builtin-alpha-mask",
-    name: "分离 Alpha · H.264 MP4",
-    settings: {
-      ...DEFAULTS,
-      encoder: "h264_nvenc",
-      container: "mp4",
-      quality: 19,
-      preset: "p4",
-      lookahead: 32,
-      lookaheadLevel: 0,
-      audioBitrate: 320,
-      alphaMode: "discard",
-      alphaMask: true,
     },
   },
   // Editing intermediate without alpha: ProRes 422 HQ at the source size,
