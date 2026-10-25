@@ -1,9 +1,5 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const Module = require("node:module");
-const ts = require("typescript");
 const {
   appError,
   validationIssue,
@@ -11,23 +7,7 @@ const {
   summary,
 } = require("../backend/errors.cjs");
 const { registerAction } = require("../desktop/actions.cjs");
-function load(file, dependencies = {}) {
-  const filename = path.resolve(file);
-  const compiled = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      resolveJsonModule: true,
-      esModuleInterop: true,
-      target: ts.ScriptTarget.ES2022,
-    },
-  }).outputText;
-  const loaded = new Module(filename, module);
-  loaded.filename = filename;
-  const original = Module.createRequire(filename);
-  loaded.require = (id) => dependencies[id] || original(id);
-  loaded._compile(compiled, filename);
-  return loaded.exports;
-}
+const { load } = require("./load-typescript.cjs");
 
 test("shared presentation refreshes status, audio, units and names without changing technical values", () => {
   const i18n = load("src/i18n.ts");

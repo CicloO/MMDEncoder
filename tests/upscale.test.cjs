@@ -486,6 +486,11 @@ test(
           recursive: true,
         },
       );
+      fs.cpSync(
+        path.join(__dirname, "..", "locales"),
+        path.join(app, "locales"),
+        { recursive: true },
+      );
       fs.mkdirSync(path.join(app, "assets", "shaders"), { recursive: true });
       fs.copyFileSync(
         path.join(__dirname, "..", "assets", "shaders", "ArtCNN_C4F16.glsl"),
