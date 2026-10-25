@@ -1,4 +1,4 @@
-import { autoAlign } from "./autoAlign";
+import type { AlignmentTasks } from "./alignmentTasks";
 import type { MessageDescriptor } from "./i18n";
 import type { MediaJob } from "./types";
 
@@ -7,20 +7,34 @@ import type { MediaJob } from "./types";
 export function createMediaAudioReplacement({
   run,
   notify,
-  enabled,
+  tasks,
+  applyOffset,
 }: {
   run: (action: string, payload?: unknown) => Promise<any>;
   notify: (notice: MessageDescriptor) => void;
-  enabled: boolean;
+  tasks: AlignmentTasks;
+  applyOffset: (id: string, file: string, offset: number) => Promise<unknown>;
 }) {
-  async function setAudio(job: Pick<MediaJob, "id" | "path">, file: string) {
+  async function setAudio(
+    job: Pick<MediaJob, "id" | "path" | "meta">,
+    file: string,
+  ) {
+    const task = tasks.begin(job.id);
     const r = await run("mediaSetAudio", { id: job.id, path: file });
-    if (r && enabled) {
-      const note = await autoAlign(job.path, file, (offset) =>
-        run("mediaSetAudioOffset", { id: job.id, offset }),
-      );
-      if (note) notify(note);
+    const updated = r?.mediaJobs?.find((item: MediaJob) => item.id === job.id);
+    if (
+      !r ||
+      !task.current() ||
+      (updated && updated.audioPath !== file) ||
+      !(updated || job).meta?.audio
+    ) {
+      task.finish();
+      return r;
     }
+    const note = await task.run(job.path, file, (offset) =>
+      applyOffset(job.id, file, offset),
+    );
+    if (note) notify(note);
     return r;
   }
   return { setAudio };

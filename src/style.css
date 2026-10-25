@@ -1170,6 +1170,26 @@ input:not([type="checkbox"]):hover {
 .spin {
   animation: spin 1.5s linear infinite;
 }
+.alignment-wave.active path {
+  transform-box: fill-box;
+  transform-origin: center;
+  vector-effect: non-scaling-stroke;
+  animation: alignment-wave 0.8s ease-in-out infinite alternate;
+}
+.alignment-wave.active path:nth-child(2n) {
+  animation-delay: -0.3s;
+}
+.alignment-wave.active path:nth-child(3n) {
+  animation-delay: -0.6s;
+}
+@keyframes alignment-wave {
+  from {
+    transform: scaleY(0.65);
+  }
+  to {
+    transform: scaleY(1.1);
+  }
+}
 @keyframes spin {
   to {
     transform: rotate(360deg);

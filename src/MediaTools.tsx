@@ -11,6 +11,7 @@ import { Button, Modal, useDragSort, PAGE_SIZE } from "./components";
 import { MediaDetails } from "./MediaDetails";
 import { AlignDialog } from "./AlignDialog";
 import { createMediaAudioReplacement } from "./mediaAudioReplacement";
+import { useAlignmentTasks } from "./useAlignmentTasks";
 import { FileMeta } from "./FileMeta";
 import {
   t,
@@ -83,6 +84,12 @@ export function MediaTools({
     null,
   );
   const locked = running || detecting || toolsBusy || enhancementsBusy;
+  const audioAlignment = useAlignmentTasks(
+    "media",
+    jobs
+      .filter((job) => job.status === "ready")
+      .map((job) => ({ id: job.id, target: job.audioPath })),
+  );
   const readyJobs = jobs.filter((j) => j.status === "ready");
   const doneCount = jobs.filter((j) => j.status === "done").length;
   const clearable = jobs.some((j) => ["done", "cancelled"].includes(j.status));
@@ -193,7 +200,9 @@ export function MediaTools({
   const { setAudio } = createMediaAudioReplacement({
     run,
     notify: (notice) => setError({ notice }),
-    enabled: o.autoAlign,
+    tasks: audioAlignment,
+    applyOffset: (id, file, offset) =>
+      call("mediaSetAudioOffset", { id, offset, expectedAudioPath: file }),
   });
   async function pickFolder() {
     const dir = await run("pickDirectory", {
@@ -226,7 +235,11 @@ export function MediaTools({
               onPage={setPage}
               onPickFiles={pickFiles}
               onPickAudio={pickAudio}
-              onAlign={setAlignId}
+              aligningIds={audioAlignment.active}
+              onAlign={(id) => {
+                void audioAlignment.cancel(id);
+                setAlignId(id);
+              }}
               onRequeue={(id) => run("mediaRequeue", { id })}
               onRemove={(id) => run("mediaRemove", { id })}
               onClear={() => run("mediaClearCompleted")}

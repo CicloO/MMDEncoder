@@ -1,14 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  AudioLines,
-  FolderOpen,
-  Minus,
-  Pause,
-  Play,
-  Plus,
-  Wand2,
-} from "lucide-react";
+import { AudioLines, FolderOpen, Minus, Pause, Play, Plus } from "lucide-react";
 import { Button, Field, Modal } from "./components";
+import { AlignmentIcon } from "./AlignmentIcon";
 import {
   effectiveAudioOffset,
   parseFrameRate,
@@ -454,7 +447,7 @@ export function AlignDialog({
               (frameShift && !referenceInfo?.hasAudio)
             }
           >
-            <Wand2 size={15} />
+            <AlignmentIcon size={15} active={busy === "aligning"} />
             {t("align.auto")}
           </Button>
         </div>

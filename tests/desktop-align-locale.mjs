@@ -99,7 +99,9 @@ try {
       .check();
     await page.getByLabel("输出格式", { exact: true }).selectOption("mkv");
     await page.getByLabel("输出位置", { exact: true }).selectOption("encoded");
-    await page.getByLabel("选择音频后自动对齐", { exact: false }).uncheck();
+    await expect(
+      page.getByLabel("选择音频后自动对齐", { exact: false }),
+    ).toHaveCount(0);
     await page
       .locator(".job-select")
       .filter({ hasText: "User failed.mov" })

@@ -153,22 +153,6 @@ export function MediaSettings({
               onChange={(v) => set("container", v)}
             />
           )}
-          {o.operation === "merge" && (
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                disabled={locked}
-                checked={o.autoAlign}
-                onChange={(e) => set("autoAlign", e.target.checked)}
-              />
-              <span>
-                {t("media.autoAlignLabel")}
-                <small className="hint hires-hint">
-                  {t("media.autoAlignHint")}
-                </small>
-              </span>
-            </label>
-          )}
           <Select
             id="media-location"
             label={t("media.locationLabel")}

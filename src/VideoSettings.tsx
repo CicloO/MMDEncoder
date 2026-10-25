@@ -48,8 +48,6 @@ export function VideoSettings({
   preview,
   customFPS,
   setCustomFPS,
-  autoAlignAudio,
-  setAutoAlignAudio,
   set,
   changed,
   call,
@@ -69,8 +67,6 @@ export function VideoSettings({
   preview: Preview | null;
   customFPS: boolean;
   setCustomFPS: (v: boolean) => void;
-  autoAlignAudio: boolean;
-  setAutoAlignAudio: (v: boolean) => void;
   set: <K extends keyof Settings>(k: K, v: Settings[K]) => void;
   changed: (s: Settings) => void;
   call: (action: string, payload?: unknown) => Promise<any>;
@@ -542,19 +538,6 @@ export function VideoSettings({
             <Info size={17} />
             <p>{t("video.audioHint")}</p>
           </div>
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={autoAlignAudio}
-              onChange={(e) => setAutoAlignAudio(e.target.checked)}
-            />
-            <span>
-              {t("video.autoAlign")}
-              <small className="hint hires-hint">
-                {t("video.autoAlignHint")}
-              </small>
-            </span>
-          </label>
           {(job?.audioPath ? job.audioMeta : job?.meta?.audio) &&
             (() => {
               const a = (job!.audioPath ? job!.audioMeta : job!.meta!.audio)!;

@@ -106,8 +106,9 @@ test("completed media rows reuse output filenames after elapsed time and hide st
       Button: ({ children }) => React.createElement("button", {}, children),
     },
     "./OutputFiles": { OutputFiles },
+    "./AlignmentIcon": load("src/AlignmentIcon.tsx"),
     "./FileMeta": { metaSummary: () => "Metadata" },
-    "./autoAlign": { offsetText: () => "Offset" },
+    "./autoAlign": { offsetText: () => "Offset", frameShiftText: () => "" },
     "./mediaOptions": options,
   });
   const completed = {

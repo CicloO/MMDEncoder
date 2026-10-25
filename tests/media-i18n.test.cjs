@@ -59,7 +59,43 @@ test("media option labels and Hi-Res display refresh while technical values and 
   assert.deepEqual(Object.keys(options.FORMATS()), values);
   assert.equal(JSON.stringify(options.DEFAULT_OPTIONS), before);
   assert.equal(options.DEFAULT_OPTIONS.audioBitrate, 0);
-  assert.equal(options.DEFAULT_OPTIONS.autoAlign, true);
+  assert.equal("autoAlign" in options.DEFAULT_OPTIONS, false);
+});
+
+test("removed media auto-align switch is dropped from stored options without resetting remaining settings", () => {
+  const options = load("src/mediaOptions.ts", {
+    "./i18n": load("src/i18n.ts"),
+  });
+  let stored = JSON.stringify({
+    autoAlign: false,
+    operation: "merge",
+    audioFormat: "flac",
+    audioBitrate: 192,
+    hiRes: true,
+    outputDir: "H:/User output",
+  });
+  global.localStorage = {
+    getItem: () => stored,
+    setItem: (_key, value) => {
+      stored = value;
+    },
+  };
+  try {
+    const result = options.loadOptions();
+    assert.equal("autoAlign" in result, false);
+    assert.equal("autoAlign" in JSON.parse(stored), false);
+    assert.equal(result.operation, "merge");
+    assert.equal(result.audioFormat, "flac");
+    assert.equal(result.audioBitrate, 192);
+    assert.equal(result.hiRes, true);
+    assert.equal(result.outputDir, "H:/User output");
+    global.localStorage.setItem = () => {
+      throw Error("read only storage");
+    };
+    assert.deepEqual(options.loadOptions(), result);
+  } finally {
+    delete global.localStorage;
+  }
 });
 
 test("auto-alignment and media error wrappers keep nested errors for later formatting", async () => {

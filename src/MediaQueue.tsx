@@ -1,6 +1,5 @@
 import { t, localeRuntime, errorMessage } from "./i18n";
 import {
-  AudioLines,
   Check,
   FileAudio,
   FileVideo,
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button, PAGE_SIZE, useDragSort } from "./components";
 import { OutputFiles } from "./OutputFiles";
+import { AlignmentIcon } from "./AlignmentIcon";
 import { formatDuration } from "./presentation";
 import { metaSummary } from "./FileMeta";
 import { frameShiftText, offsetText } from "./autoAlign";
@@ -36,6 +36,7 @@ export function MediaQueue({
   onPickFiles,
   onPickAudio,
   onAlign,
+  aligningIds = new Set<string>(),
   onRequeue,
   onRemove,
   onClear,
@@ -54,6 +55,7 @@ export function MediaQueue({
   onPickFiles: () => void;
   onPickAudio: (job: MediaJob) => void;
   onAlign: (id: string) => void;
+  aligningIds?: ReadonlySet<string>;
   onRequeue: (id: string) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
@@ -157,8 +159,9 @@ export function MediaQueue({
           title={t("media.alignMergeTitle")}
           disabled={locked}
           onClick={() => onAlign(j.id)}
+          aria-busy={aligningIds.has(j.id)}
         >
-          <AudioLines size={16} />
+          <AlignmentIcon active={aligningIds.has(j.id)} />
         </Button>
       )}
       {operation === "audio" && j.status === "ready" && (
@@ -169,7 +172,7 @@ export function MediaQueue({
           disabled={locked}
           onClick={() => onAlign(j.id)}
         >
-          <AudioLines size={16} />
+          <AlignmentIcon active={aligningIds.has(j.id)} />
         </Button>
       )}
       {["done", "cancelled", "failed"].includes(j.status) && (

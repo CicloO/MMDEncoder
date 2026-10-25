@@ -47,8 +47,6 @@ export type Options = {
   hiRes: boolean;
   // Seconds of fade in / out (0 = off); not with a copied audio track.
   audioFade: number;
-  // Merging: line the added audio up with the video's sound once chosen.
-  autoAlign: boolean;
   location: string;
   outputDir: string;
 };
@@ -59,16 +57,23 @@ export const DEFAULT_OPTIONS: Options = {
   container: "mp4",
   hiRes: false,
   audioFade: 0,
-  autoAlign: true,
   location: "source",
   outputDir: "",
 };
 export function loadOptions(): Options {
   try {
-    return {
+    const stored = JSON.parse(localStorage.getItem(OPTIONS_KEY) || "{}");
+    delete stored.autoAlign;
+    const options = {
       ...DEFAULT_OPTIONS,
-      ...JSON.parse(localStorage.getItem(OPTIONS_KEY) || "{}"),
+      ...stored,
     };
+    try {
+      localStorage.setItem(OPTIONS_KEY, JSON.stringify(options));
+    } catch {
+      /* Read options still apply when storage cannot be written. */
+    }
+    return options;
   } catch {
     return DEFAULT_OPTIONS;
   }

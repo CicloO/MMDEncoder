@@ -58,6 +58,44 @@ let passed = false;
 try {
   const page = await app.firstWindow();
   page.setDefaultTimeout(30000);
+  await page.evaluate(() => {
+    localStorage.setItem("mmd-auto-align", "off");
+    localStorage.setItem(
+      "mmd-media-options",
+      JSON.stringify({ autoAlign: false }),
+    );
+  });
+  await page.reload();
+  await page.getByRole("heading", { name: "视频队列", exact: true }).waitFor();
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem("mmd-auto-align")),
+    null,
+  );
+  await page.evaluate(() => {
+    window.alignmentMotion = [];
+    let previous = "";
+    const observe = () => {
+      const active = [
+        ...document.querySelectorAll(".alignment-wave.active"),
+      ].map((node) => ({
+        button:
+          node.closest("button")?.getAttribute("aria-label") ||
+          node.closest("button")?.textContent,
+        animation: getComputedStyle(node.querySelector("path")).animationName,
+      }));
+      const value = JSON.stringify(active);
+      if (value !== previous) {
+        window.alignmentMotion.push(active);
+        previous = value;
+      }
+    };
+    new MutationObserver(observe).observe(document.getElementById("root"), {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["class", "aria-busy"],
+    });
+  });
   const errorTransport = await page.evaluate(async () => {
     const structured = await window.encoder.invokeResult("alignPreview", {
       path: "relative.wav",
@@ -186,6 +224,16 @@ try {
     });
   }, song);
   await page.getByLabel("操作").selectOption("merge");
+  await expect(
+    page.getByLabel("选择音频后自动对齐", { exact: false }),
+  ).toHaveCount(0);
+  assert.equal(
+    await page.evaluate(
+      () =>
+        "autoAlign" in JSON.parse(localStorage.getItem("mmd-media-options")),
+    ),
+    false,
+  );
   await page.evaluate(
     (p) => window.encoder.invoke("mediaAdd", { paths: [p] }),
     render,
@@ -194,6 +242,22 @@ try {
   await expect(page.getByText(/对齐 \+2\.500 秒/)).toBeVisible({
     timeout: 60000,
   });
+  const mergeAlignmentButton = page.getByRole("button", {
+    name: /对齐 渲染\.mp4 的合并音频/,
+  });
+  await expect(mergeAlignmentButton).toHaveAttribute("aria-busy", "false");
+  assert.ok(
+    await page.evaluate(() =>
+      window.alignmentMotion
+        .flat()
+        .some(
+          (item) =>
+            item.button?.includes("合并音频") &&
+            item.animation === "alignment-wave",
+        ),
+    ),
+    "merge waveform moved during automatic alignment",
+  );
   // The dialog shows the video's own sound as the fixed reference.
   await page.getByRole("button", { name: /对齐 渲染\.mp4 的合并音频/ }).click();
   const mergeDialog = page.getByRole("dialog", { name: "音频对齐" });
@@ -225,11 +289,28 @@ try {
     render,
   );
   await expect.poll(async () => (await state()).jobs[0]?.status).toBe("ready");
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.getByRole("button", { name: /为 渲染\.mp4 选择音频/ }).click();
   await expect
     .poll(async () => (await state()).jobs[0].audioOffset, { timeout: 60000 })
     .toBeCloseTo(2.5, 3);
   await expect(page.getByText(/替换音频：.*对齐 \+2\.500 秒/)).toBeVisible();
+  const videoAlignmentButton = page.getByRole("button", {
+    name: /对齐 渲染\.mp4 的替换音频/,
+  });
+  await expect(videoAlignmentButton).toHaveAttribute("aria-busy", "false");
+  assert.ok(
+    await page.evaluate(() =>
+      window.alignmentMotion
+        .flat()
+        .some(
+          (item) =>
+            item.button?.includes("替换音频") && item.animation === "none",
+        ),
+    ),
+    "reduced motion keeps a busy waveform static",
+  );
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   // The queue row has the same alignment button as on the media page.
   await page.getByRole("button", { name: /对齐 渲染\.mp4 的替换音频/ }).click();
   const videoDialog = page.getByRole("dialog", { name: "音频对齐" });
@@ -329,6 +410,10 @@ try {
       (frames ? 1 : 0.01),
   );
   console.log("Desktop align PASS");
+  fs.writeFileSync(
+    path.join(evidence, "i18n/b3-auto-align-motion.json"),
+    JSON.stringify(await page.evaluate(() => window.alignmentMotion), null, 2),
+  );
   passed = true;
 } finally {
   await app.close();

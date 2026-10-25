@@ -210,8 +210,6 @@ export function VideoFixture({ state }: { state: State }) {
                 preview={preview}
                 customFPS={customFPS}
                 setCustomFPS={setCustomFPS}
-                autoAlignAudio={true}
-                setAutoAlignAudio={() => {}}
                 set={set}
                 changed={setSettings}
                 call={async () => null}

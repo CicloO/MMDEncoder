@@ -9,7 +9,6 @@ import {
 import { serializeError } from "../locales/messages.mjs";
 import type { ErrorData, MessageDescriptor } from "./i18n";
 import {
-  AudioLines,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -27,6 +26,7 @@ import {
 import { useState } from "react";
 import { Button, Select, useDragSort, PAGE_SIZE } from "./components";
 import { AlignDialog } from "./AlignDialog";
+import { AlignmentIcon } from "./AlignmentIcon";
 import { OutputFiles } from "./OutputFiles";
 import { frameShiftText, offsetText } from "./autoAlign";
 import { FileMeta, metaSummary } from "./FileMeta";
@@ -71,6 +71,8 @@ export function EncodeQueue({
   call,
   action,
   pickAudio,
+  aligningIds = new Set<string>(),
+  cancelAlignment = () => {},
   persist,
   openLog,
   setDetails,
@@ -105,6 +107,8 @@ export function EncodeQueue({
     message?: string | MessageDescriptor,
   ) => void;
   pickAudio: (job: Job) => void;
+  aligningIds?: ReadonlySet<string>;
+  cancelAlignment?: (id: string) => unknown;
   persist: (settings: Settings) => Promise<void>;
   openLog: (job: Job) => void;
   setDetails: (details: any) => void;
@@ -124,6 +128,10 @@ export function EncodeQueue({
   // The video whose replacement audio is being aligned (音频对齐).
   const [alignId, setAlignId] = useState("");
   const aligning = jobs.find((j) => j.id === alignId);
+  const openAlignment = (id: string) => {
+    cancelAlignment(id);
+    setAlignId(id);
+  };
   return (
     <section className="queue-column" aria-label={t("queue.title")}>
       <div className="section-heading">
@@ -298,9 +306,10 @@ export function EncodeQueue({
                           : t("queue.manualAlignmentHint")
                       }
                       disabled={running || !j.meta}
-                      onClick={() => setAlignId(j.id)}
+                      aria-busy={aligningIds.has(j.id)}
+                      onClick={() => openAlignment(j.id)}
                     >
-                      <AudioLines size={16} />
+                      <AlignmentIcon active={aligningIds.has(j.id)} />
                     </Button>
                   )}
                   {["done", "cancelled"].includes(j.status) && (
@@ -481,15 +490,19 @@ export function EncodeQueue({
                     ? t("queue.alignSelectedHint")
                     : t("queue.manualAlignmentHint")
                 }
-                onClick={() => setAlignId(job.id)}
+                aria-busy={aligningIds.has(job.id)}
+                onClick={() => openAlignment(job.id)}
               >
-                <AudioLines size={14} />
+                <AlignmentIcon size={14} active={aligningIds.has(job.id)} />
                 {t("queue.align")}
               </Button>
               <Button
                 variant="ghost"
                 disabled={running}
-                onClick={() => action("setAudio", { id: job.id, path: "" })}
+                onClick={() => {
+                  cancelAlignment(job.id);
+                  action("setAudio", { id: job.id, path: "" });
+                }}
               >
                 {t("queue.originalAudio")}
               </Button>

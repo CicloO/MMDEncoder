@@ -19,6 +19,7 @@ import { MediaTools } from "./MediaTools";
 import { TrimTools } from "./TrimTools";
 import { EncodeQueue } from "./EncodeQueue";
 import { createAudioReplacement, audioTarget } from "./audioReplacement";
+import { useAlignmentTasks } from "./useAlignmentTasks";
 import { MediaDetails } from "./MediaDetails";
 import { EncodeFooter } from "./EncodeFooter";
 import { VideoFeedback } from "./VideoFeedback";
@@ -75,22 +76,13 @@ export default function App() {
       /* Theme still works for this session. */
     }
   }, [theme]);
-  // Video page: line a replacement audio up with the video's own sound
-  // when it is chosen (remembered per computer, like the theme).
-  const [autoAlignAudio, setAutoAlignAudio] = useState(() => {
-    try {
-      return localStorage.getItem("mmd-auto-align") !== "off";
-    } catch {
-      return true;
-    }
-  });
   useEffect(() => {
     try {
-      localStorage.setItem("mmd-auto-align", autoAlignAudio ? "on" : "off");
+      localStorage.removeItem("mmd-auto-align");
     } catch {
-      /* Still applies for this session. */
+      /* Alignment no longer depends on a saved switch. */
     }
-  }, [autoAlignAudio]);
+  }, []);
   const [state, setState] = useState<State | null>(null),
     [compatibility, setCompatibility] = useState<{
       errors: string[];
@@ -324,10 +316,16 @@ export default function App() {
       onNotice: notify,
     }).call,
   );
+  const videoAlignment = useAlignmentTasks(
+    "video",
+    (state?.jobs || [])
+      .filter((job) => !["encoding", "done"].includes(job.status))
+      .map((job) => ({ id: job.id, target: job.audioPath })),
+  );
   const audioReplacement = createAudioReplacement({
     call,
     notify,
-    enabled: autoAlignAudio,
+    tasks: videoAlignment,
   });
   const pickAudio = (row: Job) => audioReplacement.pickAudio(audioTarget(row));
   const replaceAudio = (row: Job, file: string) =>
@@ -781,6 +779,8 @@ export default function App() {
               call={call}
               action={action}
               pickAudio={pickAudio}
+              aligningIds={videoAlignment.active}
+              cancelAlignment={videoAlignment.cancel}
               persist={persist}
               openLog={openLog}
               setDetails={setDetails}
@@ -852,8 +852,6 @@ export default function App() {
                 preview={preview}
                 customFPS={customFPS}
                 setCustomFPS={setCustomFPS}
-                autoAlignAudio={autoAlignAudio}
-                setAutoAlignAudio={setAutoAlignAudio}
                 set={set}
                 changed={changed}
                 call={call}

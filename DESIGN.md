@@ -79,7 +79,7 @@ Borders separate functional panels; shadows only on dialog overlays. No gradient
 
 ## Components
 
-Canonical tokens: this frontmatter → scripts/tokens.mjs → src/tokens.css → shared CSS/classes in src/style.css. Generated tokens are never manually edited. Colors map --color-KEY, typography --font-ROLE, rounded --radius-KEY, spacing --space-KEY. Shared Field/Select/Button/Modal/Notice own semantics and styles. OS-owned native select popups are intentional for a Windows utility. Radix Dialog owns modal focus, inert background, Escape and restoration. Motion only opacity/border transitions; reduced motion removes it.
+Canonical tokens: this frontmatter → scripts/tokens.mjs → src/tokens.css → shared CSS/classes in src/style.css. Generated tokens are never manually edited. Colors map --color-KEY, typography --font-ROLE, rounded --radius-KEY, spacing --space-KEY. Shared Field/Select/Button/Modal/Notice own semantics and styles. OS-owned native select popups are intentional for a Windows utility. Radix Dialog owns modal focus, inert background, Escape and restoration. Motion uses opacity/border transitions, plus the user-requested gentle waveform animation only while that task is automatically aligning. Reduced motion removes animation.
 
 ## Do's and Don'ts
 

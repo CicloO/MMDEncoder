@@ -1,5 +1,5 @@
 import { notification, type MessageDescriptor } from "./i18n";
-import { autoAlign } from "./autoAlign";
+import type { AlignmentTasks } from "./alignmentTasks";
 import type { RequestCall } from "./actions";
 import type { Job } from "./types";
 
@@ -23,17 +23,18 @@ export const audioTarget = (
 export function createAudioReplacement({
   call,
   notify,
-  enabled,
+  tasks,
 }: {
   call: RequestCall;
   notify: (notice: string | MessageDescriptor) => void;
-  enabled: boolean;
+  tasks: AlignmentTasks;
 }) {
   async function pickAudio(j: AudioTarget) {
     const file = await call("pickMedia", { multiple: false }).catch(() => null);
     if (typeof file === "string") await replaceAudio(j, file);
   }
   async function replaceAudio(row: AudioTarget, file: string) {
+    const task = tasks.begin(row.id);
     let j = row;
     try {
       const r = await call(
@@ -42,15 +43,23 @@ export function createAudioReplacement({
         notification("VIDEO_AUDIO_REPLACED"),
       );
       const updated = r?.jobs?.find((x: Job) => x.id === j.id);
+      if (!task.current() || (updated && updated.audioPath !== file)) {
+        task.finish();
+        return;
+      }
       j = updated ? audioTarget(updated) : j;
     } catch {
+      task.finish();
       return;
     }
-    if (!enabled || !j.hasAudio || j.isSequence) return;
-    const note = await autoAlign(j.path, file, (offset) =>
-      call("setAudioOffset", { id: j.id, offset }),
+    if (!task.current() || !j.hasAudio || j.isSequence) {
+      task.finish();
+      return;
+    }
+    const note = await task.run(j.path, file, (offset) =>
+      call("setAudioOffset", { id: j.id, offset, expectedAudioPath: file }),
     );
-    notify(note || notification("VIDEO_AUDIO_ALIGNED"));
+    if (note !== null) notify(note || notification("VIDEO_AUDIO_ALIGNED"));
   }
   return { pickAudio, replaceAudio };
 }
