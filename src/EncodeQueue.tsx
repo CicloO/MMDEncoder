@@ -19,7 +19,7 @@ import { Button, Select, useDragSort, PAGE_SIZE } from "./components";
 import { AlignDialog } from "./AlignDialog";
 import { offsetText } from "./autoAlign";
 import { FileMeta, metaSummary } from "./FileMeta";
-import { formatDuration, statusLabels, targetLabel } from "./presentation";
+import { formatDuration, statusLabel, targetLabel } from "./presentation";
 import type { Job, Settings, State } from "./types";
 
 // Frame rates a PNG sequence can play at (backend SEQUENCE_RATES).
@@ -192,7 +192,7 @@ export function EncodeQueue({
                         {j.status === "encoding" && (
                           <LoaderCircle size={12} className="spin" />
                         )}
-                        {statusLabels[j.status] || j.status}
+                        {statusLabel(j.status)}
                         {j.status === "encoding"
                           ? ` · ${Math.round(j.progress)}% · ${j.stage || "编码"} · ${formatDuration(j.elapsed || 0)}${remaining(j)}`
                           : j.status === "done" && j.elapsed

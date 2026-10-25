@@ -623,11 +623,11 @@ export function MediaTools({
                     label="音频淡入淡出"
                     value={String(o.audioFormat === "copy" ? 0 : o.audioFade)}
                     disabled={locked || o.audioFormat === "copy"}
-                    options={fadeOptions}
+                    options={fadeOptions()}
                     hint={
                       o.audioFormat === "copy"
                         ? "复制原音轨时不能淡化。"
-                        : fadeHint
+                        : fadeHint()
                     }
                     onChange={(v) => set("audioFade", Number(v))}
                   />

@@ -1,6 +1,8 @@
 import { Bookmark, GripVertical, Eye, EyeOff, Trash2 } from "lucide-react";
 import { Button, useDragSort } from "./components";
 import type { Preset } from "./types";
+import { t } from "./i18n";
+import { presetLabel } from "./presentation";
 export function PresetList({
   presets,
   sort,
@@ -31,26 +33,36 @@ export function PresetList({
           </span>
           <Bookmark size={20} />
           <div>
-            <strong>{p.name}</strong>
+            <strong>{presetLabel(p, presets)}</strong>
             <small>
-              {p.builtin ? (p.edited ? "内置 · 已修改" : "内置") : "个人"} ·{" "}
-              {p.settings.container.toUpperCase()} · {p.settings.encoder}
-              {hidden(p) ? " · 已隐藏" : ""}
+              {t(
+                p.builtin
+                  ? p.edited
+                    ? "preset.edited"
+                    : "preset.builtin"
+                  : "preset.personal",
+              )}{" "}
+              · {p.settings.container.toUpperCase()} · {p.settings.encoder}
+              {hidden(p) ? t("preset.hidden") : ""}
             </small>
           </div>
-          <Button onClick={() => onApply(p)}>调用</Button>
-          <Button onClick={() => onRename(p)}>编辑名称</Button>
+          <Button onClick={() => onApply(p)}>{t("preset.apply")}</Button>
+          <Button onClick={() => onRename(p)}>{t("preset.rename")}</Button>
           <Button
             variant="ghost"
-            title={hidden(p) ? "显示" : "隐藏"}
-            aria-label={`${hidden(p) ? "显示" : "隐藏"}预设 ${p.name}`}
+            title={t(hidden(p) ? "preset.show" : "preset.hide")}
+            aria-label={t(hidden(p) ? "preset.showName" : "preset.hideName", {
+              name: presetLabel(p, presets),
+            })}
             onClick={() => onHide(p)}
           >
             {hidden(p) ? <EyeOff size={16} /> : <Eye size={16} />}
           </Button>
           <Button
             variant="ghost"
-            aria-label={`删除预设 ${p.name}`}
+            aria-label={t("preset.deleteName", {
+              name: presetLabel(p, presets),
+            })}
             onClick={() => onDelete(p)}
           >
             <Trash2 size={16} />

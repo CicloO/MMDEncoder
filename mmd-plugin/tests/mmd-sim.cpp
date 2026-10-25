@@ -87,6 +87,17 @@ static void inspectSettings(HWND dialog) {
   wchar_t title[1024]{}; GetWindowTextW(dialog, title, 1024);
   char bytes[4096]{}; WideCharToMultiByte(CP_UTF8, 0, title, -1, bytes, 4096, nullptr, nullptr);
   std::printf("dialogTitle=%s\n", bytes);
+  HWND presets = GetDlgItem(dialog, 101);
+  int count = (int)SendMessageW(presets, CB_GETCOUNT, 0, 0);
+  for (int i = 0; i < count; ++i) {
+    int length = (int)SendMessageW(presets, CB_GETLBTEXTLEN, i, 0);
+    std::wstring option(length + 1, 0);
+    SendMessageW(presets, CB_GETLBTEXT, i, (LPARAM)option.data());
+    int size = WideCharToMultiByte(CP_UTF8, 0, option.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string encoded(size, 0);
+    WideCharToMultiByte(CP_UTF8, 0, option.c_str(), -1, encoded.data(), size, nullptr, nullptr);
+    std::printf("presetOption=%s\n", encoded.c_str());
+  }
   bool fits = true;
   RECT client{}; GetClientRect(dialog, &client);
   for (int id : {102, 106, 108, 109, 110, 105, 107, IDOK, IDCANCEL}) {

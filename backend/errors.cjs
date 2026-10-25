@@ -34,6 +34,7 @@ function summary(code, params = {}) {
   );
 }
 module.exports = {
+  sourceText: source.t,
   appError,
   validationIssue,
   validationError,

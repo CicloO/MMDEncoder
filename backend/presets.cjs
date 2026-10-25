@@ -1,7 +1,17 @@
 "use strict";
 const crypto = require("node:crypto");
 const core = require("./core.cjs");
+const { appError, summary, sourceText } = require("./errors.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
+function settingsEdited(p) {
+  const shipped = core.BUILTINS.find((b) => b.id === p.id);
+  return (
+    !!shipped &&
+    Object.keys(shipped.settings).some(
+      (k) => k !== "presetName" && p.settings[k] !== shipped.settings[k],
+    )
+  );
+}
 function createPresetOperations({ schema, reorder }) {
   // Identifies the shipped definition of a built-in preset, so an edit made to
   // one version of it is dropped once an update ships a different definition.
@@ -43,7 +53,7 @@ function createPresetOperations({ schema, reorder }) {
       !p.name.trim() ||
       p.name.length > 80
     )
-      throw Error("预设名称须为 1–80 字符");
+      throw appError("PRESET_NAME_INVALID");
     p = {
       ...p,
       settings: {
@@ -58,10 +68,15 @@ function createPresetOperations({ schema, reorder }) {
         presetName: p.name.trim(),
       },
     };
-    schema(p.settings, true);
+    try {
+      schema(p.settings, true);
+    } catch (e) {
+      throw appError("PRESET_SETTINGS_INVALID", { detail: e.message });
+    }
     const s = { ...p.settings, outputMode: "encoded", outputDir: "" };
     const errors = core.validate(s);
-    if (errors.length) throw Error("预设参数无效：" + errors.join("；"));
+    if (errors.length)
+      throw appError("PRESET_SETTINGS_INVALID", { detail: errors.join("；") });
     return {
       id: crypto.randomUUID(),
       name: p.name.trim(),
@@ -115,7 +130,14 @@ function createPresetOperations({ schema, reorder }) {
               name: v.name,
               settings: v.settings,
               edited: true,
+              // Old overrides did not record intent. Preserve every saved name,
+              // including one equal to today's source default, as user content.
+              nameSource: o.nameSource === "builtin" ? "builtin" : "user",
+              ...(o.nameDisambiguation === true
+                ? { nameDisambiguation: true }
+                : {}),
             });
+            r.settingsEdited = settingsEdited(r);
           } catch {
             unreadable.builtins[p.id] = o;
           }
@@ -134,7 +156,11 @@ function createPresetOperations({ schema, reorder }) {
         valid = presetValid(p);
       } catch (e) {
         unreadable.presets.push(p);
-        model.notice = `个人预设“${p?.name || "未命名"}”暂时无法读取，已原样保留：${e.message}`;
+        model.noticeData = summary("PRESET_UNREADABLE", {
+          name: p?.name || sourceText("preset.unnamed"),
+          detail: e.message,
+        });
+        model.notice = model.noticeData.message;
         continue;
       }
       valid.id =
@@ -151,7 +177,8 @@ function createPresetOperations({ schema, reorder }) {
           (p) => !p.builtin && p.id !== b.id && sameName(p.name, b.name),
         )
       ) {
-        b.name += "（内置）";
+        b.name = sourceText("preset.builtinSuffix", { name: b.name });
+        b.nameDisambiguation = true;
         b.settings = { ...b.settings, presetName: b.name };
       }
     if (Array.isArray(saved.presetOrder)) {
@@ -191,6 +218,10 @@ function createPresetOperations({ schema, reorder }) {
                       name: p.name,
                       settings: p.settings,
                       base: builtinFingerprint(p),
+                      nameSource: p.nameSource,
+                      ...(p.nameDisambiguation
+                        ? { nameDisambiguation: true }
+                        : {}),
                     }
                   : {}),
                 ...(typeof p.hidden === "boolean" ? { hidden: p.hidden } : {}),
@@ -229,16 +260,26 @@ function createPresetOperations({ schema, reorder }) {
               p.name.toLocaleLowerCase() === valid.name.toLocaleLowerCase(),
           )
         )
-          throw Error("已存在同名预设，请使用其他名称");
+          throw appError("PRESET_DUPLICATE");
         if (payload.id) {
           const p = model.presets.find((x) => x.id === payload.id);
-          if (!p) throw Error("未找到预设");
+          if (!p) throw appError("PRESET_MISSING");
           Object.assign(valid, {
             id: p.id,
             builtin: p.builtin,
-            ...(p.builtin ? { edited: true } : {}),
+            ...(p.builtin
+              ? {
+                  edited: true,
+                  nameKey: p.nameKey,
+                  nameSource: valid.name === p.name ? p.nameSource : "user",
+                  ...(valid.name === p.name && p.nameDisambiguation
+                    ? { nameDisambiguation: true }
+                    : {}),
+                }
+              : {}),
             ...(typeof p.hidden === "boolean" ? { hidden: p.hidden } : {}),
           });
+          if (valid.builtin) valid.settingsEdited = settingsEdited(valid);
           model.presets = model.presets.map((x) => (x.id === p.id ? valid : x));
         } else model.presets.push(valid);
         if (!own) model.settings.presetName = valid.name;
@@ -246,7 +287,7 @@ function createPresetOperations({ schema, reorder }) {
       }
       case "renamePreset": {
         const p = model.presets.find((p) => p.id === payload.id);
-        if (!p) throw Error("未找到预设");
+        if (!p) throw appError("PRESET_MISSING");
         const renamed = presetValid({
           name: payload.name,
           settings: p.settings,
@@ -258,15 +299,19 @@ function createPresetOperations({ schema, reorder }) {
               x.name.toLocaleLowerCase() === renamed.name.toLocaleLowerCase(),
           )
         )
-          throw Error("已存在同名预设，请使用其他名称");
+          throw appError("PRESET_DUPLICATE");
         p.name = renamed.name;
         p.settings.presetName = renamed.name;
-        if (p.builtin) p.edited = true;
+        if (p.builtin) {
+          p.edited = true;
+          p.nameSource = "user";
+          delete p.nameDisambiguation;
+        }
         return model;
       }
       case "applyPreset": {
         const p = model.presets.find((x) => x.id === payload.id);
-        if (!p) throw Error("未找到预设");
+        if (!p) throw appError("PRESET_MISSING");
         const output = {
           outputMode: model.settings.outputMode,
           outputDir: model.settings.outputDir,
@@ -276,34 +321,42 @@ function createPresetOperations({ schema, reorder }) {
       }
       case "deletePreset": {
         const p = model.presets.find((x) => x.id === payload.id);
-        if (!p) throw Error("未找到预设");
+        if (!p) throw appError("PRESET_MISSING");
         if (p.builtin) deletedBuiltins.add(p.id);
         model.presets = model.presets.filter((x) => x.id !== p.id);
         return model;
       }
       case "hidePreset": {
         const p = model.presets.find((x) => x.id === payload.id);
-        if (!p) throw Error("未找到预设");
-        if (typeof payload.hidden !== "boolean") throw Error("参数无效");
+        if (!p) throw appError("PRESET_MISSING");
+        if (typeof payload.hidden !== "boolean")
+          throw appError("PRESET_PARAMETERS_INVALID");
         p.hidden = payload.hidden;
         return model;
       }
       case "reorderPresets":
-        model.presets = reorder(model.presets, payload.ids);
+        try {
+          model.presets = reorder(model.presets, payload.ids);
+        } catch {
+          throw appError("PRESET_ORDER_INVALID");
+        }
         return model;
       case "resolvePresetConflict": {
         // keep: save the user's old version as a personal preset next to the
         // built-in; otherwise drop it (the new built-in stays either way).
         const c = model.presetConflicts.find((x) => x.id === payload.id);
-        if (!c) throw Error("未找到待处理的预设");
+        if (!c) throw appError("PRESET_CONFLICT_MISSING");
         if (payload.keep) {
-          let name = c.name + "（我的修改）";
+          let name = sourceText("preset.mine", { name: c.name });
           for (
             let n = 2;
             model.presets.some((p) => sameName(p.name, name));
             n++
           )
-            name = `${c.name}（我的修改 ${n}）`;
+            name = sourceText("preset.mineNumbered", {
+              name: c.name,
+              number: n,
+            });
           const copy = presetValid({ name, settings: c.settings });
           const at = model.presets.findIndex((p) => p.id === c.id);
           model.presets.splice(at < 0 ? model.presets.length : at + 1, 0, copy);
@@ -319,7 +372,7 @@ function createPresetOperations({ schema, reorder }) {
             !model.presets.some((x) => x.id === p.id) &&
             model.presets.some((x) => sameName(x.name, p.name))
           )
-            throw Error("已有同名个人预设：" + p.name + "，请先改名");
+            throw appError("PRESET_RESTORE_DUPLICATE", { name: p.name });
         deletedBuiltins.clear();
         const byId = new Map(defaults.map((p) => [p.id, p]));
         model.presets = model.presets.map((p) =>
@@ -331,14 +384,15 @@ function createPresetOperations({ schema, reorder }) {
       }
       case "importPresets": {
         if (!Array.isArray(payload.presets) || payload.presets.length > 200)
-          throw Error("预设文件格式无效或超过 200 项");
+          throw appError("PRESET_IMPORT_INVALID");
         const incoming = payload.presets.map(presetValid);
         const names = new Set(
           model.presets.map((p) => p.name.toLocaleLowerCase()),
         );
         for (const p of incoming) {
           const key = p.name.toLocaleLowerCase();
-          if (names.has(key)) throw Error("已存在同名预设：" + p.name);
+          if (names.has(key))
+            throw appError("PRESET_IMPORT_DUPLICATE", { name: p.name });
           names.add(key);
         }
         model.presets.push(...incoming);

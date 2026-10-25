@@ -3,6 +3,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { appError, serializeError } = require("./errors.cjs");
 const { pluginMessages } = require("./plugin-messages.cjs");
+const { createTranslator } = require("../locales/runtime.mjs");
+const { presetDisplayName } = require("../locales/preset-names.mjs");
+const source = require("../locales/zh-CN.json");
 
 const baseDir = () =>
   path.join(
@@ -101,12 +104,19 @@ function writeConfig({
       maskMode: maskMode || presetMask(settings),
     });
   }
+  const snapshot = pluginMessages(locale, catalogs);
+  const runtime = createTranslator({
+    sourceLocale: "zh-CN",
+    catalogs: { "zh-CN": source, ...catalogs },
+    initialLocale: snapshot.locale,
+  });
   const config = {
     version: 2,
-    ...pluginMessages(locale, catalogs),
+    ...snapshot,
     presets: presets.map((p) => ({
       id: p.id,
       name: p.name,
+      displayName: presetDisplayName(runtime, p, presets),
       settings: { ...p.settings, presetName: p.name },
       unsupported: unsupported(p.settings),
     })),

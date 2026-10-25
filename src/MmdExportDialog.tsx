@@ -1,6 +1,6 @@
 import { Folder, FolderOpen } from "lucide-react";
 import { Button, Select, Modal } from "./components";
-import { fadeOptions } from "./presentation";
+import { fadeOptions, presetLabel } from "./presentation";
 import type { State, Preset } from "./types";
 import { t, localeRuntime, errorMessage, summaryMessage } from "./i18n";
 import type { ErrorData, MessageDescriptor, MessageKey } from "./i18n";
@@ -168,10 +168,10 @@ export function MmdExportDialog({
                 value: p.id,
                 label: blocked
                   ? t("mmd.presetWithReason", {
-                      name: p.name,
+                      name: presetLabel(p, presets),
                       reason: t("mmd.presetUnsupported"),
                     })
-                  : p.name,
+                  : presetLabel(p, presets),
                 disabled: blocked,
               };
             }),
@@ -228,7 +228,7 @@ export function MmdExportDialog({
             value={String(mmd.audioFade)}
             disabled={busy}
             hint={t("mmd.fadeHint")}
-            options={fadeOptions.map(({ value }) => ({
+            options={fadeOptions().map(({ value }) => ({
               value,
               label:
                 value === "0"

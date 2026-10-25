@@ -1,5 +1,7 @@
 import { Select } from "./components";
 import type { Preset } from "./types";
+import { t } from "./i18n";
+import { presetLabel } from "./presentation";
 
 export function PresetChoice({
   presets,
@@ -17,13 +19,13 @@ export function PresetChoice({
   return (
     <Select
       id="preset-select"
-      label={`编码预设${modified ? " · 已修改" : ""}`}
+      label={t(modified ? "preset.choiceModified" : "preset.choice")}
       value={value}
       options={[
-        { value: "", label: "自定义设置" },
+        { value: "", label: t("preset.custom") },
         ...presets
           .filter((p) => !hidden(p) || p.id === value)
-          .map((p) => ({ value: p.id, label: p.name })),
+          .map((p) => ({ value: p.id, label: presetLabel(p, presets) })),
       ]}
       onChange={onChange}
     />

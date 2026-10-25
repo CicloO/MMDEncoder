@@ -115,9 +115,37 @@ try {
     .poll(() => page.evaluate(() => window.localeFixture.mounts()))
     .toBe(1);
   const labels = await page.evaluate(() => window.localeFixture.pseudo);
+  await page.evaluate(() => window.localeFixture.failPreset());
+  await expect(page.getByRole("alert")).toHaveText("预设名称须为 1–80 字符");
+  const presetChoice = page.locator("#preset-select");
+  await presetChoice.selectOption("builtin-prores422");
   await page.evaluate(() => window.localeFixture.choose("en-XA"));
   await expect(page.locator("html")).toHaveAttribute("lang", "en-XA");
   await expect(page).toHaveTitle(labels["app.title"]);
+  await expect(page.getByRole("alert")).toHaveText(
+    labels["error.PRESET_NAME_INVALID"],
+  );
+  await expect(
+    page.getByRole("combobox", { name: labels["preset.choice"], exact: true }),
+  ).toHaveValue("builtin-prores422");
+  await expect(presetChoice.locator('option[value="builtin-4k"]')).toHaveText(
+    labels["preset.default4kHardware"],
+  );
+  await expect(
+    presetChoice.locator('option[value="test-preset-policy"]'),
+  ).toHaveText("User name 用户名称");
+  await expect(page.locator('#audio-fixture option[value="none"]')).toHaveText(
+    labels["presentation.audio.none"],
+  );
+  await expect(page.locator('#fade-fixture option[value="0"]')).toHaveText(
+    labels["presentation.fadeOff"],
+  );
+  await expect(page.getByLabel("status fixture")).toHaveText(
+    labels["presentation.status.cancelled"],
+  );
+  await expect(page.getByLabel("unknown fixture")).toHaveText(
+    labels["presentation.unknown"],
+  );
   await expect(
     page.getByRole("radio", { name: labels["background.green"], exact: true }),
   ).toBeChecked();
@@ -148,6 +176,29 @@ try {
   ).toBeChecked();
   await expect(page.locator("html")).toHaveAttribute("lang", "en-XA");
   await screenshot(path.join(dir, "pseudo-background.png"));
+  await page.evaluate(() => window.localeFixture.openPresets());
+  const presetDialog = page.getByRole("dialog", {
+    name: "preset fixture",
+    exact: true,
+  });
+  await expect(presetDialog).toBeVisible();
+  await expect(
+    presetDialog.getByRole("button", {
+      name: labels["preset.deleteName"].replace(
+        "{name}",
+        labels["preset.default4kHardware"],
+      ),
+      exact: true,
+    }),
+  ).toHaveCount(1);
+  const presetBox = await presetDialog.boundingBox();
+  assert.ok(presetBox.x >= 0 && presetBox.x + presetBox.width <= 681);
+  await page
+    .getByRole("button", { name: labels["preset.rename"], exact: true })
+    .last()
+    .scrollIntoViewIfNeeded();
+  await screenshot(path.join(dir, "pseudo-presets.png"));
+  await page.keyboard.press("Escape");
   await page.evaluate(() => window.localeFixture.openMmd());
   const longDialog = page.getByRole("dialog", {
     name: labels["mmd.title"],
@@ -186,6 +237,8 @@ try {
   await page.evaluate(() => window.localeFixture.choose("unknown"));
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
   await expect(page).toHaveTitle("MMDEncoder · 视频压制");
+  await expect(presetChoice).toHaveValue("builtin-prores422");
+  await expect(page.getByRole("alert")).toHaveText("预设名称须为 1–80 字符");
   await expect(
     page.getByRole("radio", { name: "黑", exact: true }),
   ).toBeChecked();

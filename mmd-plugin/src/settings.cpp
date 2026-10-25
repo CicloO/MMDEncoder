@@ -219,7 +219,7 @@ void showSettings(HWND parent, HINSTANCE module, const std::wstring& dir, Proces
   ctx.messages = PluginMessages(config);
   for (const Json& p : config[L"presets"].a)
     if (p[L"unsupported"].s.empty()) {
-      ctx.presets.push_back({p[L"id"].s, p[L"name"].s});
+      ctx.presets.push_back({p[L"id"].s, p[L"displayName"].s.empty() ? p[L"name"].s : p[L"displayName"].s});
     }
   raw.clear();
   if (readFile(dir + L"\\mmd-selection.json", raw) && JsonReader(raw).parse(selection)) {

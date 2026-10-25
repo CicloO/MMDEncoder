@@ -793,7 +793,7 @@ export function TrimTools({
                     label="音频淡入淡出"
                     value={String(o.fade ?? 0)}
                     disabled={t.running}
-                    options={fadeOptions}
+                    options={fadeOptions()}
                     hint="只淡化成片首尾，片段接缝不淡化。"
                     onChange={(v) => set("fade", Number(v))}
                   />

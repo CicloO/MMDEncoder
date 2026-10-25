@@ -48,7 +48,11 @@ import { MmdExportDialog } from "./MmdExportDialog";
 import { createActions } from "./actions";
 import { useMmdExport } from "./useMmdExport";
 import { invoke } from "./ipc";
+import { errorMessage, summaryMessage } from "./i18n";
+import type { ErrorData, MessageDescriptor } from "./i18n";
 import {
+  engineLabel,
+  presetLabel,
   formatFPS,
   formatSize,
   audioLabels,
@@ -135,8 +139,8 @@ export default function App() {
     [page, setPage] = useState(0),
     [tab, setTab] = useState("encoding"),
     [modal, setModal] = useState(""),
-    [notice, setNotice] = useState(""),
-    [error, setError] = useState(""),
+    [noticeValue, setNotice] = useState<MessageDescriptor | string>(""),
+    [errorValue, setError] = useState<ErrorData | string>(""),
     [preview, setPreview] = useState<Preview | null>(null),
     [busy, setBusy] = useState(false),
     [drag, setDrag] = useState(false),
@@ -153,6 +157,8 @@ export default function App() {
     [fallback, setFallback] = useState<Job | null>(null),
     [renameTarget, setRenameTarget] = useState<Preset | null>(null),
     [saveId, setSaveId] = useState("");
+  const error = errorMessage(errorValue);
+  const notice = summaryMessage(noticeValue);
   const initialized = useRef(false),
     seenInterrupted = useRef(new Set<string>()),
     stateRef = useRef<State | null>(null),
@@ -230,7 +236,7 @@ export default function App() {
   useEffect(() => {
     if (window.encoder) void checkUpdate(true);
   }, []);
-  function notify(text: string) {
+  function notify(text: MessageDescriptor | string) {
     setNotice(text);
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
     noticeTimer.current = setTimeout(() => setNotice(""), 6000);
@@ -240,7 +246,7 @@ export default function App() {
     stateRef.current = s;
     if (s.notice && s.notice !== lastNotice.current) {
       lastNotice.current = s.notice;
-      notify(s.notice);
+      notify(s.noticeData?.message === s.notice ? s.noticeData : s.notice);
     }
     if (!initialized.current) {
       initialized.current = true;
@@ -249,7 +255,8 @@ export default function App() {
       setPresetId(
         s.presets.find((p) => p.name === s.settings.presetName)?.id || "",
       );
-      if (s.notice) setError(s.notice);
+      if (s.notice)
+        setError(s.noticeData?.message === s.notice ? s.noticeData : s.notice);
       // An update changed built-ins the user had edited: ask once per start.
       if (s.presetConflicts?.length) setModal("conflicts");
     }
@@ -336,9 +343,9 @@ export default function App() {
     };
   }, [s, state?.engines]);
   const { call, action } = createActions({
-    request: (name, payload) => window.encoder.invoke(name, payload),
+    request: invoke,
     onState: receive,
-    onError: setError,
+    onError: (text, data) => setError(data || text),
     onNotice: notify,
   });
   const {
@@ -350,7 +357,7 @@ export default function App() {
     createActions({
       request: invoke,
       onState: receive,
-      onError: setError,
+      onError: (text, data) => setError(data || text),
       onNotice: notify,
     }).call,
   );
@@ -909,7 +916,7 @@ export default function App() {
                   <Button
                     title={
                       activePreset
-                        ? `保存（覆盖“${activePreset.name}”）`
+                        ? `保存（覆盖“${presetLabel(activePreset, presets)}”）`
                         : "保存（先选择一个预设）"
                     }
                     aria-label="保存到当前预设"
@@ -996,7 +1003,7 @@ export default function App() {
                             : []),
                           ...state.engines.map((e) => ({
                             value: e.id,
-                            label: e.label,
+                            label: engineLabel(e),
                           })),
                         ]}
                         onChange={(v) => {
@@ -1288,7 +1295,7 @@ export default function App() {
                         id="audio"
                         label="音频编码"
                         value={s.audio}
-                        options={Object.entries(audioLabels).map(
+                        options={Object.entries(audioLabels()).map(
                           ([value, label]) => ({ value, label }),
                         )}
                         onChange={(v) => set("audio", v)}
@@ -1323,12 +1330,12 @@ export default function App() {
                         id="audioFade"
                         label="音频淡入淡出"
                         value={String(s.audioFade ?? 0)}
-                        options={fadeOptions}
+                        options={fadeOptions()}
                         disabled={s.audio === "none"}
                         hint={
                           s.audio === "none"
                             ? "不保留音频，无需淡入淡出。"
-                            : fadeHint
+                            : fadeHint()
                         }
                         onChange={(v) => set("audioFade", Number(v))}
                       />
@@ -1683,7 +1690,7 @@ export default function App() {
               <span>
                 {s.alphaMode === "mask"
                   ? "Alpha 黑白遮罩"
-                  : `${engine?.label || s.encoder} · ${s.bitDepth}-bit`}
+                  : `${engine ? engineLabel(engine) : s.encoder} · ${s.bitDepth}-bit`}
               </span>
             </strong>
             <span className="output-facts">
@@ -1709,7 +1716,7 @@ export default function App() {
                   音频 →{" "}
                   {job?.meta && !job.meta.audio && !job.audioPath
                     ? "无音轨"
-                    : audioLabels[s.audio]}
+                    : audioLabels()[s.audio]}
                   {(!job?.meta || job.meta.audio || job.audioPath) &&
                   ["aac", "libopus"].includes(s.audio) &&
                   s.audioBitrate > 0
@@ -1874,7 +1881,14 @@ export default function App() {
           {state.presetConflicts?.map((c) => (
             <div className="preset-item" key={c.id}>
               <div>
-                <strong>{c.builtinName}</strong>
+                <strong>
+                  {state.presets.find((p) => p.id === c.id)
+                    ? presetLabel(
+                        state.presets.find((p) => p.id === c.id)!,
+                        state.presets,
+                      )
+                    : c.builtinName}
+                </strong>
                 <small>你修改过的版本：{c.name}</small>
               </div>
               <Button
@@ -2125,7 +2139,7 @@ export default function App() {
           {state.engines.map((e) => (
             <div className="engine-item" key={e.id}>
               <Cpu size={17} />
-              <strong>{e.label}</strong>
+              <strong>{engineLabel(e)}</strong>
               <span>
                 <Check size={14} />
                 可用
@@ -2197,7 +2211,7 @@ export default function App() {
             variant="primary"
             onClick={() => pendingPreset && applyPreset(pendingPreset)}
           >
-            应用“{pendingPreset?.name}”
+            应用“{pendingPreset ? presetLabel(pendingPreset, presets) : ""}”
           </Button>
         </div>
       </Modal>
@@ -2208,7 +2222,7 @@ export default function App() {
         title="删除个人预设"
         description={
           pendingDelete?.builtin
-            ? `删除内置预设“${pendingDelete.name}”后，可在预设管理中点“恢复内置预设”找回。`
+            ? `删除内置预设“${presetLabel(pendingDelete, presets)}”后，可在预设管理中点“恢复内置预设”找回。`
             : `删除“${pendingDelete?.name || ""}”后无法恢复。不会影响视频文件。`
         }
       >

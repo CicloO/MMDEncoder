@@ -10,6 +10,26 @@ const { createService } = require("../backend/service.cjs");
 const mx = require("../backend/mmd-export.cjs");
 const source = require("../locales/zh-CN.json");
 const keys = require("../locales/plugin-keys.json");
+const core = require("../backend/core.cjs");
+
+test("plugin preset display snapshots localize defaults while helper names and settings stay unchanged", () => {
+  const p = core.BUILTINS[0];
+  const mine = { ...p, id: "user", builtin: false, name: "My 用户预设" };
+  const config = mx.writeConfig({
+    presets: [p, mine],
+    engines: { ffmpeg: "ffmpeg", ffprobe: "ffprobe" },
+    locale: "en-XA",
+    catalogs: {
+      "zh-CN": source,
+      "en-XA": { [p.nameKey]: "⟦ Expanded preset ··· ⟧" },
+    },
+  });
+  assert.equal(config.presets[0].displayName, "⟦ Expanded preset ··· ⟧");
+  assert.equal(config.presets[0].name, p.name);
+  assert.deepEqual(config.presets[0].settings, p.settings);
+  assert.equal(config.presets[1].displayName, mine.name);
+  assert.equal(config.presets[1].settings.presetName, mine.name);
+});
 
 test("plugin config contains only its finite translated subset, with Chinese fallback and unchanged preset data", () => {
   const pseudo = { "plugin.title": "⟦ Native title ··· ⟧" };

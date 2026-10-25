@@ -1,4 +1,7 @@
 import type { State } from "./types";
+import { errorMessage } from "./i18n";
+import { serializeError } from "../locales/messages.mjs";
+import type { ErrorData } from "./i18n";
 export type RequestCall = (
   action: string,
   payload?: unknown,
@@ -12,7 +15,7 @@ export function createActions({
 }: {
   request: (action: string, payload?: unknown) => Promise<any>;
   onState: (state: State) => void;
-  onError: (message: string) => void;
+  onError: (message: string, data?: ErrorData) => void;
   onNotice: (message: string) => void;
 }) {
   async function call(action: string, payload?: unknown, message?: string) {
@@ -23,12 +26,7 @@ export function createActions({
       if (message && !result?.cancelled) onNotice(message);
       return result;
     } catch (e) {
-      onError(
-        (e as Error).message.replace(
-          /^Error invoking remote method '[^']+': (?:Error: )?/,
-          "",
-        ),
-      );
+      onError(errorMessage(e), serializeError(e));
       throw e;
     }
   }

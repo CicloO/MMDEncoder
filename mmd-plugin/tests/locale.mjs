@@ -65,6 +65,14 @@ function dialog(name, mask, save = false) {
 }
 try {
   const config = mx.writeConfig({
+    presets: [
+      {
+        id: "locale-fixture",
+        name: "User name 用户改名",
+        settings: { ...core.DEFAULTS, preset: "ultrafast", audio: "none" },
+      },
+      core.BUILTINS.find((p) => p.id === "builtin-4k-sw"),
+    ],
     settings: {
       ...core.DEFAULTS,
       encoder: "libx264",
@@ -80,6 +88,12 @@ try {
     locale: "en-XA",
     catalogs: { "zh-CN": source, "en-XA": pseudo },
   });
+  mx.writeSelection({
+    presetId: "locale-fixture",
+    followMmd: true,
+    audioFade: 0,
+    maskMode: "off",
+  });
   const checkFile = path.join(dir, "formatter.json");
   fs.writeFileSync(checkFile, JSON.stringify(config));
   const formatted = JSON.parse(
@@ -94,6 +108,19 @@ try {
   const beforeSelection = fs.readFileSync(mx.selectionPath());
   const cancelled = dialog("pseudo-settings", 1);
   assert.ok(cancelled.out.includes(pseudo["plugin.title"]), cancelled.out);
+  assert.ok(
+    cancelled.out.includes(pseudo["preset.default4kSoftware"]),
+    cancelled.out,
+  );
+  assert.ok(
+    cancelled.out.includes("presetOption=User name 用户改名"),
+    cancelled.out,
+  );
+  assert.equal(config.presets[1].name, source["preset.default4kSoftware"]);
+  assert.equal(
+    config.presets[1].settings.presetName,
+    source["preset.default4kSoftware"],
+  );
   assert.match(cancelled.out, /testResult=✓ ⟦/);
   assert.ok(
     cancelled.log.includes(
@@ -109,9 +136,13 @@ try {
   const fallback = JSON.parse(fs.readFileSync(mx.configPath(), "utf8"));
   fallback.locale = "future-locale";
   delete fallback.messages;
+  for (const p of fallback.presets) delete p.displayName;
   fs.writeFileSync(mx.configPath(), JSON.stringify(fallback));
   const missing = dialog("source-fallback", 0);
   assert.ok(missing.out.includes(source["plugin.title"]));
+  assert.ok(
+    missing.out.includes("presetOption=" + source["preset.default4kSoftware"]),
+  );
   assert.match(missing.out, /testResult=✓ .*秒/);
   const broken = {
     ...config,

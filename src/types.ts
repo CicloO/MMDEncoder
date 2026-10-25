@@ -1,4 +1,4 @@
-import type { ErrorData } from "../locales/messages.mjs";
+import type { ErrorData, MessageDescriptor } from "../locales/messages.mjs";
 export type Settings = {
   container: string;
   encoder: string;
@@ -168,6 +168,10 @@ export type Preset = {
   // undefined = shown; true / false = set with the hide / show button
   hidden?: boolean;
   edited?: boolean;
+  nameKey?: string;
+  nameSource?: "builtin" | "user";
+  nameDisambiguation?: boolean;
+  settingsEdited?: boolean;
   settings: Settings;
 };
 export type Engine = {
@@ -177,6 +181,8 @@ export type Engine = {
   backend: string;
   codec: string;
   depths: number[];
+  labelKey?: string;
+  labelParams?: { codec: string; backend: string };
 };
 export type State = {
   preferences: { locale: string | null };
@@ -262,6 +268,7 @@ export type State = {
     libplacebo?: boolean;
   };
   notice?: string;
+  noticeData?: MessageDescriptor;
   tools?: {
     busy: boolean;
     phase: string;

@@ -212,7 +212,7 @@ export function useDragSort(
       active
         ? {
             className: "drag-handle",
-            title: "拖动排序",
+            title: t("common.dragSort"),
             onPointerDown: () => setArmed(id),
           }
         : { className: "drag-handle" },

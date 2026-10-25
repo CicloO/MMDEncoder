@@ -1,10 +1,12 @@
 "use strict";
+const messages = require("../locales/zh-CN.json");
+const builtinKeys = require("../locales/builtin-presets.json");
 const DEFAULTS = {
   container: "mp4",
   encoder: "libx264",
   quality: 18,
   preset: "medium",
-  presetName: "通用 MP4",
+  presetName: messages["preset.general"],
   bitDepth: 8,
   chroma: "420",
   rateControl: "quality",
@@ -82,17 +84,27 @@ const ENGINES = [
   backend,
   codec,
   depths,
+  labelKey: "presentation.encoder",
+  labelParams: {
+    codec:
+      codec === "prores"
+        ? "ProRes"
+        : codec === "h264"
+          ? "H.264"
+          : codec.toUpperCase(),
+    backend: backend === "nvencc" ? "NVEncC" : backend.toUpperCase(),
+  },
 }));
 const BUILTINS = [
   {
     id: "builtin-mp4",
-    name: "通用 MP4",
+    name: messages["preset.general"],
     builtin: true,
     settings: { ...DEFAULTS },
   },
   {
     id: "builtin-original",
-    name: "原插件配置",
+    name: messages["preset.original"],
     builtin: true,
     settings: {
       ...DEFAULTS,
@@ -100,7 +112,7 @@ const BUILTINS = [
       encoder: "hevc_nvenc",
       quality: 1,
       preset: "p7",
-      presetName: "原插件配置",
+      presetName: messages["preset.original"],
       audio: "flac",
       bitrate: 0,
       lookahead: 16,
@@ -112,14 +124,14 @@ const BUILTINS = [
 // variant. Scaling uses the long edge, so landscape and portrait sources both
 // come out at 3840 / 1920.
 const RECOMMENDED = [
-  // id, name, long edge
-  ["4k", "默认 4K", 3840],
-  ["1080", "默认 1080p", 1920],
+  // id, long edge
+  ["4k", 3840],
+  ["1080", 1920],
 ];
 BUILTINS.splice(
   0,
   BUILTINS.length,
-  ...RECOMMENDED.flatMap(([id, label, edge]) => {
+  ...RECOMMENDED.flatMap(([id, edge]) => {
     const base = {
       ...DEFAULTS,
       resizeMode: "long",
@@ -131,7 +143,7 @@ BUILTINS.splice(
     return [
       {
         id: "builtin-" + id,
-        name: label + " · 硬件",
+        name: messages[builtinKeys["builtin-" + id]],
         // p4 measured as good as p7 at ~2.4× the 4K speed.
         settings: {
           ...base,
@@ -144,7 +156,7 @@ BUILTINS.splice(
       },
       {
         id: "builtin-" + id + "-sw",
-        name: label + " · 软件",
+        name: messages[builtinKeys["builtin-" + id + "-sw"]],
         settings: {
           ...base,
           encoder: "libx264",
@@ -159,7 +171,7 @@ BUILTINS.splice(
   // grayscale mask (smaller than lossy masks, measured) used as a luma matte.
   {
     id: "builtin-alpha-mask",
-    name: "分离 Alpha · H.264 MP4",
+    name: messages["preset.splitAlpha"],
     settings: {
       ...DEFAULTS,
       encoder: "h264_nvenc",
@@ -178,7 +190,7 @@ BUILTINS.splice(
   // decoder reads, so AE on Windows imports it without transparency.
   {
     id: "builtin-alpha",
-    name: "保留 Alpha · ProRes 4444",
+    name: messages["preset.preserveAlpha"],
     settings: {
       ...DEFAULTS,
       encoder: "prores_ks",
@@ -198,7 +210,7 @@ BUILTINS.splice(
   // smaller than 4444 and read by every editor.
   {
     id: "builtin-prores422",
-    name: "剪辑素材 · ProRes 422 HQ",
+    name: messages["preset.editing"],
     settings: {
       ...DEFAULTS,
       encoder: "prores_ks",
@@ -216,6 +228,9 @@ BUILTINS.splice(
   },
 );
 for (const p of BUILTINS) {
+  p.nameKey = builtinKeys[p.id];
+  p.nameSource = "builtin";
+  p.settingsEdited = false;
   p.builtin = true;
   p.settings = { ...p.settings, presetName: p.name };
 }
