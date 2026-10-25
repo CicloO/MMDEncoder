@@ -13,6 +13,7 @@ const mmdExport = require("./mmd-export.cjs");
 const { syncConfig } = require("./mmd-config.cjs");
 const { testSelection } = require("./mmd-test-action.cjs");
 const mmdPlugin = require("./mmd-plugin.cjs");
+const { createFileDetails } = require("./file-details.cjs");
 const { createMediaQueue } = require("./media-queue.cjs");
 const { createEncodeQueue } = require("./encode-queue.cjs");
 const { createLimit } = require("./limit.cjs");
@@ -686,6 +687,15 @@ function createService({
     locate,
   });
   const trimQueue = createTrimQueue(ctx);
+  const readDetails = createFileDetails({
+    isToolsBusy: () => tools.state.busy,
+    requireMediaJob: mediaQueue.requireMediaJob,
+    requireJob: encodeQueue.requireJob,
+    locate,
+    ffprobe: () => state.engineInfo.ffprobe,
+    run,
+    inputArgs: core.inputArgs,
+  });
   const modules = [mediaQueue, encodeQueue, alignService, trimQueue];
 
   async function invoke(action, payload = {}) {
@@ -715,62 +725,8 @@ function createService({
         }
         break;
       }
-      case "details": {
-        if (tools.state.busy) throw Error("工具安装中，请稍后查看详情");
-        // payload.media: a job from the audio / video tools queue
-        const job = payload.media
-          ? mediaQueue.requireMediaJob(payload.id)
-          : encodeQueue.requireJob(payload.id);
-        await locate();
-        const result = {};
-        for (const [key, file] of payload.media
-          ? [
-              ["before", job.path],
-              ...(job.audioPath ? [["audio", job.audioPath]] : []),
-              ["after", job.output],
-            ]
-          : [
-              ["before", job.path],
-              ["after", job.output],
-              ["mask", job.maskOutput],
-            ]) {
-          if (!file || !fs.existsSync(file)) {
-            result[key] = {
-              message: key === "before" ? "源文件不存在" : "尚未生成文件",
-            };
-            continue;
-          }
-          try {
-            const r = await run(
-              state.engineInfo.ffprobe,
-              [
-                "-v",
-                "error",
-                "-show_streams",
-                "-show_format",
-                "-of",
-                "json",
-                // A PNG sequence is read as the video it becomes.
-                ...(key === "before" && !payload.media && job.sequence
-                  ? core.inputArgs(job)
-                  : [file]),
-              ],
-              { timeout: 30000 },
-            );
-            result[key] = {
-              path:
-                key === "before" && job.sequence ? job.sequence.pattern : file,
-              ...JSON.parse(r.stdout),
-            };
-          } catch (e) {
-            result[key] = {
-              path: file,
-              message: "无法读取实际文件：" + e.message,
-            };
-          }
-        }
-        return result;
-      }
+      case "details":
+        return readDetails(payload);
       case "testEnhancements": {
         if (isBusy()) throw Error("请等待当前任务结束");
         const s = { ...state.settings, ...schema(payload.settings || {}) };
