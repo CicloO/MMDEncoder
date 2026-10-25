@@ -14,6 +14,11 @@ export function effectiveAudioOffset(
   fpsText: unknown,
 ): number;
 export function streamDuration(stream: any, fallback?: unknown): number;
+export function sequenceDuration(sequence?: {
+  count: number;
+  fpsText?: string;
+  fps: number;
+}): number;
 export function referenceTiming(data: {
   streams?: any[];
   format?: any;

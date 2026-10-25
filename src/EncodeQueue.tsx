@@ -27,6 +27,7 @@ import { useState } from "react";
 import { Button, Select, useDragSort, PAGE_SIZE } from "./components";
 import { AlignDialog } from "./AlignDialog";
 import { AlignmentIcon } from "./AlignmentIcon";
+import { sequenceDuration } from "../backend/audio-timing.mjs";
 import { OutputFiles } from "./OutputFiles";
 import { frameShiftText, offsetText } from "./autoAlign";
 import { FileMeta, metaSummary } from "./FileMeta";
@@ -577,7 +578,10 @@ export function EncodeQueue({
             fallback: false,
             hasVideo: true,
             hasAudio: !!aligning.meta.audio && !aligning.sequence,
-            duration: aligning.meta.videoDuration ?? aligning.meta.duration,
+            duration:
+              sequenceDuration(aligning.sequence) ||
+              aligning.meta.videoDuration ||
+              aligning.meta.duration,
           }
         }
         initial={

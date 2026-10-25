@@ -171,3 +171,94 @@ test(
     }
   },
 );
+
+test(
+  "PNG replacement audio uses the sequence fraction, keeping 1000 frames and exact samples with CPU and NVEncC",
+  { timeout: 120000 },
+  () => {
+    const dir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "mmd-sequence-audio-duration-"),
+    );
+    const run = (args) =>
+      execFileSync(ff, ["-v", "error", ...args], { maxBuffer: 8 << 20 });
+    try {
+      const first = path.join(dir, "frame_0001.png"),
+        audio = path.join(dir, "short.wav");
+      run(["-f", "lavfi", "-i", "testsrc2=s=160x96", "-frames:v", "1", first]);
+      for (let frame = 2; frame <= 1000; frame++)
+        fs.linkSync(
+          first,
+          path.join(dir, `frame_${String(frame).padStart(4, "0")}.png`),
+        );
+      run(["-f", "lavfi", "-i", "sine=d=0.4:r=48000", audio]);
+      const original = run(["-i", audio, "-f", "s16le", "-"]);
+      const expected = Buffer.alloc(1601600 * 2);
+      original.copy(expected);
+      for (const encoder of ["libx264", "nvencc:h264"]) {
+        const output = path.join(dir, encoder.replace(":", "-") + ".mkv");
+        const commands = core.buildCommands(
+          {
+            path: first,
+            sequence: {
+              pattern: path.join(dir, "frame_%04d.png"),
+              start: 1,
+              count: 1000,
+              fps: 29.97,
+              fpsText: "30000/1001",
+            },
+            meta: {
+              width: 160,
+              height: 96,
+              fps: 29.97,
+              fpsText: "30000/1001",
+              duration: 1000 / 29.97,
+            },
+            audioPath: audio,
+            audioMeta: { codec: "pcm_s16le", sampleRate: 48000 },
+          },
+          {
+            ...core.DEFAULTS,
+            encoder,
+            preset: encoder === "libx264" ? "ultrafast" : "p1",
+            audio: "pcm_s16le",
+            container: "mkv",
+            alphaMode: "discard",
+          },
+          { ffmpeg: ff, nvencc: nv },
+          { output },
+        );
+        for (const command of commands) runCommand(command);
+        assert.deepEqual(
+          run([
+            "-i",
+            output,
+            "-map",
+            "0:a:0",
+            "-c:a",
+            "pcm_s16le",
+            "-f",
+            "s16le",
+            "-",
+          ]),
+          expected,
+        );
+        const data = JSON.parse(
+          execFileSync(fp, [
+            "-v",
+            "error",
+            "-count_frames",
+            "-show_streams",
+            "-of",
+            "json",
+            output,
+          ]),
+        );
+        const video = data.streams.find((s) => s.codec_type === "video");
+        assert.equal(Number(video.nb_read_frames), 1000);
+        assert.equal(video.avg_frame_rate, "30000/1001");
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

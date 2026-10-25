@@ -9,6 +9,7 @@ const { parseFps, pix, usesArtcnn, filter } = require("./filter.cjs");
 const { validateIssues } = require("./settings-validation.cjs");
 const { maskChoice } = require("./mask-settings.cjs");
 const { frameOffset } = require("./audio-alignment.cjs");
+const { sequenceDuration } = require("./audio-timing.mjs");
 const replacementOffset = (job) =>
   frameOffset(
     Number(job.audioOffset) || 0,
@@ -19,7 +20,9 @@ const replacementOffset = (job) =>
       job.meta?.fps,
   );
 const replacementDuration = (job) =>
-  Number(job.meta?.videoDuration ?? job.meta?.duration) || 0;
+  sequenceDuration(job.sequence) ||
+  Number(job.meta?.videoDuration ?? job.meta?.duration) ||
+  0;
 function videoOptions(s) {
   const e = ENGINES.find((x) => x.id === s.encoder);
   const a = ["-c:v", s.encoder, "-pix_fmt", pix(s)];

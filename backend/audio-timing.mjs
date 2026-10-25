@@ -30,6 +30,12 @@ export function effectiveAudioOffset(offset = 0, shiftFrames = 0, fpsText) {
     : NaN;
 }
 
+export function sequenceDuration(sequence) {
+  if (!Number.isSafeInteger(sequence?.count) || sequence.count <= 0) return 0;
+  const rate = parseFrameRate(sequence.fpsText || sequence.fps);
+  return rate ? (sequence.count * rate.denominator) / rate.numerator : 0;
+}
+
 // Matroska commonly stores each stream's length in a DURATION tag rather
 // than duration. The container can be longer because of another stream.
 export function streamDuration(stream, fallback = 0) {
