@@ -48,6 +48,15 @@ const app = await electron.launch({
 });
 try {
   const page = await app.firstWindow();
+  const screenshot = async (file) => {
+    const bytes = await app.evaluate(async ({ BrowserWindow }) =>
+      (await BrowserWindow.getAllWindows()[0].webContents.capturePage())
+        .toPNG()
+        .toString("base64"),
+    );
+    assert.ok(bytes.length > 100, "Electron returned an empty screenshot");
+    fs.writeFileSync(file, Buffer.from(bytes, "base64"));
+  };
   await page.getByRole("heading", { name: "视频队列" }).waitFor();
   await expect
     .poll(
@@ -118,9 +127,7 @@ try {
       width: node.clientWidth,
     }));
     assert.ok(overflow.scroll <= overflow.width + 1, JSON.stringify(overflow));
-    await page.screenshot({
-      path: path.join(dir, `pseudo-align-${width}.png`),
-    });
+    await screenshot(path.join(dir, `pseudo-align-${width}.png`));
   }
   await dialog
     .getByRole("button", { name: labels["align.apply"], exact: true })
@@ -152,7 +159,7 @@ try {
   await expect(
     dialog.getByRole("button", { name: labels["align.auto"], exact: true }),
   ).toBeEnabled();
-  await page.screenshot({ path: path.join(dir, "pseudo-align-error.png") });
+  await screenshot(path.join(dir, "pseudo-align-error.png"));
   await dialog
     .getByRole("button", { name: labels["align.cancel"], exact: true })
     .click();
