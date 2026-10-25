@@ -13,7 +13,10 @@ const replacementOffset = (job) =>
   frameOffset(
     Number(job.audioOffset) || 0,
     job.audioShiftFrames ?? 0,
-    job.sequence?.fps || job.meta?.fpsText || job.meta?.fps,
+    job.sequence?.fpsText ||
+      job.sequence?.fps ||
+      job.meta?.fpsText ||
+      job.meta?.fps,
   );
 const replacementDuration = (job) =>
   Number(job.meta?.videoDuration ?? job.meta?.duration) || 0;

@@ -1,8 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Track } from "./alignWave";
 import { ask, isCancelled } from "./alignRequests";
+import {
+  effectiveAudioOffset,
+  type ReferenceTiming,
+} from "../backend/audio-timing.mjs";
 
-export type Alignment = { reference: string; offset: number; trim: boolean };
+export type Alignment = {
+  reference: string;
+  offset: number;
+  trim: boolean;
+  shiftFrames?: number;
+};
 export type AlignBusy = "" | "loading" | "reference" | "aligning" | "saving";
 // The dialog's requests: one of each at a time; a newer one, or closing,
 // stops the older (align-service.cjs), which then fails with "已取消".
@@ -10,6 +19,7 @@ const SLOTS = {
   target: "align:target",
   reference: "align:reference",
   run: "align:run",
+  info: "align:info",
 };
 
 // Owns decoded tracks, alignment values and request lifecycle. The dialog
@@ -19,6 +29,8 @@ export function useAlignSession({
   targetPath,
   fixedReference,
   initial,
+  frameShift = false,
+  fixedTiming,
   stop,
   release,
   fit,
@@ -29,6 +41,8 @@ export function useAlignSession({
   targetPath?: string;
   fixedReference?: string;
   initial?: Partial<Alignment>;
+  frameShift?: boolean;
+  fixedTiming?: ReferenceTiming;
   stop: () => void;
   release: () => void;
   fit: (shift: number, refDuration: number) => void;
@@ -45,7 +59,10 @@ export function useAlignSession({
     } | null>(null),
     [busy, setBusy] = useState<AlignBusy>(""),
     [error, setError] = useState<unknown>(null),
-    [trim, setTrim] = useState(true);
+    [trim, setTrim] = useState(true),
+    [frameInput, setFrameInput] = useState("0"),
+    [referenceInfo, setReferenceInfo] = useState<ReferenceTiming | null>(null);
+  const generation = useRef(0);
 
   async function load(path: string, slot: string) {
     const t = (await ask("alignPreview", { path, slot })) as Track;
@@ -54,8 +71,15 @@ export function useAlignSession({
       ? t
       : { ...t, pcm: new Int16Array(t.pcm) };
   }
-  async function run(ref = refPath, refDuration = reference?.duration || 0) {
+  async function run(
+    ref = refPath,
+    refDuration = reference?.duration || referenceInfo?.duration || 0,
+    timing = referenceInfo,
+    frames = Number(frameInput),
+  ) {
     if (!targetPath || !ref) return;
+    if (frameShift && timing && !timing.hasAudio) return;
+    const request = generation.current;
     setBusy("aligning");
     setError(null);
     try {
@@ -64,41 +88,71 @@ export function useAlignSession({
         target: targetPath,
         slot: SLOTS.run,
       });
+      if (request !== generation.current) return;
       setOffset(r.offset);
-      fit(r.offset, refDuration);
+      const effective = frameShift
+        ? effectiveAudioOffset(r.offset, frames, timing?.fpsText)
+        : r.offset;
+      fit(Number.isFinite(effective) ? effective : r.offset, refDuration);
       setResult({ confidence: r.confidence, reliable: r.reliable });
     } catch (e) {
-      if (!isCancelled(e)) setError(e);
+      if (request === generation.current && !isCancelled(e)) setError(e);
     } finally {
-      setBusy("");
+      if (request === generation.current) setBusy("");
     }
   }
   async function takeReference(file: string) {
     stop();
     setBusy("reference");
     setError(null);
+    const request = generation.current;
     try {
-      const r = await load(file, SLOTS.reference);
+      const timing = frameShift
+        ? ((await ask("alignReferenceInfo", {
+            path: file,
+            slot: SLOTS.info,
+          })) as ReferenceTiming)
+        : null;
+      if (request !== generation.current) return;
+      const r =
+        !timing || timing.hasAudio ? await load(file, SLOTS.reference) : null;
+      if (request !== generation.current) return;
+      setReferenceInfo(timing);
       setReference(r);
       setRefPath(file);
-      fit(offset, r.duration);
+      if (frameShift) {
+        setOffset(0);
+        setFrameInput("0");
+        setResult(null);
+      }
+      fit(frameShift ? 0 : offset, timing?.duration || r?.duration || 0);
       setBusy("");
-      await run(file, r.duration);
+      await run(
+        file,
+        timing?.duration || r?.duration || 0,
+        timing,
+        frameShift ? 0 : Number(frameInput),
+      );
     } catch (e) {
-      if (!isCancelled(e)) setError(e);
-      setBusy("");
+      if (request === generation.current) {
+        if (!isCancelled(e)) setError(e);
+        setBusy("");
+      }
     }
   }
   // Open: the target's sound, the reference's, and an earlier alignment; a
   // given reference not yet aligned is aligned at once.
   useEffect(() => {
     if (!open || !targetPath) return;
+    const request = ++generation.current;
     let cancelled = false;
     const ref = fixedReference || initial?.reference || "";
     setTarget(null);
     setReference(null);
     setRefPath(ref);
     setOffset(initial?.offset || 0);
+    setFrameInput(String(initial?.shiftFrames || 0));
+    setReferenceInfo(null);
     setTrim(initial?.trim ?? true);
     setResult(null);
     setError(null);
@@ -110,18 +164,38 @@ export function useAlignSession({
         if (cancelled) return;
         setTarget(t);
         let span = t.duration;
+        let timing: ReferenceTiming | null = null;
         if (ref) {
-          const r = await load(ref, SLOTS.reference);
+          if (frameShift)
+            timing =
+              fixedTiming ||
+              ((await ask("alignReferenceInfo", {
+                path: ref,
+                slot: SLOTS.info,
+              })) as ReferenceTiming);
+          if (cancelled) return;
+          setReferenceInfo(timing);
+          const r =
+            !timing || timing.hasAudio
+              ? await load(ref, SLOTS.reference)
+              : null;
           if (cancelled) return;
           setReference(r);
-          span = r.duration;
+          span = timing?.duration || r?.duration || t.duration;
         }
-        const lo = Math.min(0, -(initial?.offset || 0));
+        const effective = frameShift
+          ? effectiveAudioOffset(
+              initial?.offset || 0,
+              initial?.shiftFrames || 0,
+              timing?.fpsText,
+            )
+          : initial?.offset || 0;
+        const lo = Math.min(0, -(Number.isFinite(effective) ? effective : 0));
         const pad = (span - lo) * 0.02;
         showRange({ start: lo - pad, span: Math.max(1, span - lo + 2 * pad) });
         if (ref && initial?.offset === undefined) {
           setBusy("");
-          await run(ref, span);
+          await run(ref, span, timing, initial?.shiftFrames || 0);
         }
       } catch (e) {
         if (!cancelled && !isCancelled(e)) setError(e);
@@ -133,13 +207,14 @@ export function useAlignSession({
     // aligned, and let go of the sound.
     return () => {
       cancelled = true;
+      if (generation.current === request) generation.current++;
       release();
       void ask("alignCancel", { slots: Object.values(SLOTS) }).catch(() => {});
       setTarget(null);
       setReference(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, targetPath, fixedReference]);
+  }, [open, targetPath, fixedReference, frameShift, fixedTiming?.fpsText]);
 
   return {
     target,
@@ -154,6 +229,9 @@ export function useAlignSession({
     setError,
     trim,
     setTrim,
+    frameInput,
+    setFrameInput,
+    referenceInfo,
     run,
     takeReference,
   };

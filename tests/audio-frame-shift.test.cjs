@@ -60,6 +60,37 @@ test("frame timing retains the reference fraction and marks audio-only fallback"
       duration: 3,
     },
   );
+  const sequenceCommand = core.buildCommands(
+    {
+      path: "frame_0001.png",
+      sequence: {
+        pattern: "frame_%04d.png",
+        start: 1,
+        fps: 29.97,
+        fpsText: "30000/1001",
+      },
+      meta: {
+        width: 160,
+        height: 96,
+        fps: 29.97,
+        fpsText: "30000/1001",
+        duration: 2,
+      },
+      audioPath: "song.wav",
+      audioMeta: { codec: "pcm_s16le", sampleRate: 48000 },
+      audioShiftFrames: 30000,
+    },
+    {
+      ...core.DEFAULTS,
+      encoder: "libx264",
+      container: "mkv",
+      alphaMode: "discard",
+      audio: "pcm_s16le",
+    },
+    { ffmpeg: ff },
+    { output: "result.mkv" },
+  )[0];
+  assert.match(sequenceCommand.args.join(" "), /adelay=delays=48048000S:all=1/);
 });
 
 test("replacement actions keep frame shift across auto-align, clear it on new audio and reject stale results", async () => {

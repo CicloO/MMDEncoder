@@ -286,7 +286,13 @@ try {
       (file) =>
         window.alignLocale.open({
           targetPath: file,
-          initial: { reference: file, offset: 0.125, trim: true },
+          initial: {
+            reference: file,
+            offset: 0.125,
+            trim: true,
+            shiftFrames: 2,
+          },
+          frameShift: true,
         }),
       audio,
     );
@@ -299,7 +305,13 @@ try {
     await dialog
       .getByRole("checkbox", { name: "导出时截到参考的长度（不够时补静音）" })
       .uncheck();
-    await expect(dialog.getByText(/目标开头多出 0\.1260 秒/)).toBeVisible();
+    await expect(dialog.getByText(/目标开头多出 0\.0593 秒/)).toBeVisible();
+    await expect(
+      dialog.getByLabel("音频偏移（帧）", { exact: true }),
+    ).toHaveValue("2");
+    await expect(
+      dialog.getByText(/参考仅有音频，按 30 FPS 计算/),
+    ).toBeVisible();
     await page.evaluate(() => window.alignLocale.choose("en-XA"));
     dialog = page.getByRole("dialog", {
       name: labels["align.title"],
@@ -315,7 +327,13 @@ try {
     ).not.toBeChecked();
     await expect(dialog.locator(".path-text")).toHaveText("User 音频.wav");
     await expect(
-      dialog.getByText(labels["align.trimHead"].replace("{seconds}", "0.1260")),
+      dialog.getByText(labels["align.trimHead"].replace("{seconds}", "0.0593")),
+    ).toBeVisible();
+    await expect(
+      dialog.getByLabel(labels["align.shiftFrames"], { exact: true }),
+    ).toHaveValue("2");
+    await expect(
+      dialog.getByText(labels["align.shiftAudioFallback"]),
     ).toBeVisible();
     await expect(
       dialog.getByRole("button", { name: labels["align.play"], exact: true }),
@@ -343,6 +361,7 @@ try {
     assert.equal(applied.reference, audio);
     assert.ok(Math.abs(applied.offset - 0.126) < 1e-12);
     assert.equal(applied.trim, false);
+    assert.equal(applied.shiftFrames, 2);
     // A real worker error stays structured while the open dialog changes language.
     await page.evaluate(() => window.alignLocale.choose("zh-CN"));
     await page.evaluate(

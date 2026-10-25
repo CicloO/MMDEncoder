@@ -36,3 +36,11 @@ export const offsetText = (offset: number) =>
       maximumFractionDigits: 3,
     }),
   });
+
+export const frameShiftText = (frames = 0) =>
+  frames
+    ? t("align.shiftSummary", {
+        sign: frames > 0 ? "+" : "",
+        frames: localeRuntime.number(frames, { useGrouping: false }),
+      })
+    : "";

@@ -114,6 +114,7 @@ export type Job = {
     start: number;
     count: number;
     fps: number;
+    fpsText?: string;
   };
 };
 // Video metadata, or an audio-only summary for audio files on the media page.

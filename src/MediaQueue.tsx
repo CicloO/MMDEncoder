@@ -18,7 +18,7 @@ import { Button, PAGE_SIZE, useDragSort } from "./components";
 import { OutputFiles } from "./OutputFiles";
 import { formatDuration } from "./presentation";
 import { metaSummary } from "./FileMeta";
-import { offsetText } from "./autoAlign";
+import { frameShiftText, offsetText } from "./autoAlign";
 import { AUDIO_EXT, STATUS, baseName } from "./mediaOptions";
 import type { MediaJob } from "./types";
 export function MediaQueue({
@@ -101,6 +101,9 @@ export function MediaQueue({
                     },
                   )
                 : t("media.audioMissing"))}
+            {operation === "merge" &&
+              j.audioPath &&
+              frameShiftText(j.audioShiftFrames)}
             {operation === "audio" &&
               j.align &&
               t(
@@ -109,6 +112,9 @@ export function MediaQueue({
                   : "media.extractionAligned",
                 { offset: offsetText(j.align.offset) },
               )}
+            {operation === "audio" &&
+              j.align &&
+              frameShiftText(j.align.shiftFrames)}
           </span>
           <span
             className={`job-status ${j.status}`}

@@ -66,7 +66,10 @@ function createVideoAudioActions({
       frameOffset(
         offset,
         frames,
-        job.sequence?.fps || job.meta?.fpsText || job.meta?.fps,
+        job.sequence?.fpsText ||
+          job.sequence?.fps ||
+          job.meta?.fpsText ||
+          job.meta?.fps,
       );
       job.audioOffset = offset;
       if (frames) job.audioShiftFrames = frames;

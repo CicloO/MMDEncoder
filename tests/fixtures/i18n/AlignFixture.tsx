@@ -18,6 +18,7 @@ type Options = {
   targetPath: string;
   fixedReference?: string;
   initial?: Partial<Alignment>;
+  frameShift?: boolean;
 };
 const pseudo = pseudoCatalog(source);
 localeRuntime.registerCatalog("en-XA", pseudo);
@@ -58,6 +59,7 @@ function Fixture() {
         targetPath={options?.targetPath}
         fixedReference={options?.fixedReference}
         initial={options?.initial}
+        frameShift={options?.frameShift}
         withTrim
         description="User alignment 文件名"
         call={invoke}

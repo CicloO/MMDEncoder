@@ -8,7 +8,13 @@ import {
   Plus,
   Wand2,
 } from "lucide-react";
-import { Button, Modal } from "./components";
+import { Button, Field, Modal } from "./components";
+import {
+  effectiveAudioOffset,
+  parseFrameRate,
+  type ReferenceTiming,
+} from "../backend/audio-timing.mjs";
+import { formatFPS } from "./presentation";
 import { draw, envelope } from "./alignWave";
 import { useAlignPlayer } from "./useAlignPlayer";
 import {
@@ -20,8 +26,17 @@ import { t, localeRuntime, errorMessage, type MessageKey } from "./i18n";
 export type { Alignment } from "./useAlignSession";
 
 // Nudge steps (seconds): an MMD frame, 10 ms, 1 ms, one sample at 48 kHz.
-const steps = () => [
-  { value: String(1 / 30), label: t("align.stepFrame") },
+const steps = (frameSeconds: number, actual: boolean) => [
+  {
+    value: "frame",
+    label: actual
+      ? t("align.stepReferenceFrame", {
+          seconds: localeRuntime.number(frameSeconds, {
+            maximumFractionDigits: 6,
+          }),
+        })
+      : t("align.stepFrame"),
+  },
   { value: "0.01", label: t("align.step10ms") },
   { value: "0.001", label: t("align.step1ms") },
   { value: String(1 / 48000), label: t("align.stepSample") },
@@ -63,6 +78,8 @@ export function AlignDialog({
   fixedReference,
   initial,
   withTrim = false,
+  frameShift = false,
+  fixedTiming,
   description,
   call,
   onApply,
@@ -76,6 +93,8 @@ export function AlignDialog({
   fixedReference?: string;
   initial?: Partial<Alignment>;
   withTrim?: boolean;
+  frameShift?: boolean;
+  fixedTiming?: ReferenceTiming;
   description: string;
   call: (action: string, payload?: unknown) => Promise<any>;
   onApply: (a: Alignment) => Promise<void>;
@@ -87,7 +106,7 @@ export function AlignDialog({
     [playhead, setPlayhead] = useState(0),
     [listen, setListen] = useState("both"),
     [split, setSplit] = useState(false),
-    [step, setStep] = useState(String(1 / 30)),
+    [step, setStep] = useState("frame"),
     [dropping, setDropping] = useState(false);
   const refCanvas = useRef<HTMLCanvasElement>(null),
     tgtCanvas = useRef<HTMLCanvasElement>(null);
@@ -119,20 +138,46 @@ export function AlignDialog({
     setTrim,
     run,
     takeReference,
+    frameInput,
+    setFrameInput,
+    referenceInfo,
   } = useAlignSession({
     open,
     targetPath,
     fixedReference,
     initial,
+    frameShift,
+    fixedTiming,
     stop,
     release,
     fit,
     resetPlayhead: () => setPlayhead(0),
     showRange: setView,
   });
+  const frames = Number(frameInput);
+  const validFrames = frameInput.trim() !== "" && Number.isSafeInteger(frames);
+  const computedShift = frameShift
+    ? effectiveAudioOffset(offset, frames, referenceInfo?.fpsText)
+    : offset;
+  const shift = Number.isFinite(computedShift) ? computedShift : offset;
+  const validShift =
+    !frameShift ||
+    (!!referenceInfo &&
+      validFrames &&
+      Number.isFinite(computedShift) &&
+      Math.abs(computedShift) <= 24 * 3600);
+  const frameSeconds = 1 / (parseFrameRate(referenceInfo?.fpsText)?.fps || 30);
   // From the playhead (or `from`), the target shifted by `shift`.
-  const play = (from = playhead, shift = offset) =>
-    playFrom({ from, shift, reference, target, listen, split, length });
+  const play = (from = playhead, atShift = shift) =>
+    playFrom({
+      from,
+      shift: atShift,
+      reference,
+      target,
+      listen,
+      split,
+      length,
+    });
   const refEnv = useMemo(
     () => (reference ? envelope(reference.pcm) : null),
     [reference],
@@ -142,17 +187,20 @@ export function AlignDialog({
     [target],
   );
   const length = Math.max(
-    reference?.duration || 0,
-    target ? target.duration - offset : 0,
+    reference?.duration || referenceInfo?.duration || 0,
+    target ? target.duration - shift : 0,
     1,
   );
   // Both recordings from their starts, with a little room so the start
   // lines are not on the edge.
-  function fit(shift = offset, refDuration = reference?.duration || 0) {
-    const lo = Math.min(0, -shift);
+  function fit(
+    atShift = shift,
+    refDuration = reference?.duration || referenceInfo?.duration || 0,
+  ) {
+    const lo = Math.min(0, -atShift);
     const hi = Math.max(
       refDuration,
-      target ? target.duration - shift : 0,
+      target ? target.duration - atShift : 0,
       lo + 1,
     );
     const pad = (hi - lo) * 0.02;
@@ -182,11 +230,11 @@ export function AlignDialog({
         tgtEnv,
         view.start,
         view.span,
-        offset,
+        shift,
         playhead,
         [
           { t: 0, color: "--wave-zero" },
-          { t: -offset, color: "--wave-start" },
+          { t: -shift, color: "--wave-start" },
         ],
       );
     };
@@ -198,10 +246,19 @@ export function AlignDialog({
   // A change while playing is heard at once.
   function setShift(next: number) {
     setOffset(next);
-    if (playing) play(playhead, next);
+    if (playing)
+      play(
+        playhead,
+        frameShift
+          ? effectiveAudioOffset(next, frames, referenceInfo?.fpsText)
+          : next,
+      );
   }
   function nudge(dir: number, big = false) {
-    setShift(offset + dir * Number(step) * (big ? 10 : 1));
+    setShift(
+      offset +
+        dir * (step === "frame" ? frameSeconds : Number(step)) * (big ? 10 : 1),
+    );
   }
   const timeAt = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -253,7 +310,7 @@ export function AlignDialog({
   // part shown as a window on it. Drag the window to move it, its edges to
   // zoom; a press beside it centres it there.
   const whole = {
-    lo: Math.min(0, -offset, view.start),
+    lo: Math.min(0, -shift, view.start),
     hi: Math.max(length, view.start + view.span),
   };
   const share = (x: number) => ((x - whole.lo) / (whole.hi - whole.lo)) * 100;
@@ -299,7 +356,7 @@ export function AlignDialog({
     const span = Math.min(Math.max(0.01, view.span * factor), length * 1.2);
     const start = around - ((around - view.start) * span) / view.span;
     setView({
-      start: Math.max(Math.min(0, -offset) - span * 0.1, start),
+      start: Math.max(Math.min(0, -shift) - span * 0.1, start),
       span,
     });
   }
@@ -308,7 +365,12 @@ export function AlignDialog({
     stop();
     setBusy("saving");
     try {
-      await onApply({ reference: refPath, offset, trim: withTrim && trim });
+      await onApply({
+        reference: refPath,
+        offset,
+        trim: withTrim && trim,
+        ...(frameShift ? { shiftFrames: frames } : {}),
+      });
       onClose();
     } catch (e) {
       setError(e);
@@ -328,11 +390,11 @@ export function AlignDialog({
   }
 
   const where =
-    Math.abs(offset) < 1 / 96000
+    Math.abs(shift) < 1 / 96000
       ? t("align.simultaneous")
-      : offset > 0
-        ? t("align.trimHead", { seconds: decimal(offset, 4) })
-        : t("align.padHead", { seconds: decimal(-offset, 4) });
+      : shift > 0
+        ? t("align.trimHead", { seconds: decimal(shift, 4) })
+        : t("align.padHead", { seconds: decimal(-shift, 4) });
   return (
     <Modal
       open={open}
@@ -383,7 +445,15 @@ export function AlignDialog({
               {refPath ? t("align.changeReference") : t("align.addReference")}
             </Button>
           )}
-          <Button onClick={() => run()} disabled={!refPath || !!busy}>
+          <Button
+            onClick={() => run()}
+            disabled={
+              !refPath ||
+              !!busy ||
+              !validShift ||
+              (frameShift && !referenceInfo?.hasAudio)
+            }
+          >
             <Wand2 size={15} />
             {t("align.auto")}
           </Button>
@@ -412,6 +482,9 @@ export function AlignDialog({
               t("align.emptyHint")
             ))}
         </p>
+        {frameShift && referenceInfo && !referenceInfo.hasAudio && (
+          <p className="hint">{t("align.noReferenceAudio")}</p>
+        )}
         <div className="align-waves">
           <span className="align-label">{t("align.reference")}</span>
           <canvas
@@ -568,7 +641,7 @@ export function AlignDialog({
                 value={step}
                 onChange={(e) => setStep(e.target.value)}
               >
-                {steps().map((s) => (
+                {steps(frameSeconds, frameShift).map((s) => (
                   <option key={s.value} value={s.value}>
                     {s.label}
                   </option>
@@ -590,6 +663,56 @@ export function AlignDialog({
               </Button>
             </div>
           </div>
+          {frameShift && (
+            <Field
+              id="align-audio-shift"
+              label={t("align.shiftFrames")}
+              hint={
+                referenceInfo
+                  ? t(
+                      referenceInfo.fallback
+                        ? "align.shiftAudioFallback"
+                        : "align.shiftVideoRate",
+                      { fps: formatFPS(referenceInfo.fpsText) },
+                    )
+                  : t("align.shiftAwaitReference")
+              }
+            >
+              <input
+                id="align-audio-shift"
+                type="number"
+                step="1"
+                value={frameInput}
+                disabled={!!busy || !referenceInfo}
+                aria-invalid={!validShift && !!referenceInfo}
+                title={referenceInfo?.fpsText}
+                onChange={(event) => {
+                  setFrameInput(event.target.value);
+                  if (playing) {
+                    const value = effectiveAudioOffset(
+                      offset,
+                      Number(event.target.value),
+                      referenceInfo?.fpsText,
+                    );
+                    if (Number.isFinite(value)) play(playhead, value);
+                    else stop();
+                  }
+                }}
+              />
+              {!validFrames && (
+                <p className="inline-error" role="alert">
+                  {t("error.ALIGN_SHIFT_FRAMES_INVALID")}
+                </p>
+              )}
+              {validFrames &&
+                Number.isFinite(computedShift) &&
+                Math.abs(computedShift) > 24 * 3600 && (
+                  <p className="inline-error" role="alert">
+                    {t("error.ALIGN_SHIFT_RANGE_INVALID")}
+                  </p>
+                )}
+            </Field>
+          )}
           {withTrim && (
             <label className="checkbox-row">
               <input
@@ -620,7 +743,7 @@ export function AlignDialog({
           <Button
             variant="primary"
             onClick={apply}
-            disabled={!refPath || !target || !!busy}
+            disabled={!refPath || !target || !!busy || !validShift}
           >
             {t("align.apply")}
           </Button>

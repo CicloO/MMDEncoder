@@ -462,15 +462,28 @@ export function MediaTools({
           <AlignDialog
             open={!!j && (!merge || !!j.audioPath)}
             call={call}
+            frameShift
             onClose={() => setAlignId("")}
             {...(merge
               ? {
                   // The added audio against the video's own sound.
                   targetPath: j?.audioPath,
                   fixedReference: j?.path,
+                  fixedTiming: j?.meta && {
+                    fpsText: j.meta.fpsText || String(j.meta.fps || "30/1"),
+                    fallback: !!j.meta.audioOnly,
+                    hasVideo: !j.meta.audioOnly,
+                    hasAudio: !!j.meta.audio,
+                    duration: j.meta.videoDuration ?? j.meta.duration,
+                  },
                   initial:
-                    j?.audioOffset !== undefined
-                      ? { offset: j.audioOffset }
+                    j &&
+                    (j.audioOffset !== undefined ||
+                      j.audioShiftFrames !== undefined)
+                      ? {
+                          offset: j.audioOffset || 0,
+                          shiftFrames: j.audioShiftFrames,
+                        }
                       : undefined,
                   description: t("media.alignMergeDescription", {
                     name: j?.name || "",
@@ -479,9 +492,13 @@ export function MediaTools({
                     call("mediaSetAudioOffset", {
                       id: j!.id,
                       offset: a.offset,
+                      shiftFrames: a.shiftFrames,
+                      expectedAudioPath: j!.audioPath,
                     }),
                   onClear:
-                    j?.audioOffset !== undefined
+                    j &&
+                    (j.audioOffset !== undefined ||
+                      j.audioShiftFrames !== undefined)
                       ? () =>
                           call("mediaSetAudioOffset", {
                             id: j.id,
@@ -494,6 +511,7 @@ export function MediaTools({
                   initial: j?.align && {
                     reference: j.align.reference,
                     offset: j.align.offset,
+                    shiftFrames: j.align.shiftFrames,
                     trim: !!j.align.length,
                   },
                   withTrim: true,

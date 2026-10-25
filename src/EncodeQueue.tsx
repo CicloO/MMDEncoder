@@ -28,7 +28,7 @@ import { useState } from "react";
 import { Button, Select, useDragSort, PAGE_SIZE } from "./components";
 import { AlignDialog } from "./AlignDialog";
 import { OutputFiles } from "./OutputFiles";
-import { offsetText } from "./autoAlign";
+import { frameShiftText, offsetText } from "./autoAlign";
 import { FileMeta, metaSummary } from "./FileMeta";
 import {
   formatDuration,
@@ -212,6 +212,7 @@ export function EncodeQueue({
                             : t("queue.audioNamed", {
                                 file: baseName(j.audioPath),
                               }))}
+                        {j.audioPath && frameShiftText(j.audioShiftFrames)}
                       </span>
                       {(() => {
                         const own = j.ownSettings;
@@ -294,9 +295,9 @@ export function EncodeQueue({
                       title={
                         j.meta?.audio
                           ? t("queue.alignHint")
-                          : t("queue.noReference")
+                          : t("queue.manualAlignmentHint")
                       }
-                      disabled={running || !j.meta?.audio}
+                      disabled={running || !j.meta}
                       onClick={() => setAlignId(j.id)}
                     >
                       <AudioLines size={16} />
@@ -470,14 +471,15 @@ export function EncodeQueue({
                       offset: offsetText(job.audioOffset),
                     })
                   : t("queue.replacementNamed", { path: job.audioPath })}
+                {frameShiftText(job.audioShiftFrames)}
               </span>
               <Button
                 variant="ghost"
-                disabled={running || !job.meta?.audio}
+                disabled={running || !job.meta}
                 title={
                   job.meta?.audio
                     ? t("queue.alignSelectedHint")
-                    : t("queue.noReference")
+                    : t("queue.manualAlignmentHint")
                 }
                 onClick={() => setAlignId(job.id)}
               >
@@ -551,19 +553,45 @@ export function EncodeQueue({
         onClose={() => setAlignId("")}
         targetPath={aligning?.audioPath}
         fixedReference={aligning?.path}
+        frameShift
+        fixedTiming={
+          aligning?.meta && {
+            fpsText: String(
+              aligning.sequence?.fpsText ||
+                aligning.meta.fpsText ||
+                aligning.meta.fps,
+            ),
+            fallback: false,
+            hasVideo: true,
+            hasAudio: !!aligning.meta.audio && !aligning.sequence,
+            duration: aligning.meta.videoDuration ?? aligning.meta.duration,
+          }
+        }
         initial={
-          aligning?.audioOffset !== undefined
-            ? { offset: aligning.audioOffset }
+          aligning &&
+          (aligning.audioOffset !== undefined ||
+            aligning.audioShiftFrames !== undefined)
+            ? {
+                offset: aligning.audioOffset || 0,
+                shiftFrames: aligning.audioShiftFrames,
+              }
             : undefined
         }
         description={t("queue.alignDescription", {
           name: aligning ? videoName(aligning) : "",
         })}
         onApply={(a) =>
-          call("setAudioOffset", { id: aligning!.id, offset: a.offset })
+          call("setAudioOffset", {
+            id: aligning!.id,
+            offset: a.offset,
+            shiftFrames: a.shiftFrames,
+            expectedAudioPath: aligning!.audioPath,
+          })
         }
         onClear={
-          aligning?.audioOffset !== undefined
+          aligning &&
+          (aligning.audioOffset !== undefined ||
+            aligning.audioShiftFrames !== undefined)
             ? () => call("setAudioOffset", { id: aligning.id, offset: null })
             : undefined
         }
