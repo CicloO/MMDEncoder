@@ -7,6 +7,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const trim = require("./trim.cjs");
 const media = require("./media.cjs");
+const { trimOutputPath } = require("./trim-output.cjs");
 
 // ctx: the service's shared state and helpers (see createService).
 function createTrimQueue(ctx) {
@@ -202,25 +203,6 @@ function createTrimQueue(ctx) {
       emit();
     }
   }
-  function trimOutputPath(o) {
-    const first = state.trim.clips.find((c) => c.status === "ready");
-    let dir = path.dirname(first.path);
-    if (o.location === "encoded") dir = path.join(dir, "Encoded");
-    if (o.location === "custom") {
-      if (typeof o.outputDir !== "string" || !path.isAbsolute(o.outputDir))
-        throw Error("请选择有效的自定义输出目录");
-      dir = o.outputDir;
-    }
-    let ext = trim.containerFor(first.codec);
-    if (o.audio?.mode !== "none" && o.audio?.codec === "pcm" && ext === "mp4")
-      ext = "mkv";
-    const base = path.parse(first.path).name + "_剪辑";
-    for (let n = 1; n < 100000; n++) {
-      const out = path.join(dir, base + (n === 1 ? "" : ` (${n})`) + "." + ext);
-      if (!fs.existsSync(out)) return out;
-    }
-    throw Error("无法分配不重名的输出文件");
-  }
   async function trimExport(o) {
     if (state.trim.running) throw Error("正在导出");
     if (state.running) throw Error("请等待当前压制结束后再导出");
@@ -263,7 +245,11 @@ function createTrimQueue(ctx) {
         ? Number(o.audio.fade)
         : 0,
     };
-    const output = trimOutputPath({ ...o, audio });
+    const output = trimOutputPath(
+      state.trim.clips.find((c) => c.status === "ready"),
+      { ...o, audio },
+      fs.existsSync,
+    );
     fs.mkdirSync(path.dirname(output), { recursive: true });
     trimAbort = new AbortController();
     Object.assign(state.trim, {

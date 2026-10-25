@@ -83,6 +83,7 @@ else {
         },
       });
       const { registerAction } = require("./actions.cjs");
+      const { mediaOutputDialogOptions } = require("./media-output-dialog.cjs");
       registerAction(ipcMain, async (event, action, payload) => {
         if (
           event.sender !== win.webContents ||
@@ -170,22 +171,10 @@ else {
           return payload?.multiple ? result.filePaths : result.filePaths[0];
         }
         if (action === "pickMediaOutput") {
-          const extensions = {
-            wav: "wav",
-            flac: "flac",
-            aac: "m4a",
-            opus: "opus",
-            copy: "mka",
-          };
-          const ext =
-            payload?.operation === "audio"
-              ? extensions[payload.audioFormat] || "wav"
-              : "mkv";
-          const result = await dialog.showSaveDialog(win, {
-            title: "选择新的输出文件",
-            defaultPath: "输出." + ext,
-            filters: [{ name: "输出文件", extensions: [ext] }],
-          });
+          const result = await dialog.showSaveDialog(
+            win,
+            mediaOutputDialogOptions(payload),
+          );
           return result.canceled ? null : result.filePath;
         }
         if (action === "pickDirectory") {
