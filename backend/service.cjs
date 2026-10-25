@@ -22,6 +22,7 @@ const { createDetector } = require("./detect.cjs");
 const { createAlignService } = require("./align-service.cjs");
 const { createTrimQueue } = require("./trim-queue.cjs");
 const { commit } = require("./commit.cjs");
+const { createSettingsStore } = require("./settings-store.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
   engineDir,
@@ -38,6 +39,7 @@ function createService({
   mmdAppExe = process.execPath,
 } = {}) {
   dataDir = dataDir || path.join(os.tmpdir(), "mmd-encoder");
+  const settingsStore = createSettingsStore(dataDir);
   const children = new Set();
   const pendingLogs = new Map();
   let evidenceTimer = null,
@@ -224,75 +226,61 @@ function createService({
     return a.toLocaleLowerCase() === b.toLocaleLowerCase();
   }
   function persist() {
-    fs.mkdirSync(dataDir, { recursive: true });
-    const target = path.join(dataDir, "settings.json"),
-      tmp = target + "." + crypto.randomUUID() + ".tmp";
-    fs.writeFileSync(
-      tmp,
-      JSON.stringify(
-        {
-          version: 1,
-          settings: state.settings,
-          presets: state.presets
-            .filter((p) => !p.builtin)
-            .map(({ id, name, settings, hidden }) => ({
-              id,
-              name,
-              settings,
-              ...(typeof hidden === "boolean" ? { hidden } : {}),
-            }))
-            .concat(unreadable.presets),
-          // Built-in presets are rebuilt from code; only the user's changes are saved.
-          builtins: Object.assign(
-            {},
-            unreadable.builtins,
-            Object.fromEntries(
-              state.presets
-                .filter(
-                  (p) =>
-                    p.builtin && (p.edited || typeof p.hidden === "boolean"),
-                )
-                .map((p) => [
-                  p.id,
-                  {
-                    ...(p.edited
-                      ? {
-                          name: p.name,
-                          settings: p.settings,
-                          base: builtinFingerprint(p),
-                        }
-                      : {}),
-                    ...(typeof p.hidden === "boolean"
-                      ? { hidden: p.hidden }
-                      : {}),
-                  },
-                ]),
-            ),
-          ),
-          deletedBuiltins: [...deletedBuiltins],
-          // Unanswered update conflicts survive a restart.
-          ...(state.presetConflicts.length
-            ? {
-                builtinConflicts: state.presetConflicts.map(
-                  ({ id, name, settings }) => ({ id, name, settings }),
-                ),
-              }
-            : {}),
-          presetOrder: state.presets.map((p) => p.id),
-          mmdExport: {
-            presetId: state.mmd.presetId,
-            followMmd: state.mmd.followMmd,
-            audioFade: state.mmd.audioFade,
-            maskMode: state.mmd.maskMode,
-            rangeSuffix: state.mmd.rangeSuffix,
-            savedAt: state.mmd.savedAt,
-          },
-        },
-        null,
-        2,
+    settingsStore.write({
+      version: 1,
+      settings: state.settings,
+      presets: state.presets
+        .filter((p) => !p.builtin)
+        .map(({ id, name, settings, hidden }) => ({
+          id,
+          name,
+          settings,
+          ...(typeof hidden === "boolean" ? { hidden } : {}),
+        }))
+        .concat(unreadable.presets),
+      // Built-in presets are rebuilt from code; only the user's changes are saved.
+      builtins: Object.assign(
+        {},
+        unreadable.builtins,
+        Object.fromEntries(
+          state.presets
+            .filter(
+              (p) => p.builtin && (p.edited || typeof p.hidden === "boolean"),
+            )
+            .map((p) => [
+              p.id,
+              {
+                ...(p.edited
+                  ? {
+                      name: p.name,
+                      settings: p.settings,
+                      base: builtinFingerprint(p),
+                    }
+                  : {}),
+                ...(typeof p.hidden === "boolean" ? { hidden: p.hidden } : {}),
+              },
+            ]),
+        ),
       ),
-    );
-    fs.renameSync(tmp, target);
+      deletedBuiltins: [...deletedBuiltins],
+      // Unanswered update conflicts survive a restart.
+      ...(state.presetConflicts.length
+        ? {
+            builtinConflicts: state.presetConflicts.map(
+              ({ id, name, settings }) => ({ id, name, settings }),
+            ),
+          }
+        : {}),
+      presetOrder: state.presets.map((p) => p.id),
+      mmdExport: {
+        presetId: state.mmd.presetId,
+        followMmd: state.mmd.followMmd,
+        audioFade: state.mmd.audioFade,
+        maskMode: state.mmd.maskMode,
+        rangeSuffix: state.mmd.rangeSuffix,
+        savedAt: state.mmd.savedAt,
+      },
+    });
     syncMmdExport();
   }
   // The export choice is shared with the plugin's settings window in MMD through
@@ -460,9 +448,7 @@ function createService({
     };
   }
   try {
-    const saved = JSON.parse(
-      fs.readFileSync(path.join(dataDir, "settings.json"), "utf8"),
-    );
+    const saved = settingsStore.read();
     if (saved.version !== 1) throw Error("版本不支持");
     if (saved.mmdExport && typeof saved.mmdExport === "object") {
       if (typeof saved.mmdExport.presetId === "string")
