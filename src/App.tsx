@@ -735,7 +735,7 @@ export default function App() {
       {workspace === "trim" && (
         <div className="page">
           <TrimTools
-            state={state}
+            trim={state.trim}
             call={call}
             dropped={trimDrop}
             onDropHandled={() => setTrimDrop(undefined)}
