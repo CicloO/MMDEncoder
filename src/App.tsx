@@ -765,7 +765,11 @@ export default function App() {
       {workspace === "media" && (
         <div className="page">
           <MediaTools
-            state={state}
+            jobs={state.mediaJobs}
+            running={state.running}
+            detecting={state.detecting}
+            toolsBusy={!!state.tools?.busy}
+            enhancementsBusy={state.enhancements.busy}
             call={call}
             dropped={mediaDrop}
             // A drop is consumed once; the page remounts on every tab switch.
