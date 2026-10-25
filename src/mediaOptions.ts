@@ -1,17 +1,18 @@
+import { localeRuntime, t } from "./i18n";
 export const AUDIO_EXT = /\.(wav|flac|mp3|aac|m4a|opus|ogg|mka)$/i;
-export const OPERATIONS: Record<string, string> = {
-  audio: "提取音频",
-  video: "提取无音频视频",
-  merge: "视频与独立音频合并",
-};
-export const FORMATS: Record<string, string> = {
-  wav: "WAV · PCM 16-bit 无损",
-  flac: "FLAC · 无损",
-  aac: "AAC",
-  mp3: "MP3",
-  opus: "Opus",
-  copy: "直接复制原音频 · 不重新编码",
-};
+export const OPERATIONS = (): Record<string, string> => ({
+  audio: t("media.operation.audio"),
+  video: t("media.operation.video"),
+  merge: t("media.operation.merge"),
+});
+export const FORMATS = (): Record<string, string> => ({
+  wav: t("media.format.wav"),
+  flac: t("media.format.flac"),
+  aac: t("media.format.aac"),
+  mp3: t("media.format.mp3"),
+  opus: t("media.format.opus"),
+  copy: t("media.format.copy"),
+});
 export const LOSSY = ["aac", "mp3", "opus"];
 // 0 follows the source audio bitrate (lossless sources use 320 kbps).
 export const BITRATES = [0, 96, 128, 160, 192, 256, 320, 384, 512];
@@ -24,18 +25,18 @@ export const CONTAINERS: Record<string, string> = {
   mp4: "MP4",
   mkv: "MKV",
 };
-export const LOCATIONS: Record<string, string> = {
-  source: "与源文件同目录",
-  encoded: "源目录下的 Encoded 子文件夹",
-  custom: "自定义文件夹",
-};
-export const STATUS: Record<string, string> = {
-  ready: "等待处理",
-  running: "处理中",
-  done: "已完成",
-  failed: "失败",
-  cancelled: "已取消",
-};
+export const LOCATIONS = (): Record<string, string> => ({
+  source: t("media.location.source"),
+  encoded: t("media.location.encoded"),
+  custom: t("media.location.custom"),
+});
+export const STATUS = (): Record<string, string> => ({
+  ready: t("media.status.ready"),
+  running: t("media.status.running"),
+  done: t("media.status.done"),
+  failed: t("media.status.failed"),
+  cancelled: t("media.status.cancelled"),
+});
 export const OPTIONS_KEY = "mmd-media-options";
 export type Options = {
   operation: string;
@@ -83,6 +84,18 @@ export function hiResText(a?: {
 }) {
   if (!a?.sampleRate) return "";
   const rate = a.sampleRate < 48000 ? a.sampleRate * 2 : a.sampleRate;
-  const depth = a.float ? "浮点" : a.bits ? a.bits + "-bit" : "位深未知";
-  return `${a.sampleRate / 1000} kHz / ${depth} → ${rate / 1000} kHz / 24-bit`;
+  const depth = a.float
+    ? t("media.hiresFloat")
+    : a.bits
+      ? a.bits + "-bit"
+      : t("media.hiresUnknownDepth");
+  return t("media.hiresConversion", {
+    from: t("media.hiresFrom", {
+      rate: localeRuntime.number(a.sampleRate / 1000, { useGrouping: false }),
+      depth,
+    }),
+    to: t("media.hiresTo", {
+      rate: localeRuntime.number(rate / 1000, { useGrouping: false }),
+    }),
+  });
 }

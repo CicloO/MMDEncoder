@@ -1,3 +1,4 @@
+import { t, localeRuntime } from "./i18n";
 import { SlidersHorizontal } from "lucide-react";
 import { Button, Field, Select } from "./components";
 import { fadeOptions, fadeHint } from "./presentation";
@@ -34,11 +35,11 @@ export function MediaSettings({
   pickFolder: () => void;
 }) {
   return (
-    <aside className="settings-column" aria-label="处理设置">
+    <aside className="settings-column" aria-label={t("media.settings")}>
       <div className="section-heading">
         <div>
-          <span className="eyebrow">输出控制</span>
-          <h2>处理设置</h2>
+          <span className="eyebrow">{t("media.outputControl")}</span>
+          <h2>{t("media.settings")}</h2>
         </div>
         <SlidersHorizontal size={20} className="muted" />
       </div>
@@ -50,10 +51,10 @@ export function MediaSettings({
         >
           <Select
             id="media-operation"
-            label="操作"
+            label={t("media.operationLabel")}
             value={o.operation}
             disabled={locked}
-            options={Object.entries(OPERATIONS).map(([value, label]) => ({
+            options={Object.entries(OPERATIONS()).map(([value, label]) => ({
               value,
               label,
             }))}
@@ -62,10 +63,10 @@ export function MediaSettings({
           {o.operation !== "video" && (
             <Select
               id="media-format"
-              label="输出音频"
+              label={t("media.formatLabel")}
               value={o.audioFormat}
               disabled={locked}
-              options={Object.entries(FORMATS).map(([value, label]) => ({
+              options={Object.entries(FORMATS()).map(([value, label]) => ({
                 value,
                 label,
               }))}
@@ -81,20 +82,28 @@ export function MediaSettings({
                 onChange={(e) => set("hiRes", e.target.checked)}
               />
               <span>
-                Hi-Res 音频（24-bit，低于 48 kHz 时升到 2 倍采样率）
+                {t("media.hiresLabel")}
                 <small className="hint hires-hint">
                   {!HIRES_FORMATS.includes(o.audioFormat)
-                    ? "仅 WAV / FLAC 可用。"
-                    : (hiResText(
+                    ? t("media.hiresUnsupported")
+                    : t(
                         o.operation === "merge"
-                          ? selected?.audioMeta
-                          : selected?.meta?.audio,
-                      ) ||
-                        (o.operation === "merge"
-                          ? "选择替换音频后显示转换结果"
-                          : "读取文件后显示转换结果")) +
-                      (o.operation === "merge" ? "，输出 MKV。" : "。") +
-                      "升采样不会提高音质。"}
+                          ? "media.hiresMergeHint"
+                          : "media.hiresHint",
+                        {
+                          conversion:
+                            hiResText(
+                              o.operation === "merge"
+                                ? selected?.audioMeta
+                                : selected?.meta?.audio,
+                            ) ||
+                            t(
+                              o.operation === "merge"
+                                ? "media.hiresAwaitAudio"
+                                : "media.hiresAwaitFile",
+                            ),
+                        },
+                      )}
                 </small>
               </span>
             </label>
@@ -102,12 +111,12 @@ export function MediaSettings({
           {o.operation !== "video" && (
             <Select
               id="media-fade"
-              label="音频淡入淡出"
+              label={t("media.fadeLabel")}
               value={String(o.audioFormat === "copy" ? 0 : o.audioFade)}
               disabled={locked || o.audioFormat === "copy"}
               options={fadeOptions()}
               hint={
-                o.audioFormat === "copy" ? "复制原音轨时不能淡化。" : fadeHint()
+                o.audioFormat === "copy" ? t("media.copyFadeHint") : fadeHint()
               }
               onChange={(v) => set("audioFade", Number(v))}
             />
@@ -115,14 +124,18 @@ export function MediaSettings({
           {o.operation !== "video" && LOSSY.includes(o.audioFormat) && (
             <Select
               id="media-bitrate"
-              label="音频码率"
+              label={t("media.bitrateLabel")}
               value={String(bitrate)}
               disabled={locked}
               options={BITRATES.filter(
                 (b) => b <= MAX_BITRATE[o.audioFormat],
               ).map((b) => ({
                 value: String(b),
-                label: b ? `${b} kbps` : "跟随源文件（无损源用 320 kbps）",
+                label: b
+                  ? t("meta.bitrate", {
+                      rate: localeRuntime.number(b, { useGrouping: false }),
+                    })
+                  : t("media.bitrateFollow"),
               }))}
               onChange={(v) => set("audioBitrate", Number(v))}
             />
@@ -130,7 +143,7 @@ export function MediaSettings({
           {o.operation !== "audio" && (
             <Select
               id="media-container"
-              label="输出格式"
+              label={t("media.containerLabel")}
               value={o.container}
               disabled={locked}
               options={Object.entries(CONTAINERS).map(([value, label]) => ({
@@ -149,45 +162,55 @@ export function MediaSettings({
                 onChange={(e) => set("autoAlign", e.target.checked)}
               />
               <span>
-                选择音频后自动对齐
+                {t("media.autoAlignLabel")}
                 <small className="hint hires-hint">
-                  以视频自带的声音为参考；对不上时不应用，可点队列里的波形按钮检视、微调。
+                  {t("media.autoAlignHint")}
                 </small>
               </span>
             </label>
           )}
           <Select
             id="media-location"
-            label="输出位置"
+            label={t("media.locationLabel")}
             value={o.location}
             disabled={locked}
-            options={Object.entries(LOCATIONS).map(([value, label]) => ({
+            options={Object.entries(LOCATIONS()).map(([value, label]) => ({
               value,
               label,
             }))}
             onChange={(v) => set("location", v)}
           />
           {o.location === "custom" && (
-            <Field id="media-output-dir" label="自定义文件夹">
+            <Field id="media-output-dir" label={t("media.outputDirLabel")}>
               <div className="path-picker">
                 <input
                   id="media-output-dir"
                   value={o.outputDir}
                   readOnly
                   title={o.outputDir}
-                  placeholder="选择输出文件夹"
+                  placeholder={t("media.outputDirTitle")}
                 />
                 <Button disabled={locked} onClick={pickFolder}>
-                  选择
+                  {t("media.pick")}
                 </Button>
               </div>
             </Field>
           )}
           <p className="hint">
             {o.operation === "audio"
-              ? "只输出第一条音频流。"
-              : `视频直接复制，不重新压制${o.container === "mp4" ? "；MP4 放不下时自动改用 MKV" : ""}。${o.operation === "merge" ? (o.audioFormat === "copy" ? "时长与视频相同，音频长了截掉。" : "时长与视频相同：音频长了截掉，短了补静音。") : ""}`}
-            已有文件不覆盖。
+              ? t("media.audioOnlyHint")
+              : t(
+                  o.container === "mp4"
+                    ? "media.videoCopyMp4Hint"
+                    : "media.videoCopyHint",
+                )}
+            {o.operation === "merge" &&
+              t(
+                o.audioFormat === "copy"
+                  ? "media.mergeCopyHint"
+                  : "media.mergeEncodeHint",
+              )}
+            {t("media.keepExisting")}
           </p>
           {error && (
             <p role="alert" className="inline-error">

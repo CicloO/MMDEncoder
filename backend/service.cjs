@@ -630,7 +630,10 @@ function createService({
     setRunning: (value) => (state.running = value),
     isStopped: () => stopped,
     setStopped: (value) => (stopped = value),
-    onNotice: (message) => (state.notice = message),
+    onNotice: (message) => {
+      state.notice = message.message;
+      state.noticeData = message;
+    },
     emit,
     emitProgress,
     run,

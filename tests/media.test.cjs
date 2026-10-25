@@ -265,6 +265,8 @@ test(
       assert.match(byPath(video).log, /已改用 MKV/);
       assert.equal(byPath(second).status, "failed");
       assert.match(byPath(second).error, /缺少/);
+      assert.equal(byPath(second).errorData.code, "MEDIA_MERGE_AUDIO_MISSING");
+      assert.deepEqual(byPath(second).errorData.params, {});
       await assert.rejects(
         service.invoke("mediaStart", {
           operation: "merge",
@@ -282,6 +284,7 @@ test(
       });
       assert.equal(byPath(video).status, "failed");
       assert.ok(byPath(video).log.includes("matches no streams"));
+      assert.equal(byPath(video).errorData.message, byPath(video).error);
       assert.equal(fs.existsSync(video.replace(/.mp4$/, ".wav")), false);
 
       // Cancellation leaves no output or temporary folder behind.

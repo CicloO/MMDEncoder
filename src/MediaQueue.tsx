@@ -1,3 +1,4 @@
+import { t, localeRuntime, errorMessage } from "./i18n";
 import {
   AudioLines,
   Check,
@@ -55,6 +56,8 @@ export function MediaQueue({
   onRemove: (id: string) => void;
   onClear: () => void;
 }) {
+  const jobError = (j: MediaJob) =>
+    j.errorData ? errorMessage(j.errorData) : j.error || "";
   const row = (j: MediaJob) => (
     <li
       key={j.id}
@@ -79,22 +82,42 @@ export function MediaQueue({
         <span className="job-copy">
           <strong title={j.path}>{j.name}</strong>
           <span className="job-sub">
-            {j.meta ? metaSummary(j.meta) : j.metaError || "正在读取文件信息"}
+            {j.meta
+              ? metaSummary(j.meta)
+              : j.metaErrorData
+                ? errorMessage(j.metaErrorData)
+                : j.metaError || t("media.reading")}
             {operation === "merge" &&
               (j.audioPath
-                ? ` · 音频：${baseName(j.audioPath)}${j.audioOffset !== undefined ? " · 对齐 " + offsetText(j.audioOffset) : ""}`
-                : " · 尚未选择替换音频")}
+                ? t(
+                    j.audioOffset !== undefined
+                      ? "media.attachedAlignedAudio"
+                      : "media.attachedAudio",
+                    {
+                      name: baseName(j.audioPath),
+                      offset: offsetText(j.audioOffset || 0),
+                    },
+                  )
+                : t("media.audioMissing"))}
             {operation === "audio" &&
               j.align &&
-              ` · 对齐 ${j.align.offset >= 0 ? "+" : ""}${j.align.offset.toFixed(3)} 秒${j.align.length ? " · 截到参考长度" : ""}`}
+              t(
+                j.align.length
+                  ? "media.extractionTrimmed"
+                  : "media.extractionAligned",
+                { offset: offsetText(j.align.offset) },
+              )}
           </span>
-          <span className={`job-status ${j.status}`} title={j.error}>
+          <span
+            className={`job-status ${j.status}`}
+            title={jobError(j) || undefined}
+          >
             {j.status === "running" && (
               <LoaderCircle size={12} className="spin" />
             )}
-            {STATUS[j.status] || j.status}
-            {j.status === "failed" && j.error
-              ? ` · ${j.error.slice(0, 60)}`
+            {STATUS()[j.status] || j.status}
+            {j.status === "failed" && jobError(j)
+              ? t("media.failureDetail", { detail: jobError(j).slice(0, 60) })
               : ""}
           </span>
         </span>
@@ -102,8 +125,8 @@ export function MediaQueue({
       {operation === "merge" && j.status === "ready" && (
         <Button
           variant="ghost icon"
-          aria-label={`为 ${j.name} 选择音频`}
-          title="选择替换音频"
+          aria-label={t("media.pickAudio", { name: j.name })}
+          title={t("media.pickAudioTitle")}
           disabled={locked}
           onClick={() => onPickAudio(j)}
         >
@@ -113,8 +136,8 @@ export function MediaQueue({
       {operation === "merge" && j.status === "ready" && j.audioPath && (
         <Button
           variant={`ghost icon${j.audioOffset !== undefined ? " active" : ""}`}
-          aria-label={`对齐 ${j.name} 的合并音频`}
-          title="音频对齐：以视频自带的声音为参考检视、微调"
+          aria-label={t("media.alignMerge", { name: j.name })}
+          title={t("media.alignMergeTitle")}
           disabled={locked}
           onClick={() => onAlign(j.id)}
         >
@@ -124,10 +147,8 @@ export function MediaQueue({
       {operation === "audio" && j.status === "ready" && (
         <Button
           variant={`ghost icon${j.align ? " active" : ""}`}
-          aria-label={`对齐 ${j.name} 的音频`}
-          title={
-            j.align ? "音频对齐（已对齐）" : "音频对齐：按参考音频对齐起点"
-          }
+          aria-label={t("media.alignAudio", { name: j.name })}
+          title={j.align ? t("media.alignedTitle") : t("media.alignAudioTitle")}
           disabled={locked}
           onClick={() => onAlign(j.id)}
         >
@@ -137,8 +158,8 @@ export function MediaQueue({
       {["done", "cancelled", "failed"].includes(j.status) && (
         <Button
           variant="ghost icon"
-          aria-label={`重新导出 ${j.name}`}
-          title="重新导出：放回队列，按当前设置处理，已有文件不覆盖"
+          aria-label={t("media.requeue", { name: j.name })}
+          title={t("media.requeueTitle")}
           disabled={running}
           onClick={() => onRequeue(j.id)}
         >
@@ -147,8 +168,8 @@ export function MediaQueue({
       )}
       <Button
         variant="ghost icon"
-        aria-label={`移除 ${j.name}`}
-        title="从列表移除"
+        aria-label={t("media.remove", { name: j.name })}
+        title={t("media.removeTitle")}
         disabled={j.status === "running"}
         onClick={() => onRemove(j.id)}
       >
@@ -161,27 +182,28 @@ export function MediaQueue({
     <>
       <div className="section-heading">
         <div>
-          <span className="eyebrow">工作区</span>
+          <span className="eyebrow">{t("media.workspace")}</span>
           <h2>
-            媒体队列 <span className="count">{jobs.length}</span>
+            {t("media.queue")}{" "}
+            <span className="count">{localeRuntime.number(jobs.length)}</span>
           </h2>
         </div>
         <Button variant="primary" disabled={locked} onClick={onPickFiles}>
           <Plus size={17} />
-          添加文件
+          {t("media.addFiles")}
         </Button>
       </div>
       <div className="queue-panel">
         <div className="queue-toolbar">
           <span>
-            <FileVideo size={15} /> 源文件
+            <FileVideo size={15} /> {t("media.sourceFile")}
           </span>
           <Button
             variant="ghost"
             disabled={!clearable || running}
             onClick={() => onClear()}
           >
-            清除已完成
+            {t("media.clearCompleted")}
           </Button>
         </div>
         {!jobs.length ? (
@@ -190,17 +212,17 @@ export function MediaQueue({
               <Film size={42} />
               <div className="frame-ticks" />
             </div>
-            <h3>把音视频放进来</h3>
+            <h3>{t("media.emptyTitle")}</h3>
             <p>
-              拖入多个视频或音频，或从文件夹中选择
+              {t("media.emptyIntro")}
               <br />
-              合并时拖入的音频会配给选中的视频。
+              {t("media.emptyMerge")}
             </p>
             <Button disabled={locked} onClick={onPickFiles}>
               <FolderOpen size={17} />
-              选择文件
+              {t("media.pickFiles")}
             </Button>
-            <small>MP4 · MKV · MOV · WAV · FLAC · MP3 等常见格式</small>
+            <small>{t("media.extensions")}</small>
           </div>
         ) : (
           <ol className="job-list">
@@ -212,20 +234,25 @@ export function MediaQueue({
         {jobs.length > 0 && (
           <div className="queue-pagination">
             <span>
-              {page * PAGE_SIZE + 1}–
-              {Math.min((page + 1) * PAGE_SIZE, jobs.length)} / {jobs.length}{" "}
-              个文件
+              {t("media.pagination", {
+                count: jobs.length,
+                from: localeRuntime.number(page * PAGE_SIZE + 1),
+                to: localeRuntime.number(
+                  Math.min((page + 1) * PAGE_SIZE, jobs.length),
+                ),
+                total: localeRuntime.number(jobs.length),
+              })}
             </span>
             <div>
               <Button
-                aria-label="上一页"
+                aria-label={t("media.previous")}
                 disabled={page === 0}
                 onClick={() => onPage(page - 1)}
               >
                 <ChevronLeft size={16} />
               </Button>
               <Button
-                aria-label="下一页"
+                aria-label={t("media.next")}
                 disabled={page + 1 >= pageCount}
                 onClick={() => onPage(page + 1)}
               >

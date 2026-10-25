@@ -3,7 +3,8 @@
 // clear. Returns what to tell the user when it was not applied ("" when it
 // was). Errors stay here: a video without sound is not a failure of the
 // page, so the window-wide error banner is not used.
-import { errorMessage } from "./i18n";
+import { localeRuntime, notification, t, errorMessage } from "./i18n";
+import { serializeError } from "../locales/messages.mjs";
 import { invoke } from "./ipc";
 export async function autoAlign(
   video: string,
@@ -15,13 +16,23 @@ export async function autoAlign(
       reference: video,
       target: audio,
     });
-    if (!r.reliable) return "自动对齐可信度低，未应用；可点波形按钮检视对齐";
+    if (!r.reliable) return notification("AUTO_ALIGN_LOW_CONFIDENCE");
     await apply(r.offset);
     return "";
   } catch (e) {
-    return "没有自动对齐：" + errorMessage(e);
+    return notification("AUTO_ALIGN_FAILED", {
+      detail: errorMessage(e),
+      error: serializeError(e),
+    });
   }
 }
 // "+1.234 秒" / "-0.500 秒" for queue rows.
 export const offsetText = (offset: number) =>
-  `${offset >= 0 ? "+" : ""}${offset.toFixed(3)} 秒`;
+  t("media.offsetSeconds", {
+    sign: offset >= 0 ? "+" : "",
+    seconds: localeRuntime.number(offset, {
+      useGrouping: false,
+      minimumFractionDigits: 3,
+      maximumFractionDigits: 3,
+    }),
+  });

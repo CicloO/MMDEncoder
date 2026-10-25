@@ -152,6 +152,7 @@ export type TrimClip = {
 export type MediaJob = {
   meta?: MediaMeta;
   metaError?: string;
+  metaErrorData?: ErrorData;
   id: string;
   path: string;
   name: string;
@@ -167,6 +168,7 @@ export type MediaJob = {
   audioMeta?: Meta["audio"];
   output?: string;
   error?: string;
+  errorData?: ErrorData;
   log?: string;
   elapsed?: number;
 };

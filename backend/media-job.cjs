@@ -1,4 +1,5 @@
 "use strict";
+const { appError, serializeError, sourceText } = require("./errors.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 const core = require("./core.cjs");
@@ -20,6 +21,7 @@ function createMediaJob({
   async function runMediaJob(job, o) {
     job.status = "running";
     job.error = undefined;
+    job.errorData = undefined;
     job.output = undefined;
     job.log = "";
     job.startedAt = Date.now();
@@ -27,13 +29,13 @@ function createMediaJob({
     let temp;
     try {
       if (o.operation === "merge" && !job.audioPath)
-        throw Error("缺少要合并的音频文件");
+        throw appError("MEDIA_MERGE_AUDIO_MISSING");
       if (
         o.hiRes &&
         o.operation !== "video" &&
         !["wav", "flac"].includes(o.audioFormat)
       )
-        throw Error("Hi-Res 只支持 WAV / FLAC 输出");
+        throw appError("MEDIA_HIRES_FORMAT");
       const p = {
         operation: o.operation,
         input: job.path,
@@ -80,8 +82,15 @@ function createMediaJob({
       if (p.hiRes) {
         p.soxr = await hasSoxr();
         const plan = media.hiResPlan(p.audioFormat, p.sourceAudio);
-        hiResNote = `# Hi-Res：${plan.from} → ${plan.to}，${plan.reason}${plan.action === "resample" ? (p.soxr ? "（soxr 重采样）" : "（当前 FFmpeg 没有 soxr，用内置重采样）") : ""}
-`;
+        hiResNote = sourceText("media.hiresLog", {
+          from: plan.from,
+          to: plan.to,
+          reason: plan.reason,
+          resampling:
+            plan.action === "resample"
+              ? sourceText(p.soxr ? "media.hiresSoxr" : "media.hiresBuiltin")
+              : "",
+        });
       }
       let note = hiResNote;
       if (o.operation !== "audio") {
@@ -95,14 +104,17 @@ function createMediaJob({
               ? ""
               : " / " +
                 (p.audioFormat === "copy"
-                  ? audioSource.audioCodec || "未知"
+                  ? audioSource.audioCodec || sourceText("presentation.unknown")
                   : p.audioFormat);
-          note = `# MP4 放不下此编码（${source.videoCodec || "未知"}${audio}），已改用 MKV\n`;
+          note = sourceText("media.containerLog", {
+            video: source.videoCodec || sourceText("presentation.unknown"),
+            audio,
+          });
         }
         p.container = container;
       }
       p.output = media.suggestOutput(p, mediaLocation(o), fs.existsSync);
-      if (!p.output) throw Error("无法生成输出文件名");
+      if (!p.output) throw appError("MEDIA_OUTPUT_NAME");
       media.command(p, engineInfo(), p.output);
       fs.mkdirSync(path.dirname(p.output), { recursive: true });
       temp = fs.mkdtempSync(path.join(path.dirname(p.output), ".mmd-media-"));
@@ -116,13 +128,14 @@ function createMediaJob({
           emitProgress();
         },
       });
-      if (isStopped()) throw Error("已取消");
+      if (isStopped()) throw appError("MEDIA_CANCELLED");
       await commit(target, p.output);
       job.output = p.output;
       job.status = "done";
     } catch (e) {
       job.status = isStopped() ? "cancelled" : "failed";
-      job.error = e.message;
+      job.errorData = serializeError(e);
+      job.error = job.errorData.message;
       job.log += "\n" + e.message;
     } finally {
       if (temp) fs.rmSync(temp, { recursive: true, force: true });
@@ -134,8 +147,16 @@ function createMediaJob({
           job.log,
         );
       } catch (e) {
-        job.error =
-          (job.error ? job.error + "；" : "") + "日志保存失败：" + e.message;
+        const logError = serializeError(
+          appError("MEDIA_LOG_SAVE_FAILED", { detail: e.message }),
+        );
+        job.errorData = job.errorData
+          ? {
+              ...job.errorData,
+              issues: [...(job.errorData.issues || []), logError],
+            }
+          : logError;
+        job.error = (job.error ? job.error + "；" : "") + logError.message;
       }
       emit();
     }

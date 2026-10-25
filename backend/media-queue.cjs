@@ -1,4 +1,10 @@
 "use strict";
+const {
+  appError,
+  serializeError,
+  sourceText,
+  summary,
+} = require("./errors.cjs");
 // Media page queue (音视频提取与合并): each file is processed on its own with
 // the options chosen when the queue starts; the output name is generated per
 // file and never reused.
@@ -35,7 +41,7 @@ function createMediaQueue({
 }) {
   function requireMediaJob(id) {
     const job = getJobs().find((j) => j.id === id);
-    if (!job) throw Error("文件不在列表中");
+    if (!job) throw appError("MEDIA_JOB_MISSING");
     return job;
   }
   // File parameters for the media queue, read like the video queue's. Audio-only
@@ -63,10 +69,10 @@ function createMediaQueue({
         job.meta = core.metadata(data);
       } catch {
         const a = data.streams?.find((s) => s.codec_type === "audio");
-        if (!a) throw Error("未找到音视频轨");
+        if (!a) throw appError("MEDIA_NO_STREAMS");
         job.meta = {
           audioOnly: true,
-          codec: a.codec_name || "未知",
+          codec: a.codec_name || sourceText("presentation.unknown"),
           duration: Number(data.format?.duration || a.duration) || 0,
           size: Number(data.format?.size) || job.size,
           audio: {
@@ -78,7 +84,13 @@ function createMediaQueue({
         };
       }
     } catch (e) {
-      job.metaError = "无法读取文件信息：" + e.message;
+      job.metaErrorData = serializeError(
+        appError("MEDIA_META_FAILED", {
+          detail: e.message,
+          error: serializeError(e),
+        }),
+      );
+      job.metaError = job.metaErrorData.message;
     }
     emit();
   }
@@ -133,10 +145,10 @@ function createMediaQueue({
     },
     async mediaSetAudio(payload) {
       const job = requireMediaJob(payload?.id);
-      if (job.status === "running") throw Error("处理中的文件不能更换音频");
+      if (job.status === "running") throw appError("MEDIA_AUDIO_BUSY");
       const file = payload?.path || "";
       if (file && (!path.isAbsolute(file) || !fs.statSync(file).isFile()))
-        throw Error("请选择有效的音频文件");
+        throw appError("MEDIA_AUDIO_INPUT");
       if (file) job.audioPath = file;
       else delete job.audioPath;
       delete job.audioMeta;
@@ -150,7 +162,7 @@ function createMediaQueue({
     },
     mediaRemove(payload) {
       const job = requireMediaJob(payload?.id);
-      if (job.status === "running") throw Error("处理中的文件不能移除");
+      if (job.status === "running") throw appError("MEDIA_REMOVE_BUSY");
       setJobs(getJobs().filter((j) => j !== job));
     },
     mediaClearCompleted() {
@@ -159,11 +171,18 @@ function createMediaQueue({
       );
     },
     mediaRequeue(payload) {
-      if (isRunning()) throw Error("请等待当前处理结束后再重新导出");
+      if (isRunning()) throw appError("MEDIA_REQUEUE_BUSY");
       const job = requireMediaJob(payload?.id);
       if (!["done", "cancelled", "failed"].includes(job.status))
-        throw Error("只有已完成、已取消或失败的文件可以重新导出");
-      for (const key of ["output", "error", "log", "elapsed", "startedAt"])
+        throw appError("MEDIA_REQUEUE_STATE");
+      for (const key of [
+        "output",
+        "error",
+        "errorData",
+        "log",
+        "elapsed",
+        "startedAt",
+      ])
         delete job[key];
       job.status = "ready";
     },
@@ -171,10 +190,10 @@ function createMediaQueue({
       // File-info reads started by mediaAdd are short; let them finish
       // instead of reporting them as a busy task.
       await Promise.all([...mediaProbes]);
-      if (isBusy()) throw Error("请等待当前任务结束");
+      if (isBusy()) throw appError("MEDIA_BUSY");
       const options = payload || {};
       if (!["audio", "video", "merge"].includes(options.operation))
-        throw Error("请选择提取音频、提取视频或音视频合并");
+        throw appError("MEDIA_OPERATION");
       if (
         options.location === "custom" &&
         !(
@@ -182,12 +201,12 @@ function createMediaQueue({
           path.isAbsolute(options.outputDir)
         )
       )
-        throw Error("请选择有效的自定义输出目录");
+        throw appError("MEDIA_OUTPUT_DIR");
       await locate();
       if (!engineInfo().ffmpeg || !engineInfo().ffprobe)
-        throw Error("请先安装 FFmpeg / ffprobe");
+        throw appError("MEDIA_TOOLS_REQUIRED");
       const jobs = getJobs().filter((j) => j.status === "ready");
-      if (!jobs.length) throw Error("没有待处理的文件");
+      if (!jobs.length) throw appError("MEDIA_QUEUE_EMPTY");
       setRunning(true);
       setStopped(false);
       emit();
@@ -207,7 +226,14 @@ function createMediaQueue({
           await runMediaJob(job, options);
         }
       })()
-        .catch((e) => onNotice(e.message))
+        .catch((e) =>
+          onNotice(
+            summary("MEDIA_BATCH_FAILED", {
+              detail: e.message,
+              error: serializeError(e),
+            }),
+          ),
+        )
         .finally(() => {
           setRunning(false);
           emit();
@@ -220,15 +246,15 @@ function createMediaQueue({
     // > 0 its start is cut, < 0 silence first); null clears it.
     mediaSetAudioOffset(payload) {
       const job = requireMediaJob(payload?.id);
-      if (job.status === "running") throw Error("处理中的文件不能更改对齐");
+      if (job.status === "running") throw appError("MEDIA_ALIGN_BUSY");
       const offset = payload?.offset;
       if (offset === null || offset === undefined) {
         delete job.audioOffset;
         return;
       }
-      if (!job.audioPath) throw Error("请先选择要合并的音频");
+      if (!job.audioPath) throw appError("MEDIA_AUDIO_REQUIRED");
       if (!Number.isFinite(offset) || Math.abs(offset) > 24 * 3600)
-        throw Error("对齐数据无效");
+        throw appError("MEDIA_ALIGN_INVALID");
       job.audioOffset = offset;
     },
     // The 音频对齐 dialog's result for one file: extracting its audio then
@@ -236,7 +262,7 @@ function createMediaQueue({
     // reference, and with trim ends where the reference does. null clears it.
     async mediaSetAlign(payload) {
       const job = requireMediaJob(payload?.id);
-      if (job.status === "running") throw Error("处理中的文件不能更改对齐");
+      if (job.status === "running") throw appError("MEDIA_ALIGN_BUSY");
       const a = payload?.align;
       if (!a) {
         delete job.align;
@@ -248,12 +274,12 @@ function createMediaQueue({
         !Number.isFinite(a.offset) ||
         Math.abs(a.offset) > 24 * 3600
       )
-        throw Error("对齐数据无效");
+        throw appError("MEDIA_ALIGN_INVALID");
       let length = 0;
       if (a.trim) {
         await locate();
         length = (await probeMedia(a.reference)).audioDuration || 0;
-        if (!length) throw Error("读不到参考音频的长度，无法截到参考长度");
+        if (!length) throw appError("MEDIA_REFERENCE_LENGTH");
       }
       job.align = {
         reference: a.reference,

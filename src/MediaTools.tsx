@@ -12,7 +12,16 @@ import { MediaDetails } from "./MediaDetails";
 import { AlignDialog } from "./AlignDialog";
 import { autoAlign } from "./autoAlign";
 import { FileMeta } from "./FileMeta";
-import { t, errorMessage } from "./i18n";
+import {
+  t,
+  localeRuntime,
+  errorMessage,
+  summaryMessage,
+  type ErrorData,
+  type MessageDescriptor,
+} from "./i18n";
+import { serializeError } from "../locales/messages.mjs";
+import { invoke } from "./ipc";
 import type { MediaJob } from "./types";
 import { MediaQueue } from "./MediaQueue";
 import { MediaSettings } from "./MediaSettings";
@@ -51,7 +60,9 @@ export function MediaTools({
   const [o, setOptions] = useState<Options>(loadOptions),
     [selectedId, setSelectedId] = useState(""),
     [preview, setPreview] = useState(""),
-    [error, setError] = useState(""),
+    [error, setError] = useState<
+      ErrorData | { notice: MessageDescriptor } | null
+    >(null),
     [details, setDetails] = useState<any>(null),
     [detailsOpen, setDetailsOpen] = useState(false),
     [detailsError, setDetailsError] = useState<unknown>(null),
@@ -93,11 +104,11 @@ export function MediaTools({
     }
   }
   async function run(action: string, payload?: unknown) {
-    setError("");
+    setError(null);
     try {
       return await call(action, payload);
     } catch (e) {
-      setError((e as Error).message);
+      setError(serializeError(e));
     }
   }
   // Added or dropped files: when merging, audio files are paired with the
@@ -119,7 +130,11 @@ export function MediaTools({
           : undefined) ||
         current.find((j) => j.status === "ready" && !j.audioPath);
       if (!target) {
-        setError("没有等待配对音频的视频，请先加入视频文件");
+        setError({
+          code: "MEDIA_PAIR_REQUIRED",
+          params: {},
+          message: t("error.MEDIA_PAIR_REQUIRED"),
+        });
         break;
       }
       current = (await setAudio(target, path))?.mediaJobs || current;
@@ -182,12 +197,14 @@ export function MediaTools({
       const note = await autoAlign(job.path, file, (offset) =>
         run("mediaSetAudioOffset", { id: job.id, offset }),
       );
-      if (note) setError(note);
+      if (note) setError({ notice: note });
     }
     return r;
   }
   async function pickFolder() {
-    const dir = await run("pickDirectory", { title: "选择输出文件夹" });
+    const dir = await run("pickDirectory", {
+      title: t("media.outputDirTitle"),
+    });
     if (dir) set("outputDir", dir);
   }
   const ready =
@@ -200,7 +217,7 @@ export function MediaTools({
     <>
       <div className="page-scroll">
         <main className="workspace">
-          <section className="queue-column" aria-label="媒体队列">
+          <section className="queue-column" aria-label={t("media.queue")}>
             <MediaQueue
               jobs={jobs}
               selectedId={selected?.id}
@@ -221,13 +238,13 @@ export function MediaTools({
               onClear={() => run("mediaClearCompleted")}
             />
             {selected && (
-              <section className="detail-card" aria-label="处理结果">
+              <section className="detail-card" aria-label={t("media.result")}>
                 <div className="detail-title">
-                  <span className="eyebrow">当前文件</span>
+                  <span className="eyebrow">{t("media.currentFile")}</span>
                   <div className="detail-actions">
                     <Button
                       variant="ghost"
-                      title="转换前 / 后的 ffprobe 参数"
+                      title={t("media.detailsHint")}
                       disabled={toolsBusy}
                       onClick={async () => {
                         setDetails(null);
@@ -246,7 +263,7 @@ export function MediaTools({
                       }}
                     >
                       <Info size={14} />
-                      文件详情
+                      {t("details.title")}
                     </Button>
                     <Button
                       variant="ghost"
@@ -257,7 +274,7 @@ export function MediaTools({
                       }
                     >
                       <FolderOpen size={14} />
-                      打开位置
+                      {t("media.openLocation")}
                     </Button>
                   </div>
                 </div>
@@ -266,7 +283,9 @@ export function MediaTools({
                   <FileMeta meta={selected.meta} />
                 ) : (
                   <p className="muted">
-                    {selected.metaError || "正在读取文件信息…"}
+                    {selected.metaErrorData
+                      ? errorMessage(selected.metaErrorData)
+                      : selected.metaError || t("media.readingDetail")}
                   </p>
                 )}
                 <p className="path-text" title={selected.path}>
@@ -277,9 +296,11 @@ export function MediaTools({
                     → {selected.output}
                   </p>
                 )}
-                {selected.error && (
+                {(selected.errorData || selected.error) && (
                   <p role="alert" className="inline-error">
-                    {selected.error}
+                    {selected.errorData
+                      ? errorMessage(selected.errorData)
+                      : selected.error}
                   </p>
                 )}
                 {selected.log && (
@@ -287,15 +308,14 @@ export function MediaTools({
                     onToggle={(e) => {
                       // Updates carry only the log's tail; load the whole log.
                       if ((e.currentTarget as HTMLDetailsElement).open)
-                        void window.encoder
-                          .invoke("mediaLog", { id: selected.id })
+                        void invoke("mediaLog", { id: selected.id })
                           .then((log) =>
                             setFullLog({ id: selected.id, log: log as string }),
                           )
                           .catch(() => {});
                     }}
                   >
-                    <summary>实际命令与日志</summary>
+                    <summary>{t("media.commandLog")}</summary>
                     <pre className="media-log" tabIndex={0}>
                       {fullLog?.id === selected.id &&
                       fullLog.log.length >= selected.log.length
@@ -313,7 +333,13 @@ export function MediaTools({
             locked={locked}
             hiRes={hiRes}
             bitrate={bitrate}
-            error={error}
+            error={
+              error
+                ? "notice" in error
+                  ? summaryMessage(error.notice)
+                  : errorMessage(error)
+                : ""
+            }
             set={set}
             pickFolder={pickFolder}
           />
@@ -324,51 +350,77 @@ export function MediaTools({
           <ArrowDownToLine size={23} />
         </div>
         <div className="output-summary">
-          <span className="eyebrow">预计结果</span>
+          <span className="eyebrow">{t("media.expected")}</span>
           <strong>
             {readyJobs.length
-              ? `${readyJobs.length} 个文件`
+              ? t("media.files", {
+                  count: readyJobs.length,
+                  quantity: localeRuntime.number(readyJobs.length),
+                })
               : jobs.length
-                ? "没有待处理文件"
-                : "添加文件"}{" "}
+                ? t("media.nonePending")
+                : t("media.addFile")}{" "}
             <ArrowRight size={15} />
-            <span>{OPERATIONS[o.operation]}</span>
+            <span>{OPERATIONS()[o.operation]}</span>
           </strong>
           <span className="output-facts">
             {o.operation !== "video" ? (
               <>
-                音频 → {FORMATS[o.audioFormat]}
-                {hiRes && " · Hi-Res 24-bit"}
+                {t("media.audioTarget", { format: FORMATS()[o.audioFormat] })}
+                {hiRes && t("media.hiresFact")}
                 {LOSSY.includes(o.audioFormat) &&
-                  ` · ${bitrate ? bitrate + " kbps" : "跟随源码率"}`}
+                  (bitrate
+                    ? t("media.bitrateFact", {
+                        rate: localeRuntime.number(bitrate, {
+                          useGrouping: false,
+                        }),
+                      })
+                    : t("media.bitrateSourceFact"))}
               </>
             ) : (
-              "音频 → 移除"
+              t("media.audioRemoved")
             )}
             {o.operation !== "audio" && (
               <>
                 <i />
-                视频 → 直接复制 · {o.container.toUpperCase()}
+                {t("media.videoTarget", {
+                  container: o.container.toUpperCase(),
+                })}
               </>
             )}
-            <i /> 位置 → {LOCATIONS[o.location]}
+            <i />{" "}
+            {t("media.outputLocation", { location: LOCATIONS()[o.location] })}
           </span>
           <span className="output-path" title={preview}>
             {missingAudio
-              ? "合并前请为每个视频选择替换音频"
-              : preview || "添加文件后预览保存路径"}
+              ? t("media.mergeNeedsAudio")
+              : preview || t("media.previewEmpty")}
           </span>
         </div>
         <div className="run-actions">
           <span>
             {running
-              ? "正在处理"
-              : `${readyJobs.length} 个待处理${doneCount ? ` · ${doneCount} 个已完成` : ""}`}
+              ? t("media.processing")
+              : doneCount
+                ? t("media.pendingAndDone", {
+                    pending: t("media.pending", {
+                      count: readyJobs.length,
+                      quantity: localeRuntime.number(readyJobs.length),
+                    }),
+                    done: t("media.completed", {
+                      count: doneCount,
+                      quantity: localeRuntime.number(doneCount),
+                    }),
+                  })
+                : t("media.pending", {
+                    count: readyJobs.length,
+                    quantity: localeRuntime.number(readyJobs.length),
+                  })}
           </span>
           {running ? (
             <Button variant="stop" onClick={() => run("cancel")}>
               <Square size={16} />
-              取消处理
+              {t("media.cancel")}
             </Button>
           ) : (
             <Button
@@ -388,7 +440,7 @@ export function MediaTools({
               }
             >
               <Play size={17} />
-              开始处理
+              {t("media.start")}
             </Button>
           )}
         </div>
@@ -420,7 +472,9 @@ export function MediaTools({
                     j?.audioOffset !== undefined
                       ? { offset: j.audioOffset }
                       : undefined,
-                  description: `把合并用的音频对齐到“${j?.name || ""}”自带的声音；合并时按这里的结果截取或补静音，时长仍与视频相同。`,
+                  description: t("media.alignMergeDescription", {
+                    name: j?.name || "",
+                  }),
                   onApply: (a) =>
                     call("mediaSetAudioOffset", {
                       id: j!.id,
@@ -443,7 +497,9 @@ export function MediaTools({
                     trim: !!j.align.length,
                   },
                   withTrim: true,
-                  description: `把“${j?.name || ""}”的音频起点对齐到参考音频；提取音频时按这里的结果截取或补静音。`,
+                  description: t("media.alignExtractDescription", {
+                    name: j?.name || "",
+                  }),
                   onApply: (a) =>
                     call("mediaSetAlign", { id: j!.id, align: a }),
                   onClear: j?.align

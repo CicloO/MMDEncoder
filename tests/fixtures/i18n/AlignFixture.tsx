@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { AlignDialog, type Alignment } from "../../../src/AlignDialog";
 import { FileMeta } from "../../../src/FileMeta";
 import { MediaDetails } from "../../../src/MediaDetails";
+import { MediaFixture } from "./MediaFixture";
 import { Modal } from "../../../src/components";
 import type { MediaMeta } from "../../../src/types";
 import { LocaleRoot } from "../../../src/LocaleRoot";
@@ -23,14 +24,18 @@ localeRuntime.registerCatalog("en-XA", pseudo);
 let open = (_options: Options) => {};
 let applied: Alignment | null = null;
 let showMetadata = (_value: { meta: MediaMeta; details: any }) => {};
+let showMedia = () => {};
 function Fixture() {
   const [options, setOptions] = useState<Options | null>(null);
   const [metadata, setMetadata] = useState<{
     meta: MediaMeta;
     details: any;
   } | null>(null);
+  const [media, setMedia] = useState(false);
+  showMedia = () => setMedia(true);
   open = setOptions;
   showMetadata = setMetadata;
+  if (media) return <MediaFixture />;
   return (
     <main>
       <button onClick={() => {}}>Alignment fixture focus target</button>
@@ -69,6 +74,7 @@ function Fixture() {
   applied: () => applied,
   choose: localeRuntime.setLocale,
   pseudo,
+  showMedia: () => showMedia(),
   showMetadata: (value: { meta: MediaMeta; details: any }) =>
     showMetadata(value),
 };

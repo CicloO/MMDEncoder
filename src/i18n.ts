@@ -2,6 +2,7 @@ import zhCN from "../locales/zh-CN.json";
 import registry from "../locales/registry.json";
 import { createTranslator } from "../locales/runtime.mjs";
 import { formatVideoSummary } from "../locales/video-summary.mjs";
+import { formatMediaMessage } from "../locales/media-messages.mjs";
 import {
   formatDescriptor,
   serializeError,
@@ -36,9 +37,12 @@ export function t(key: MessageKey, params: MessageParams = {}) {
 export function errorMessage(error: unknown) {
   const e = serializeError(error);
   const lines = [
-    formatDescriptor(localeRuntime, "error", e),
-    ...(e.issues || []).map((issue) =>
-      formatDescriptor(localeRuntime, "error", issue),
+    formatMediaMessage(localeRuntime, "error", e) ??
+      formatDescriptor(localeRuntime, "error", e),
+    ...(e.issues || []).map(
+      (issue) =>
+        formatMediaMessage(localeRuntime, "error", issue) ??
+        formatDescriptor(localeRuntime, "error", issue),
     ),
   ];
   return lines
@@ -54,6 +58,7 @@ export function stageMessage(value: StageDescriptor | string) {
 export function summaryMessage(value: MessageDescriptor | string) {
   return (
     formatVideoSummary(localeRuntime, value) ??
+    formatMediaMessage(localeRuntime, "message", value) ??
     formatDescriptor(localeRuntime, "message", value)
   );
 }

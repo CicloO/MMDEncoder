@@ -23,6 +23,7 @@ import {
 import { Button, Field, Select, useDragSort } from "./components";
 import { fadeOptions } from "./presentation";
 import { autoAlign } from "./autoAlign";
+import { t as text, summaryMessage } from "./i18n";
 import { AlignDialog } from "./AlignDialog";
 import type { State, TrimClip } from "./types";
 
@@ -267,7 +268,12 @@ export function TrimTools({
       setOffsetSeconds(offset + clipStart()),
     );
     setAligning(false);
-    if (note) setError(note.replace("可点波形按钮检视对齐", "请手动填写"));
+    if (note)
+      setError(
+        note.code === "AUTO_ALIGN_LOW_CONFIDENCE"
+          ? text("message.AUTO_ALIGN_LOW_CONFIDENCE_TRIM")
+          : summaryMessage(note),
+      );
   }
   const totalFrames = exportable.reduce(
     (a, c) => a + ((c.to ?? 0) - (c.from ?? 0)),

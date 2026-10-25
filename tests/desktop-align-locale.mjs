@@ -1,4 +1,4 @@
-// Only the alignment surface; pseudo resources stay outside production dist.
+// Separate alignment / metadata / media modes; test resources stay outside dist.
 import { _electron as electron, expect } from "@playwright/test";
 import { build } from "vite";
 import assert from "node:assert/strict";
@@ -85,7 +85,104 @@ try {
     .waitFor();
   const labels = await page.evaluate(() => window.alignLocale.pseudo);
   await page.setViewportSize({ width: 1280, height: 900 });
-  if (process.argv[2] === "metadata") {
+  if (process.argv[2] === "media") {
+    await page.evaluate(() => window.alignLocale.showMedia());
+    await page.getByLabel("操作", { exact: true }).selectOption("merge");
+    await page.getByLabel("输出音频", { exact: true }).selectOption("opus");
+    await page.getByLabel("音频码率", { exact: true }).selectOption("256");
+    await page.getByLabel("输出音频", { exact: true }).selectOption("flac");
+    await page
+      .getByLabel("Hi-Res 音频（24-bit，低于 48 kHz 时升到 2 倍采样率）", {
+        exact: false,
+      })
+      .check();
+    await page.getByLabel("输出格式", { exact: true }).selectOption("mkv");
+    await page.getByLabel("输出位置", { exact: true }).selectOption("encoded");
+    await page.getByLabel("选择音频后自动对齐", { exact: false }).uncheck();
+    await page
+      .locator(".job-select")
+      .filter({ hasText: "User failed.mov" })
+      .click();
+    await page
+      .getByRole("button", { name: "移除 User failed.mov", exact: true })
+      .click();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "文件不在列表中" }),
+    ).toBeVisible();
+    await page.getByText("实际命令与日志", { exact: true }).click();
+    const before = await page.evaluate(() =>
+      localStorage.getItem("mmd-media-options"),
+    );
+    await page.evaluate(() => window.alignLocale.choose("en-XA"));
+    await expect(
+      page.getByRole("heading", {
+        name: labels["media.queue"] + " 3",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.locator("#media-operation")).toHaveValue("merge");
+    await expect(page.locator("#media-format")).toHaveValue("flac");
+    await expect(page.locator("#media-container")).toHaveValue("mkv");
+    await expect(page.locator("#media-location")).toHaveValue("encoded");
+    await expect(
+      page.locator('.job-select[aria-pressed="true"] strong'),
+    ).toHaveText("User failed.mov");
+    await expect(
+      page
+        .getByRole("alert")
+        .filter({ hasText: labels["error.MEDIA_JOB_MISSING"] }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("alert")
+        .filter({ hasText: labels["error.MEDIA_COPY_ALIGN"] }),
+    ).toBeVisible();
+    await expect(page.locator(".media-log")).toHaveText(
+      "Foreign diagnostic stays exact",
+    );
+    assert.equal(
+      await page.evaluate(() => localStorage.getItem("mmd-media-options")),
+      before,
+    );
+    const dimensions = [];
+    for (const width of [1280, 680]) {
+      await page.setViewportSize({ width, height: 900 });
+      const metrics = await page.evaluate(() => ({
+        viewport: innerHeight,
+        bottom: document
+          .querySelector(".page > .output-strip")
+          .getBoundingClientRect().bottom,
+        scroll: document.documentElement.scrollWidth,
+        width: document.documentElement.clientWidth,
+      }));
+      assert.ok(
+        Math.abs(metrics.viewport - metrics.bottom) <= 1,
+        JSON.stringify(metrics),
+      );
+      assert.ok(metrics.scroll <= metrics.width + 1, JSON.stringify(metrics));
+      dimensions.push({ width, ...metrics });
+      await screenshot(path.join(dir, `pseudo-media-${width}.png`));
+    }
+    fs.writeFileSync(
+      path.join(dir, "media-results.json"),
+      JSON.stringify(
+        {
+          options: JSON.parse(before),
+          dimensions,
+          checks: [
+            "open-locale-refresh",
+            "selection-and-options-preserved",
+            "structured-action-and-job-errors",
+            "external-log-exact",
+            "wide-narrow-footer-and-overflow",
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+    console.log("Desktop media locale PASS", dir);
+  } else if (process.argv[2] === "metadata") {
     await page.evaluate(
       (file) => window.encoder.invoke("mediaAdd", { paths: [file] }),
       audio,
