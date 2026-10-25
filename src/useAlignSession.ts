@@ -3,6 +3,7 @@ import type { Track } from "./alignWave";
 import { ask, isCancelled } from "./alignRequests";
 
 export type Alignment = { reference: string; offset: number; trim: boolean };
+export type AlignBusy = "" | "loading" | "reference" | "aligning" | "saving";
 // The dialog's requests: one of each at a time; a newer one, or closing,
 // stops the older (align-service.cjs), which then fails with "已取消".
 const SLOTS = {
@@ -42,8 +43,8 @@ export function useAlignSession({
       confidence: number;
       reliable: boolean;
     } | null>(null),
-    [busy, setBusy] = useState(""),
-    [error, setError] = useState(""),
+    [busy, setBusy] = useState<AlignBusy>(""),
+    [error, setError] = useState<unknown>(null),
     [trim, setTrim] = useState(true);
 
   async function load(path: string, slot: string) {
@@ -55,8 +56,8 @@ export function useAlignSession({
   }
   async function run(ref = refPath, refDuration = reference?.duration || 0) {
     if (!targetPath || !ref) return;
-    setBusy("正在自动对齐…");
-    setError("");
+    setBusy("aligning");
+    setError(null);
     try {
       const r = await ask("alignRun", {
         reference: ref,
@@ -67,15 +68,15 @@ export function useAlignSession({
       fit(r.offset, refDuration);
       setResult({ confidence: r.confidence, reliable: r.reliable });
     } catch (e) {
-      if (!isCancelled(e)) setError((e as Error).message);
+      if (!isCancelled(e)) setError(e);
     } finally {
       setBusy("");
     }
   }
   async function takeReference(file: string) {
     stop();
-    setBusy("正在读取参考音频…");
-    setError("");
+    setBusy("reference");
+    setError(null);
     try {
       const r = await load(file, SLOTS.reference);
       setReference(r);
@@ -84,7 +85,7 @@ export function useAlignSession({
       setBusy("");
       await run(file, r.duration);
     } catch (e) {
-      if (!isCancelled(e)) setError((e as Error).message);
+      if (!isCancelled(e)) setError(e);
       setBusy("");
     }
   }
@@ -100,9 +101,9 @@ export function useAlignSession({
     setOffset(initial?.offset || 0);
     setTrim(initial?.trim ?? true);
     setResult(null);
-    setError("");
+    setError(null);
     resetPlayhead();
-    setBusy("正在读取音频…");
+    setBusy("loading");
     (async () => {
       try {
         const t = await load(targetPath, SLOTS.target);
@@ -123,7 +124,7 @@ export function useAlignSession({
           await run(ref, span);
         }
       } catch (e) {
-        if (!cancelled && !isCancelled(e)) setError((e as Error).message);
+        if (!cancelled && !isCancelled(e)) setError(e);
       } finally {
         if (!cancelled) setBusy("");
       }

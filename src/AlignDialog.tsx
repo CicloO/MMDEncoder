@@ -11,19 +11,47 @@ import {
 import { Button, Modal } from "./components";
 import { draw, envelope } from "./alignWave";
 import { useAlignPlayer } from "./useAlignPlayer";
-import { useAlignSession, type Alignment } from "./useAlignSession";
+import {
+  useAlignSession,
+  type Alignment,
+  type AlignBusy,
+} from "./useAlignSession";
+import { t, localeRuntime, errorMessage, type MessageKey } from "./i18n";
 export type { Alignment } from "./useAlignSession";
 
 // Nudge steps (seconds): an MMD frame, 10 ms, 1 ms, one sample at 48 kHz.
-const STEPS = [
-  { value: String(1 / 30), label: "1 帧（1/30 秒）" },
-  { value: "0.01", label: "10 毫秒" },
-  { value: "0.001", label: "1 毫秒" },
-  { value: String(1 / 48000), label: "1 个采样" },
+const steps = () => [
+  { value: String(1 / 30), label: t("align.stepFrame") },
+  { value: "0.01", label: t("align.step10ms") },
+  { value: "0.001", label: t("align.step1ms") },
+  { value: String(1 / 48000), label: t("align.stepSample") },
 ];
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
-const seconds = (t: number) =>
-  `${t < 0 ? "-" : ""}${Math.floor(Math.abs(t) / 60)}:${(Math.abs(t) % 60).toFixed(3).padStart(6, "0")}`;
+const decimal = (value: number, digits: number) =>
+  localeRuntime.number(value, {
+    useGrouping: false,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+const seconds = (value: number) =>
+  t("align.clock", {
+    sign: value < 0 ? "-" : "",
+    minutes: localeRuntime.number(Math.floor(Math.abs(value) / 60), {
+      useGrouping: false,
+    }),
+    seconds: localeRuntime.number(Math.abs(value) % 60, {
+      useGrouping: false,
+      minimumIntegerDigits: 2,
+      minimumFractionDigits: 3,
+      maximumFractionDigits: 3,
+    }),
+  });
+const busyKeys: Record<Exclude<AlignBusy, "">, MessageKey> = {
+  loading: "align.loading",
+  reference: "align.readingReference",
+  aligning: "align.aligning",
+  saving: "align.saving",
+};
 
 // 音频对齐: line a file's audio (the target) up with a reference, for
 // extracting it cut or padded to match (see media.command, alignFilter).
@@ -59,7 +87,7 @@ export function AlignDialog({
     [playhead, setPlayhead] = useState(0),
     [listen, setListen] = useState("both"),
     [split, setSplit] = useState(false),
-    [step, setStep] = useState(STEPS[0].value),
+    [step, setStep] = useState(String(1 / 30)),
     [dropping, setDropping] = useState(false);
   const refCanvas = useRef<HTMLCanvasElement>(null),
     tgtCanvas = useRef<HTMLCanvasElement>(null);
@@ -278,12 +306,12 @@ export function AlignDialog({
   async function apply() {
     if (!refPath) return;
     stop();
-    setBusy("正在保存…");
+    setBusy("saving");
     try {
       await onApply({ reference: refPath, offset, trim: withTrim && trim });
       onClose();
     } catch (e) {
-      setError((e as Error).message);
+      setError(e);
     } finally {
       setBusy("");
     }
@@ -295,16 +323,16 @@ export function AlignDialog({
       await onClear();
       onClose();
     } catch (e) {
-      setError((e as Error).message);
+      setError(e);
     }
   }
 
   const where =
     Math.abs(offset) < 1 / 96000
-      ? "目标与参考同时开始"
+      ? t("align.simultaneous")
       : offset > 0
-        ? `目标开头多出 ${offset.toFixed(4)} 秒，导出时截掉`
-        : `目标晚 ${(-offset).toFixed(4)} 秒开始，导出时在前面补静音`;
+        ? t("align.trimHead", { seconds: decimal(offset, 4) })
+        : t("align.padHead", { seconds: decimal(-offset, 4) });
   return (
     <Modal
       open={open}
@@ -313,9 +341,9 @@ export function AlignDialog({
         onClose();
       }}
       wide
-      title="音频对齐"
+      title={t("align.title")}
       description={description}
-      error={error}
+      error={error ? errorMessage(error) : ""}
     >
       <div
         className={`align-dialog${dropping ? " dropping" : ""}`}
@@ -341,61 +369,64 @@ export function AlignDialog({
         }}
       >
         <div className="align-ref">
-          <span className="align-label">参考</span>
+          <span className="align-label">{t("align.reference")}</span>
           <span className="path-text" title={refPath}>
             {refPath
-              ? baseName(refPath) + (fixedReference ? "（视频自带的声音）" : "")
-              : "尚未添加：选择或拖入音频 / 视频"}
+              ? fixedReference
+                ? t("align.videoReference", { name: baseName(refPath) })
+                : baseName(refPath)
+              : t("align.emptyReference")}
           </span>
           {!fixedReference && (
             <Button onClick={pickReference} disabled={!!busy}>
               <FolderOpen size={15} />
-              {refPath ? "更换参考" : "添加参考音频"}
+              {refPath ? t("align.changeReference") : t("align.addReference")}
             </Button>
           )}
           <Button onClick={() => run()} disabled={!refPath || !!busy}>
             <Wand2 size={15} />
-            自动对齐
+            {t("align.auto")}
           </Button>
         </div>
         <p className="align-status" role="status">
-          {busy ||
+          {(busy && t(busyKeys[busy])) ||
             (refPath ? (
               <>
                 {where}
                 {result &&
                   (result.reliable ? (
                     <span className="align-ok">
-                      {" "}
-                      · 匹配可信（{result.confidence.toFixed(1)}）
+                      {t("align.reliable", {
+                        confidence: decimal(result.confidence, 1),
+                      })}
                     </span>
                   ) : (
                     <span className="align-warn">
-                      {" "}
-                      · 可信度低（{result.confidence.toFixed(2)}
-                      ），两段可能不是同一版本，请试听确认
+                      {t("align.unreliable", {
+                        confidence: decimal(result.confidence, 2),
+                      })}
                     </span>
                   ))}
               </>
             ) : (
-              "添加参考音频后会自动对齐，也可以拖动下方的目标波形手动对齐。"
+              t("align.emptyHint")
             ))}
         </p>
         <div className="align-waves">
-          <span className="align-label">参考</span>
+          <span className="align-label">{t("align.reference")}</span>
           <canvas
             ref={refCanvas}
             className="align-wave reference"
-            aria-label="参考音频波形：左键拖动平移，右键拖动移动播放位置，滚轮缩放"
+            aria-label={t("align.referenceWave")}
             onWheel={(e) => zoom(e.deltaY > 0 ? 1.25 : 0.8, timeAt(e))}
             {...pointerHandlers("reference")}
           />
-          <span className="align-label">目标</span>
+          <span className="align-label">{t("align.target")}</span>
           <canvas
             ref={tgtCanvas}
             className="align-wave target"
             tabIndex={0}
-            aria-label="目标音频波形：左键拖动或用左右方向键调整对齐（按住 Shift 步长乘 10），右键拖动移动播放位置"
+            aria-label={t("align.targetWave")}
             onWheel={(e) => zoom(e.deltaY > 0 ? 1.25 : 0.8, timeAt(e))}
             {...pointerHandlers("target")}
             onKeyDown={(e) => {
@@ -414,14 +445,14 @@ export function AlignDialog({
             <span>{seconds(view.start)}</span>
             <span>{seconds(view.start + view.span)}</span>
           </div>
-          <span className="align-label">视图</span>
+          <span className="align-label">{t("align.view")}</span>
           {/* Same width as the waveforms: the shown part of the whole. */}
           <div
             ref={zoomBar}
             className="align-zoom"
             role="scrollbar"
             aria-orientation="horizontal"
-            aria-label="视图范围：拖动中间平移，拖动两端缩放；方向键平移"
+            aria-label={t("align.viewRange")}
             aria-valuemin={Math.round(whole.lo * 1000)}
             aria-valuemax={Math.round(whole.hi * 1000)}
             aria-valuenow={Math.round(view.start * 1000)}
@@ -459,22 +490,26 @@ export function AlignDialog({
                 variant="primary"
                 onClick={() => (playing ? stop() : play())}
                 disabled={!target}
-                aria-label={playing ? "暂停" : "播放"}
+                aria-label={playing ? t("align.pause") : t("align.play")}
               >
                 {playing ? <Pause size={15} /> : <Play size={15} />}
-                {playing ? "暂停" : "播放"}
+                {playing ? t("align.pause") : t("align.play")}
               </Button>
-              <span className="align-time" title="播放位置">
+              <span className="align-time" title={t("align.playhead")}>
                 {seconds(playhead)}
               </span>
             </div>
             <div className="align-group">
-              <span className="align-row-label">试听</span>
-              <div className="segmented" role="radiogroup" aria-label="试听">
+              <span className="align-row-label">{t("align.listen")}</span>
+              <div
+                className="segmented"
+                role="radiogroup"
+                aria-label={t("align.listen")}
+              >
                 {[
-                  ["reference", "参考"],
-                  ["target", "目标"],
-                  ["both", "叠听"],
+                  ["reference", t("align.reference")],
+                  ["target", t("align.target")],
+                  ["both", t("align.both")],
                 ].map(([value, label]) => (
                   <label key={value}>
                     <input
@@ -497,31 +532,35 @@ export function AlignDialog({
                   checked={split}
                   onChange={(e) => setSplit(e.target.checked)}
                 />
-                左右分声道
+                {t("align.split")}
               </label>
             </div>
           </div>
           <div className="align-row">
             <div className="align-group">
-              <span className="align-row-label">缩放</span>
-              <Button aria-label="缩小" title="缩小" onClick={() => zoom(1.5)}>
+              <span className="align-row-label">{t("align.zoom")}</span>
+              <Button
+                aria-label={t("align.zoomOut")}
+                title={t("align.zoomOut")}
+                onClick={() => zoom(1.5)}
+              >
                 <Minus size={15} />
               </Button>
               <Button
-                aria-label="放大"
-                title="放大"
+                aria-label={t("align.zoomIn")}
+                title={t("align.zoomIn")}
                 onClick={() => zoom(1 / 1.5)}
               >
                 <Plus size={15} />
               </Button>
               <Button onClick={() => fit()}>
                 <AudioLines size={15} />
-                全部
+                {t("align.fit")}
               </Button>
             </div>
             <div className="align-group">
               <label className="align-row-label" htmlFor="align-step">
-                微调
+                {t("align.nudge")}
               </label>
               <select
                 id="align-step"
@@ -529,22 +568,22 @@ export function AlignDialog({
                 value={step}
                 onChange={(e) => setStep(e.target.value)}
               >
-                {STEPS.map((s) => (
+                {steps().map((s) => (
                   <option key={s.value} value={s.value}>
                     {s.label}
                   </option>
                 ))}
               </select>
               <Button
-                aria-label="目标左移"
-                title="目标左移（←，按住 Shift 乘 10）"
+                aria-label={t("align.left")}
+                title={t("align.leftHint")}
                 onClick={() => nudge(1)}
               >
                 ←
               </Button>
               <Button
-                aria-label="目标右移"
-                title="目标右移（→，按住 Shift 乘 10）"
+                aria-label={t("align.right")}
+                title={t("align.rightHint")}
                 onClick={() => nudge(-1)}
               >
                 →
@@ -559,18 +598,15 @@ export function AlignDialog({
                 disabled={!refPath}
                 onChange={(e) => setTrim(e.target.checked)}
               />
-              导出时截到参考的长度（不够时补静音）
+              {t("align.trim")}
             </label>
           )}
-          <p className="hint align-hint">
-            虚线标出起点：灰色为参考 0
-            秒，蓝色为目标开头。左键单击设置播放位置；左键拖动目标波形对齐；右键拖动或拖动视图条平移；拖动视图条两端或滚轮缩放。
-          </p>
+          <p className="hint align-hint">{t("align.hint")}</p>
         </div>
         <div className="modal-actions">
           {onClear && (
             <Button onClick={clear} disabled={!!busy}>
-              清除对齐
+              {t("align.clear")}
             </Button>
           )}
           <Button
@@ -579,14 +615,14 @@ export function AlignDialog({
               onClose();
             }}
           >
-            取消
+            {t("align.cancel")}
           </Button>
           <Button
             variant="primary"
             onClick={apply}
             disabled={!refPath || !target || !!busy}
           >
-            应用
+            {t("align.apply")}
           </Button>
         </div>
       </div>

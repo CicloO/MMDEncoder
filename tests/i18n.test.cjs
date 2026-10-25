@@ -9,6 +9,22 @@ const {
 const { registerAction } = require("../desktop/actions.cjs");
 const { load } = require("./load-typescript.cjs");
 
+test("alignment cancellation uses its stable code and preserves unrelated diagnostics", () => {
+  const { isCancelled } = load("src/alignRequests.ts", {
+    "./ipc": { invoke: async () => {} },
+  });
+  assert.equal(
+    isCancelled({ code: "ALIGN_CANCELLED", message: "Localized cancellation" }),
+    true,
+  );
+  assert.equal(
+    isCancelled({ code: "ALIGN_FAILED", message: "外部程序：已取消" }),
+    false,
+  );
+  assert.equal(isCancelled(new Error("已取消")), false);
+  assert.equal(isCancelled(null), false);
+});
+
 test("shared presentation refreshes status, audio, units and names without changing technical values", () => {
   const i18n = load("src/i18n.ts");
   const p = load("src/presentation.ts", { "./i18n": i18n });
