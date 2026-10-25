@@ -49,6 +49,12 @@ const app = await electron.launch({
 try {
   const page = await app.firstWindow();
   const screenshot = async (file) => {
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
     const bytes = await app.evaluate(async ({ BrowserWindow }) =>
       (await BrowserWindow.getAllWindows()[0].webContents.capturePage())
         .toPNG()
