@@ -18,7 +18,7 @@ import { Button, Field, Modal, useDragSort, PAGE_SIZE } from "./components";
 import { MediaTools } from "./MediaTools";
 import { TrimTools } from "./TrimTools";
 import { EncodeQueue } from "./EncodeQueue";
-import { autoAlign } from "./autoAlign";
+import { createAudioReplacement, audioTarget } from "./audioReplacement";
 import { MediaDetails } from "./MediaDetails";
 import { EncodeFooter } from "./EncodeFooter";
 import { VideoFeedback } from "./VideoFeedback";
@@ -324,32 +324,14 @@ export default function App() {
       onNotice: notify,
     }).call,
   );
-  // Replace one video's audio, as the media page's merge does, and line it
-  // up with the video's own sound when "自动对齐" is on and there is one.
-  async function pickAudio(j: Job) {
-    const file = await call("pickMedia", { multiple: false }).catch(() => null);
-    if (typeof file === "string") await replaceAudio(j, file);
-  }
-  async function replaceAudio(row: Job, file: string) {
-    let j = row;
-    try {
-      const r = await call(
-        "setAudio",
-        { id: j.id, path: file },
-        notification("VIDEO_AUDIO_REPLACED"),
-      );
-      // The response is the current state: the row may be older (pushes
-      // during an import come at most every 200 ms).
-      j = r?.jobs?.find((x: Job) => x.id === j.id) || j;
-    } catch {
-      return;
-    }
-    if (!autoAlignAudio || !j.meta?.audio || j.sequence) return;
-    const note = await autoAlign(j.path, file, (offset) =>
-      call("setAudioOffset", { id: j.id, offset }),
-    );
-    notify(note || notification("VIDEO_AUDIO_ALIGNED"));
-  }
+  const audioReplacement = createAudioReplacement({
+    call,
+    notify,
+    enabled: autoAlignAudio,
+  });
+  const pickAudio = (row: Job) => audioReplacement.pickAudio(audioTarget(row));
+  const replaceAudio = (row: Job, file: string) =>
+    audioReplacement.replaceAudio(audioTarget(row), file);
   // Dropped on the video page: videos join the queue; audio files replace
   // the audio of the selected video, or of the first one still without a
   // replacement (as the media page's merge pairs them).
