@@ -313,8 +313,12 @@ try {
   delete oldSelection.maskMode;
   fs.writeFileSync(selectionPath, JSON.stringify(oldSelection));
   const beforeTest = fs.readFileSync(selectionPath, "utf8");
-  const dialog = (mask, save = false) =>
-    execFileSync(
+  // The button shows the result briefly; the whole message (and a failure's
+  // reason) is in this run's plugin log, appended here for the checks.
+  const logs = path.join(pluginDir, "logs");
+  const dialog = (mask, save = false) => {
+    const before = new Set(fs.existsSync(logs) ? fs.readdirSync(logs) : []);
+    const out = execFileSync(
       path.join(build, "mmd-sim.exe"),
       [
         "--dialog-test",
@@ -324,6 +328,13 @@ try {
       ],
       { encoding: "utf8", timeout: 100000 },
     );
+    const log = fs
+      .readdirSync(logs)
+      .filter((n) => !before.has(n) && !n.endsWith("-ffmpeg.log"))
+      .map((n) => fs.readFileSync(path.join(logs, n), "utf8"))
+      .join("\n");
+    return out + "\n" + (log.match(/encoding test: .*/g) || []).join("\n");
+  };
   const cancelled = dialog(1);
   check(
     /initialMask=0/.test(cancelled),
@@ -332,6 +343,10 @@ try {
   check(
     /测试编码通过.*含 Alpha 遮罩/.test(cancelled),
     "settings: encoding test uses unsaved mask choice",
+  );
+  check(
+    /testResult=✓/.test(cancelled) && !/unexpected message box/.test(cancelled),
+    "settings: result shown in the dialog, no message box",
   );
   check(
     fs.readFileSync(selectionPath, "utf8") === beforeTest,

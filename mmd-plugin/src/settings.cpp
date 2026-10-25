@@ -110,6 +110,12 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
       SendMessageW(presets, CB_ADDSTRING, 0, (LPARAM)ctx->presets[i].name.c_str());
       if (ctx->presets[i].id == ctx->presetId) selected = (int)i;
     }
+    // Nothing chosen yet (or the choice is gone): the editing intermediate.
+    for (size_t i = 0; selected < 0 && i < ctx->presets.size(); i++)
+      if (ctx->presets[i].id == L"builtin-prores422") {
+        selected = (int)i;
+        ctx->presetId = ctx->presets[i].id;
+      }
     SendMessageW(presets, CB_SETCURSEL, selected, 0);
     CheckDlgButton(dlg, IDC_FOLLOW, ctx->followMmd ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(dlg, IDC_SUFFIX, ctx->rangeSuffix ? BST_CHECKED : BST_UNCHECKED);
@@ -127,6 +133,12 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
     return TRUE;
   }
   if (ctx && ctx->testing && (msg == WM_CLOSE || msg == WM_COMMAND)) return TRUE;
+  // A result belongs to the choices it tested: changing them resets the button.
+  if (msg == WM_COMMAND &&
+      ((HIWORD(wp) == CBN_SELCHANGE &&
+        (LOWORD(wp) == IDC_PRESET || LOWORD(wp) == IDC_MASK || LOWORD(wp) == IDC_FADE)) ||
+       (HIWORD(wp) == BN_CLICKED && LOWORD(wp) == IDC_FOLLOW)))
+    SetDlgItemTextW(dlg, IDC_TEST, L"编码测试");
   if (msg == WM_COMMAND && LOWORD(wp) == IDC_TEST && HIWORD(wp) == BN_CLICKED) {
     if (!readSettings(dlg, ctx)) return TRUE;
     char fade[16];
@@ -141,17 +153,25 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
     const int controls[] = {IDC_PRESET, IDC_FOLLOW, IDC_SUFFIX, IDC_FADE, IDC_MASK, IDC_OPEN_APP, IDC_TEST, IDOK, IDCANCEL};
     for (int id : controls) EnableWindow(GetDlgItem(dlg, id), FALSE);
     SetDlgItemTextW(dlg, IDC_TEST, L"测试中…");
+    const ULONGLONG started = GetTickCount64();
     std::string reply;
     Json result;
     bool answered = runHelper(ctx->appExe, ctx->helper, L"test", job, reply, 75000, ctx->log, dlg) &&
                     JsonReader(reply).parse(result);
     ctx->testing = false;
     for (int id : controls) EnableWindow(GetDlgItem(dlg, id), TRUE);
-    SetDlgItemTextW(dlg, IDC_TEST, L"编码测试");
     const bool ok = answered && result[L"ok"].b;
     std::wstring message = ok ? result[L"message"].s
-                            : L"编码测试失败：\n" + (answered ? result[L"error"].s : L"MMDEncoder 没有返回测试结果，请检查程序和编码引擎是否可用。");
-    MessageBoxW(dlg, message.c_str(), L"MMDEncoder", MB_OK | (ok ? MB_ICONINFORMATION : MB_ICONWARNING));
+                            : L"编码测试失败：" + (answered ? result[L"error"].s : L"MMDEncoder 没有返回测试结果，请检查程序和编码引擎是否可用。");
+    // The result in brief on the button itself (no message box); the whole
+    // message, with a failure's reason, goes to the plugin log.
+    ctx->log(L"encoding test: %s", message.c_str());
+    wchar_t brief[32];
+    if (ok)
+      swprintf_s(brief, L"\x2713 %.1f 秒", (GetTickCount64() - started) / 1000.0);
+    else
+      wcscpy_s(brief, L"\x2717 失败");
+    SetDlgItemTextW(dlg, IDC_TEST, brief);
     SetFocus(GetDlgItem(dlg, IDC_TEST));
     return TRUE;
   }
@@ -223,8 +243,7 @@ void showSettings(HWND parent, HINSTANCE module, const std::wstring& dir, Proces
   t.control(0xFFFF, STATIC_, SS_LEFT, 140, 68, 120, 9, L"音频淡入淡出");
   t.control(IDC_FADE, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 140, 79, 120, 80, L"");
   t.control(0xFFFF, STATIC_, SS_LEFT, 10, 102, 250, 34,
-            L"成片保存在 AVI 同目录、以 AVI 的文件名命名，自动合成音频，完成后删除占位 AVI。"
-            L"这里的选项均优先于预设；与 MMDEncoder 的“MMD 导出”同步，以最后保存为准。淡入淡出仅作用于成片首尾。");
+            L"成片保存在 AVI 旁并自动加音频；这里的选项优先于预设，并与 MMDEncoder 同步。");
   t.control(IDC_OPEN_APP, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 10, 140, 80, 15, L"打开 MMDEncoder");
   t.control(IDC_TEST, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 94, 140, 50, 15, L"编码测试");
   t.control(IDOK, BUTTON_, BS_DEFPUSHBUTTON | WS_TABSTOP, 148, 140, 54, 15, L"确定");

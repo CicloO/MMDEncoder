@@ -77,7 +77,9 @@ function createService({
     },
     // MMD export plugin: chosen preset, plugin install state, last test / export.
     mmd: {
-      presetId: "",
+      // Until the user picks one: the editing intermediate (ProRes 422 HQ),
+      // which every editor reads and needs no hardware encoder.
+      presetId: "builtin-prores422",
       followMmd: true,
       audioFade: 0,
       // "off" | "with" | "only"; "" until a preset decides (settings from 1.4.1).

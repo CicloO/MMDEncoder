@@ -122,25 +122,22 @@ int wmain(int argc, wchar_t** argv) {
         std::printf("initialMask=%lld\n", (long long)SendDlgItemMessageW(settings, 104, CB_GETCURSEL, 0, 0));
         SendDlgItemMessageW(settings, 104, CB_SETCURSEL, mask, 0);
         PostMessageW(settings, WM_COMMAND, MAKEWPARAM(107, BN_CLICKED), (LPARAM)GetDlgItem(settings, 107));
-        HWND result = nullptr;
-        for (int i = 0; i < 8500 && !result; i++) { result = find(false); Sleep(10); }
-        if (!result) { std::printf("result window not found\n"); PostMessageW(settings, WM_CLOSE, 0, 0); return; }
+        // The result is shown briefly on the test button (107), starting with
+        // a check or a cross once the test is over; no message box opens.
         std::wstring text;
-        EnumChildWindows(result, [](HWND child, LPARAM data) -> BOOL {
-          wchar_t cls[32]; GetClassNameW(child, cls, 32);
-          if (wcscmp(cls, L"Static") == 0) {
-            wchar_t part[4096]; GetWindowTextW(child, part, 4096);
-            *reinterpret_cast<std::wstring*>(data) += part;
-          }
-          return TRUE;
-        }, (LPARAM)&text);
+        for (int i = 0; i < 8500; i++) {
+          wchar_t part[4096] = {0};
+          GetDlgItemTextW(settings, 107, part, 4096);
+          if (part[0] == L'\x2713' || part[0] == L'\x2717') { text = part; break; }
+          Sleep(10);
+        }
+        if (text.empty()) { std::printf("test result not shown\n"); PostMessageW(settings, WM_CLOSE, 0, 0); return; }
+        if (find(false)) std::printf("unexpected message box\n");
         int n = WideCharToMultiByte(CP_UTF8, 0, text.data(), (int)text.size(), nullptr, 0, nullptr, nullptr);
         std::string bytes(n, '\0');
         WideCharToMultiByte(CP_UTF8, 0, text.data(), (int)text.size(), bytes.data(), n, nullptr, nullptr);
         std::printf("testResult=%s\n", bytes.c_str());
         tested = true;
-        PostMessageW(GetDlgItem(result, IDOK), BM_CLICK, 0, 0);
-        for (int i = 0; i < 500 && IsWindow(result); i++) Sleep(10);
         PostMessageW(settings, WM_COMMAND, save ? IDOK : IDCANCEL, 0);
       });
     }
