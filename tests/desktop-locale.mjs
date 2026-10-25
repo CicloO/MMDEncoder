@@ -155,6 +155,12 @@ try {
   });
   await expect(longDialog).toBeVisible();
   await expect(
+    longDialog.locator('option[value="test-preset-policy"]'),
+  ).toBeDisabled();
+  await expect(
+    longDialog.locator('option[value="test-preset-policy"]'),
+  ).toContainText("User name 用户名称");
+  await expect(
     longDialog.getByLabel(labels["mmd.follow"], { exact: false }),
   ).toBeChecked();
   await expect(
@@ -170,6 +176,12 @@ try {
     longDialog.getByRole("button", { name: labels["mmd.test"], exact: true }),
   ).toBeVisible();
   await screenshot(path.join(dir, "pseudo-mmd-actions.png"));
+  await page.evaluate(() => window.localeFixture.choose("zh-CN"));
+  await expect(
+    page
+      .getByRole("dialog", { name: "MMD 导出", exact: true })
+      .locator('option[value="test-preset-policy"]'),
+  ).toBeDisabled();
   await page.keyboard.press("Escape");
   await page.evaluate(() => window.localeFixture.choose("unknown"));
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");

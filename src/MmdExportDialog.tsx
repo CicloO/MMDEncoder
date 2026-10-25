@@ -5,13 +5,10 @@ import type { State, Preset } from "./types";
 import { t, localeRuntime, errorMessage, summaryMessage } from "./i18n";
 import type { ErrorData, MessageDescriptor, MessageKey } from "./i18n";
 // Presets an MMD export cannot use yet (mirrors backend/mmd-export.cjs).
-function mmdUnsupported(p: Preset) {
-  if (
-    p.settings.alphaMode !== "mask" &&
-    p.settings.encoder.startsWith("nvencc:")
-  )
-    return t("mmd.presetUnsupported");
-  return "";
+function mmdPresetBlocked(p: Preset) {
+  return (
+    p.settings.alphaMode !== "mask" && p.settings.encoder.startsWith("nvencc:")
+  );
 }
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
@@ -166,13 +163,16 @@ export function MmdExportDialog({
           options={[
             { value: "", label: t("mmd.noPreset") },
             ...presets.map((p) => {
-              const why = mmdUnsupported(p);
+              const blocked = mmdPresetBlocked(p);
               return {
                 value: p.id,
-                label: why
-                  ? t("mmd.presetWithReason", { name: p.name, reason: why })
+                label: blocked
+                  ? t("mmd.presetWithReason", {
+                      name: p.name,
+                      reason: t("mmd.presetUnsupported"),
+                    })
                   : p.name,
-                disabled: !!why,
+                disabled: blocked,
               };
             }),
           ]}

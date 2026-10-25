@@ -23,7 +23,25 @@ function Fixture() {
   openMmd = () => setMmdOpen(true);
   useEffect(() => {
     mounts++;
-    void invoke("state").then(setState);
+    void invoke("state").then((current: State) => {
+      const preset = current.presets[0];
+      setState({
+        ...current,
+        presets: [
+          ...current.presets,
+          {
+            ...preset,
+            id: "test-preset-policy",
+            name: "User name 用户名称",
+            settings: {
+              ...preset.settings,
+              encoder: "nvencc:hevc",
+              alphaMode: "discard",
+            },
+          },
+        ],
+      });
+    });
   }, []);
   return (
     <main>
