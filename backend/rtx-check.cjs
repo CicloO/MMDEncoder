@@ -1,6 +1,6 @@
 "use strict";
 const { signature } = require("./enhancements.cjs");
-const { summary, serializeError } = require("./errors.cjs");
+const { summary, serializeError, diagnosticMessage } = require("./errors.cjs");
 const statusMessage = (code, params) => {
   const messageData = summary(code, params);
   return { message: messageData.message, messageData };
@@ -28,7 +28,9 @@ async function testEnhancements({
     await check();
     onPatch({ verified: true, ...statusMessage("RTX_VERIFIED") });
   } catch (e) {
-    const result = statusMessage("RTX_FAILED", { detail: e.message });
+    const result = statusMessage("RTX_FAILED", {
+      detail: diagnosticMessage(e),
+    });
     onPatch({ ...result, errorData: serializeError(e) });
     onLog("\n" + result.message);
     throw e;

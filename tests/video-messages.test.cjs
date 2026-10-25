@@ -7,7 +7,12 @@ const os = require("node:os");
 const core = require("../backend/core.cjs");
 const { createEncoder } = require("../backend/encode-job.cjs");
 const rtx = require("../backend/rtx-check.cjs");
-const { appError } = require("../backend/errors.cjs");
+const {
+  appError,
+  validationError,
+  validationIssue,
+} = require("../backend/errors.cjs");
+const zh = require("../locales/zh-CN.json");
 const { load } = require("./load-typescript.cjs");
 
 test("failed encoding keeps system identity, readable external diagnostics and retry eligibility independently of wording", async (t) => {
@@ -86,6 +91,69 @@ test("RTX failure and invalidation keep coded causes through state serialization
   assert.equal(wire.messageData.code, "RTX_SETTINGS_CHANGED");
   rtx.invalidateTools(wire);
   assert.equal(wire.messageData.code, "RTX_TOOLS_CHANGED");
+  const log = [];
+  await assert.rejects(
+    rtx.testEnhancements({
+      settings: core.DEFAULTS,
+      check: async () => {
+        throw validationError([
+          validationIssue("VFG_GPU_REQUIRED"),
+          {
+            code: "FUTURE_DETAIL",
+            params: {},
+            message: "original external diagnostic",
+          },
+        ]);
+      },
+      onStart: () => {},
+      onPatch: () => {},
+      onLog: (text) => log.push(text),
+      emit: () => {},
+    }),
+  );
+  assert.ok(log.join("").includes(zh["error.VFG_GPU_REQUIRED"]));
+  assert.ok(log.join("").includes("original external diagnostic"));
+});
+
+test("task evidence retains each validation issue before any process starts", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "video-validation-log-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const job = {
+    id: "job",
+    path: path.join(dir, "source.mov"),
+    status: "ready",
+    settings: {
+      ...core.DEFAULTS,
+      encoder: "libx264",
+      preset: "medium",
+      vsr: true,
+    },
+    meta: { width: 320, height: 180, duration: 1, fps: 30 },
+  };
+  const evidence = [];
+  const encode = createEncoder({
+    engineInfo: () => ({}),
+    engines: () => core.ENGINES,
+    verification: () => ({ verified: false }),
+    isStopped: () => false,
+    jobIndex: () => 1,
+    nameSource: (j) => j.path,
+    appendEvidence: (_id, text) => evidence.push(text),
+    run: async () => assert.fail("validation must precede execution"),
+    commit: () => assert.fail("validation must precede commit"),
+    emit: () => {},
+    emitProgress: () => {},
+  });
+  await encode(job);
+  assert.equal(job.status, "failed");
+  assert.ok(job.errorData.issues.some((i) => i.code === "RTX_NVENCC_REQUIRED"));
+  assert.ok(
+    job.errorData.issues.some((i) => i.code === "RTX_REVALIDATION_REQUIRED"),
+  );
+  for (const code of ["RTX_NVENCC_REQUIRED", "RTX_REVALIDATION_REQUIRED"]) {
+    assert.ok(job.log.includes(zh[`error.${code}`]));
+    assert.ok(evidence.join("").includes(zh[`error.${code}`]));
+  }
 });
 
 test("preview summaries translate technical records at display time and preserve the saved fallback", () => {

@@ -4,6 +4,7 @@ const {
   validationIssue,
   validationError,
   serializeError,
+  diagnosticMessage,
   summary,
   stage,
 } = require("./errors.cjs");
@@ -165,7 +166,7 @@ function createEncoder({
       job.progress = 100;
       job.stage = stage("done");
     } catch (e) {
-      append(job, "\n" + e.message + "\n");
+      append(job, "\n" + diagnosticMessage(e) + "\n");
       // The GPU mask failed (an encoder session limit, an older GPU…) before
       // anything was kept: once more with the mask on the CPU.
       if (gpuMaskUsed && !isStopped() && !job.output) {

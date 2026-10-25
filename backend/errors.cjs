@@ -25,6 +25,15 @@ function validationError(issues) {
     issues: issues.map(serializeError),
   });
 }
+// Logs retain every source diagnostic. UI consumers keep the structured
+// record and format it separately when they render.
+function diagnosticMessage(error) {
+  const lines = (value) => [
+    value.message,
+    ...(value.issues || []).flatMap(lines),
+  ];
+  return lines(serializeError(error)).filter(Boolean).join("\n");
+}
 function summary(code, params = {}) {
   const key = `message.${code}`;
   return messageDescriptor(
@@ -46,6 +55,7 @@ module.exports = {
   appError,
   validationIssue,
   validationError,
+  diagnosticMessage,
   summary,
   stage,
   serializeError,
