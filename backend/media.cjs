@@ -275,7 +275,9 @@ function suggestOutput(p, settings, exists) {
       : p.container === "mp4"
         ? "mp4"
         : "mkv";
-  const suffix = { audio: "", video: "_无音频", merge: "_合并" }[p.operation];
+  const suffix = { audio: "", video: "_no_audio", merge: "_merged" }[
+    p.operation
+  ];
   if (suffix === undefined) return "";
   let dir = path.dirname(p.input);
   if (settings.outputMode === "encoded") dir = path.join(dir, "Encoded");
