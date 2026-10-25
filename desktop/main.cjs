@@ -365,6 +365,7 @@ else {
         }
         const allowed = [
           "state",
+          "setLocale",
           "compatibility",
           "testEnhancements",
           "mediaStart",

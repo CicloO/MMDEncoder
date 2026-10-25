@@ -178,6 +178,8 @@ export type Engine = {
   depths: number[];
 };
 export type State = {
+  preferences: { locale: string | null };
+  locale: string;
   jobs: Job[];
   settings: Settings;
   presets: Preset[];

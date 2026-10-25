@@ -1,12 +1,21 @@
 import zhCN from "../locales/zh-CN.json";
+import registry from "../locales/registry.json";
+import { createTranslator } from "../locales/runtime.mjs";
+export type { Catalog, MessageParams } from "../locales/runtime.mjs";
+import type { MessageParams } from "../locales/runtime.mjs";
 
 export type MessageKey = keyof typeof zhCN;
-export type MessageParams = Record<string, string | number>;
-// Preparation only: the current product locale remains zh-CN.
+export const localeRuntime = createTranslator({
+  sourceLocale: registry.sourceLocale,
+  catalogs: { "zh-CN": zhCN },
+});
+export const {
+  getLocale,
+  setLocale,
+  subscribe: subscribeLocale,
+} = localeRuntime;
 export function t(key: MessageKey, params: MessageParams = {}) {
-  return zhCN[key].replace(/\{(\w+)\}/g, (token, name) =>
-    Object.hasOwn(params, name) ? String(params[name]) : token,
-  );
+  return localeRuntime.t(key, params);
 }
 
 export function errorMessage(error: unknown) {
@@ -16,7 +25,7 @@ export function errorMessage(error: unknown) {
     message?: string;
   } | null;
   const key = `error.${e?.code}`;
-  if (Object.hasOwn(zhCN, key)) return t(key as MessageKey, e?.params);
+  if (localeRuntime.has(key)) return localeRuntime.t(key, e?.params);
   return String(e?.message ?? error).replace(
     /^Error invoking remote method '[^']+': (?:Error: )?/,
     "",

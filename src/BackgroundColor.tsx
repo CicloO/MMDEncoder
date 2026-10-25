@@ -4,10 +4,10 @@ import { t } from "./i18n";
 // The colour of 合成到纯色: green screen, black and white to pick, or any
 // colour from the picker or typed as #RRGGBB.
 const PRESETS = [
-  ["#00FF00", t("background.green")],
-  ["#000000", t("background.black")],
-  ["#FFFFFF", t("background.white")],
-];
+  ["#00FF00", "background.green"],
+  ["#000000", "background.black"],
+  ["#FFFFFF", "background.white"],
+] as const;
 const HEX = /^#[0-9a-f]{6}$/i;
 export function BackgroundColor({
   value,
@@ -31,7 +31,7 @@ export function BackgroundColor({
           role="radiogroup"
           aria-labelledby="alpha-background-label"
         >
-          {PRESETS.map(([hex, label]) => (
+          {PRESETS.map(([hex, key]) => (
             <label key={hex}>
               <input
                 type="radio"
@@ -40,7 +40,7 @@ export function BackgroundColor({
                 onChange={() => onChange(hex)}
               />
               <span className="color-dot" style={{ background: hex }} />
-              {label}
+              {t(key)}
             </label>
           ))}
         </div>

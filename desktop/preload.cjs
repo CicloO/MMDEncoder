@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 const allowed = new Set([
   "quit",
   "state",
+  "setLocale",
   "compatibility",
   "testEnhancements",
   "mediaStart",

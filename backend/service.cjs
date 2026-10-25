@@ -23,6 +23,7 @@ const { createAlignService } = require("./align-service.cjs");
 const { createTrimQueue } = require("./trim-queue.cjs");
 const { commit } = require("./commit.cjs");
 const { createSettingsStore } = require("./settings-store.cjs");
+const { createPreferences } = require("./preferences.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
   engineDir,
@@ -30,6 +31,7 @@ function createService({
   onUpdate,
   toolsRoot = process.env.MMD_TEST_TOOLS_ROOT,
   toolOptions = {},
+  localeRegistry,
   // MMD export plugin DLL shipped with the app (packaged) or built locally (dev).
   mmdPluginDll = [
     path.join(__dirname, "..", "mmd-plugin", "MMDEncoderPlugin.dll"),
@@ -40,6 +42,7 @@ function createService({
 } = {}) {
   dataDir = dataDir || path.join(os.tmpdir(), "mmd-encoder");
   const settingsStore = createSettingsStore(dataDir);
+  const preferences = createPreferences(localeRegistry);
   const children = new Set();
   const pendingLogs = new Map();
   let evidenceTimer = null,
@@ -52,6 +55,8 @@ function createService({
     detectPromise = null,
     locatePromise = null;
   const state = {
+    preferences: { locale: null },
+    locale: preferences.resolve(null),
     jobs: [],
     settings: { ...core.DEFAULTS },
     presets: clone(core.BUILTINS),
@@ -228,6 +233,7 @@ function createService({
   function persist() {
     settingsStore.write({
       version: 1,
+      preferences: state.preferences,
       settings: state.settings,
       presets: state.presets
         .filter((p) => !p.builtin)
@@ -450,6 +456,8 @@ function createService({
   try {
     const saved = settingsStore.read();
     if (saved.version !== 1) throw Error("版本不支持");
+    state.preferences.locale = preferences.normalize(saved.preferences?.locale);
+    state.locale = preferences.resolve(state.preferences.locale);
     if (saved.mmdExport && typeof saved.mmdExport === "object") {
       if (typeof saved.mmdExport.presetId === "string")
         state.mmd.presetId = saved.mmdExport.presetId;
@@ -941,6 +949,19 @@ function createService({
     switch (action) {
       case "state":
         return uiState(state);
+      case "setLocale": {
+        const previous = { ...state.preferences };
+        state.preferences.locale = preferences.normalize(payload.locale);
+        state.locale = preferences.resolve(state.preferences.locale);
+        try {
+          persist();
+        } catch (error) {
+          state.preferences = previous;
+          state.locale = preferences.resolve(previous.locale);
+          throw error;
+        }
+        break;
+      }
       case "details": {
         if (tools.state.busy) throw Error("工具安装中，请稍后查看详情");
         // payload.media: a job from the audio / video tools queue
