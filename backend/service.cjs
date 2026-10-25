@@ -13,6 +13,8 @@ const media = require("./media.cjs");
 const trim = require("./trim.cjs");
 const { createTools, DEFAULT_ROOT } = require("./tools.cjs");
 const mmdExport = require("./mmd-export.cjs");
+const { syncConfig } = require("./mmd-config.cjs");
+const { testSelection } = require("./mmd-test-action.cjs");
 const mmdPlugin = require("./mmd-plugin.cjs");
 const { createMediaQueue } = require("./media-queue.cjs");
 const { createEncodeQueue } = require("./encode-queue.cjs");
@@ -339,33 +341,18 @@ function createService({
   // Keep the plugin's mmd-export.json (tools, helper, every preset) in step:
   // every preset change goes through persist(), tool changes through detect().
   function syncMmdExport() {
-    const m = state.mmd;
-    m.error = "";
-    try {
-      adoptMmdSelection();
-      mmdExport.writeConfig({
-        presets: state.presets.map(({ id, name, settings }) => ({
-          id,
-          name,
-          settings,
-        })),
-        engines: state.engineInfo,
-        appExe: mmdAppExe,
-        helper: path.join(__dirname, "mmd-export.cjs"),
-      });
-    } catch (e) {
-      m.error = "无法写入导出设置：" + e.message;
-      return;
-    }
-    const preset = state.presets.find((p) => p.id === m.presetId);
-    m.error = !m.presetId
-      ? ""
-      : !preset
-        ? "导出预设已被删除，请重新选择"
-        : mmdExport.unsupported(preset.settings, m.maskMode) ||
-          (!state.engineInfo.ffmpeg || !state.engineInfo.ffprobe
-            ? "请先在“设置与引擎”里安装编码工具"
-            : "");
+    state.mmd.error = "";
+    state.mmd.error = syncConfig({
+      presets: state.presets,
+      engines: state.engineInfo,
+      appExe: mmdAppExe,
+      helper: path.join(__dirname, "mmd-export.cjs"),
+      adoptSelection: adoptMmdSelection,
+      getSelection: () => ({
+        presetId: state.mmd.presetId,
+        maskMode: state.mmd.maskMode,
+      }),
+    });
   }
   function lastMmdExport() {
     try {
@@ -387,21 +374,14 @@ function createService({
   // Encode a short synthetic clip exactly as an MMD export would.
   async function testMmdExport() {
     syncMmdExport();
-    if (state.mmd.error) throw Error(state.mmd.error);
-    if (!state.mmd.presetId) throw Error("请先选择导出预设");
-    try {
-      state.mmd.test = await require("./mmd-test.cjs").testExport(
-        undefined,
-        children,
-      );
-    } catch (e) {
-      state.mmd.test = {
-        ok: false,
-        at: new Date().toISOString(),
-        message: e.message,
-      };
-      throw e;
-    }
+    await testSelection({
+      error: state.mmd.error,
+      presetId: state.mmd.presetId,
+      children,
+      onResult: (result) => {
+        state.mmd.test = result;
+      },
+    });
   }
   function schema(p, full = false) {
     if (!p || typeof p !== "object" || Array.isArray(p))

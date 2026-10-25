@@ -44,6 +44,9 @@ import { MediaDetails } from "./MediaDetails";
 import { RtxSettings } from "./RtxSettings";
 import { AboutDialog } from "./AboutDialog";
 import { BackgroundColor } from "./BackgroundColor";
+import { MmdExportDialog } from "./MmdExportDialog";
+import { createActions } from "./actions";
+import { useMmdExport } from "./useMmdExport";
 import {
   formatFPS,
   formatSize,
@@ -71,15 +74,6 @@ const frameOptions = [
   })),
   { value: "custom", label: "自定义帧率" },
 ];
-// Presets an MMD export cannot use yet (mirrors backend/mmd-export.cjs).
-function mmdUnsupported(p: Preset) {
-  if (
-    p.settings.alphaMode !== "mask" &&
-    p.settings.encoder.startsWith("nvencc:")
-  )
-    return "NVEncC 暂不支持";
-  return "";
-}
 // Which kind of encoder an id names, for encoders not detected here.
 const encoderBackend = (id: string) =>
   id.startsWith("nvencc:")
@@ -93,7 +87,6 @@ const encoderBackend = (id: string) =>
           : "cpu";
 // Audio files dropped on the video page replace a video's audio.
 const AUDIO_EXT = /\.(wav|flac|mp3|aac|m4a|opus|ogg|mka)$/i;
-const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 export default function App() {
   // Light is the default. A new key so the old auto-saved "dark" default does not stick.
   const [theme, setTheme] = useState(() => {
@@ -341,46 +334,13 @@ export default function App() {
       cancelled = true;
     };
   }, [s, state?.engines]);
-  async function call(action: string, payload?: unknown, message?: string) {
-    setError("");
-    try {
-      const result = await window.encoder.invoke(action, payload);
-      if (result?.jobs) receive(result);
-      if (message && !result?.cancelled) notify(message);
-      return result;
-    } catch (e) {
-      setError(
-        (e as Error).message.replace(
-          /^Error invoking remote method '[^']+': (?:Error: )?/,
-          "",
-        ),
-      );
-      throw e;
-    }
-  }
-  // MMD export plugin actions run one at a time (install, test encode, …).
-  const [mmdBusy, setMmdBusy] = useState(false);
-  async function mmdCall(
-    actionName: string,
-    payload?: unknown,
-    message?: string,
-  ) {
-    setMmdBusy(true);
-    try {
-      await call(actionName, payload, message);
-    } catch {
-      /* the error is shown in the dialog */
-    } finally {
-      setMmdBusy(false);
-    }
-  }
-  useEffect(() => {
-    if (modal === "mmd" && window.encoder) void mmdCall("mmdStatus");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modal]);
-  function action(actionName: string, payload?: unknown, message?: string) {
-    void call(actionName, payload, message).catch(() => {});
-  }
+  const { call, action } = createActions({
+    request: (name, payload) => window.encoder.invoke(name, payload),
+    onState: receive,
+    onError: setError,
+    onNotice: notify,
+  });
+  const { busy: mmdBusy, call: mmdCall } = useMmdExport(modal, call);
   // Replace one video's audio, as the media page's merge does, and line it
   // up with the video's own sound when "自动对齐" is on and there is one.
   async function pickAudio(j: Job) {
@@ -2047,249 +2007,16 @@ export default function App() {
           </Button>
         </div>
       </Modal>
-      <Modal
+      <MmdExportDialog
         error={error}
         open={modal === "mmd"}
         onClose={() => setModal("")}
-        fixedHeight
-        title="MMD 导出"
-        description="在 MMD“AVI 输出”中选择 MMDEncoder。这里的选项优先于预设，并与 MMD“詳細設定”同步。"
-      >
-        {state.mmd.interrupted.length > 0 && (
-          <section className="modal-section" aria-label="中断的导出">
-            <h3>中断的导出</h3>
-            <p className="hint">
-              MMD
-              在导出途中崩溃或被关闭时，已导出的画面仍保存在临时文件里。补完会按导出开始时的设置合成音频并改回正式文件名。
-            </p>
-            {state.mmd.interrupted.map((x) => (
-              <div className="status-row" key={x.id}>
-                <p title={x.temp}>
-                  {baseName(x.output)}
-                  <small className="row-detail">
-                    {x.presetName} · 已导出 {(x.size / 1048576).toFixed(1)} MiB
-                    · {new Date(x.at).toLocaleString()} 开始
-                  </small>
-                </p>
-                <div className="row-actions">
-                  <Button
-                    variant="primary"
-                    disabled={mmdBusy}
-                    onClick={() =>
-                      mmdCall("mmdRecover", { id: x.id }, "已补完中断的导出")
-                    }
-                  >
-                    补完
-                  </Button>
-                  <Button
-                    disabled={mmdBusy}
-                    onClick={() =>
-                      mmdCall("mmdDiscard", { id: x.id }, "已删除中断的导出")
-                    }
-                  >
-                    删除
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </section>
-        )}
-        <section
-          className="modal-section"
-          aria-label="插件"
-          aria-busy={mmdBusy}
-        >
-          <h3>插件</h3>
-          <div className="status-row">
-            <p className={state.mmd.plugin.broken ? "inline-error" : undefined}>
-              {!state.mmd.plugin.available
-                ? "这个版本没有附带 MMD 导出插件。"
-                : state.mmd.plugin.broken
-                  ? "插件需要修复：注册的插件文件已不存在，MMD 里会找不到“MMDEncoder”。点“修复插件”重新安装，然后重启 MMD。"
-                  : !state.mmd.plugin.installed
-                    ? "未安装。安装后在 MMD 的“AVI 输出”里选择视频编码“MMDEncoder”。"
-                    : state.mmd.plugin.upToDate
-                      ? "已安装，在 MMD 的“AVI 输出”里选择视频编码“MMDEncoder”。"
-                      : "已安装，有新版插件可以更新（MMD 重启后生效）。"}
-            </p>
-            <div className="row-actions">
-              {state.mmd.plugin.available &&
-                (!state.mmd.plugin.installed || !state.mmd.plugin.upToDate) && (
-                  <Button
-                    variant="primary"
-                    disabled={mmdBusy}
-                    onClick={() =>
-                      mmdCall("mmdInstall", undefined, "MMD 导出插件已安装")
-                    }
-                  >
-                    {state.mmd.plugin.broken
-                      ? "修复插件"
-                      : state.mmd.plugin.installed
-                        ? "更新插件"
-                        : "安装到 MMD"}
-                  </Button>
-                )}
-              {state.mmd.plugin.installed && (
-                <Button
-                  disabled={mmdBusy}
-                  onClick={() =>
-                    mmdCall("mmdUninstall", undefined, "MMD 导出插件已卸载")
-                  }
-                >
-                  卸载
-                </Button>
-              )}
-            </div>
-          </div>
-        </section>
-        <section className="modal-section" aria-label="导出设置">
-          <h3>导出设置</h3>
-          <Select
-            id="mmd-export-preset"
-            label="导出预设"
-            value={state.mmd.presetId}
-            disabled={mmdBusy}
-            options={[
-              { value: "", label: "未选择" },
-              ...presets.map((p) => {
-                const why = mmdUnsupported(p);
-                return {
-                  value: p.id,
-                  label: why ? `${p.name}（${why}）` : p.name,
-                  disabled: !!why,
-                };
-              }),
-            ]}
-            onChange={(presetId) => mmdCall("mmdExportSet", { presetId })}
-          />
-          <label className="check-card">
-            <input
-              type="checkbox"
-              checked={state.mmd.followMmd}
-              disabled={mmdBusy}
-              onChange={(e) =>
-                mmdCall("mmdExportSet", { followMmd: e.target.checked })
-              }
-            />
-            <span>
-              <strong>分辨率和帧率跟随 MMD</strong>
-              <small>使用 MMD“AVI 输出”的尺寸和帧率。</small>
-            </span>
-          </label>
-          <label className="check-card">
-            <input
-              type="checkbox"
-              checked={state.mmd.rangeSuffix !== false}
-              disabled={mmdBusy}
-              onChange={(e) =>
-                mmdCall("mmdExportSet", { rangeSuffix: e.target.checked })
-              }
-            />
-            <span>
-              <strong>文件名加 MMD 帧范围</strong>
-              <small>
-                例如 场景_0400-0600f.mp4；支持剪辑时按 MMD 帧号定位。
-              </small>
-            </span>
-          </label>
-          <div className="form-row">
-            {/* Overrides the preset's own alpha setting; the same choice as
-              in MMD's 詳細設定, where a change wins over this window. */}
-            <Select
-              id="mmd-mask-mode"
-              label="Alpha 遮罩"
-              value={state.mmd.maskMode || "off"}
-              disabled={mmdBusy}
-              hint="无损黑白遮罩：白色不透明，黑色透明。"
-              options={[
-                { value: "off", label: "不导出" },
-                { value: "with", label: "同时导出遮罩" },
-                { value: "only", label: "仅导出遮罩" },
-              ]}
-              onChange={(maskMode) => mmdCall("mmdExportSet", { maskMode })}
-            />
-            <Select
-              id="mmd-audio-fade"
-              label="音频淡入淡出"
-              value={String(state.mmd.audioFade)}
-              disabled={mmdBusy}
-              hint="仅淡化成片首尾。"
-              options={fadeOptions}
-              onChange={(v) =>
-                mmdCall("mmdExportSet", { audioFade: Number(v) })
-              }
-            />
-          </div>
-        </section>
-        <section className="modal-section" aria-label="测试与日志">
-          <h3>测试与日志</h3>
-          <div className="status-row">
-            <p
-              className={
-                state.mmd.error || state.mmd.test?.ok === false
-                  ? "inline-error"
-                  : undefined
-              }
-              role={state.mmd.error ? "alert" : "status"}
-            >
-              {state.mmd.error ||
-                (state.mmd.test
-                  ? state.mmd.test.message
-                  : state.mmd.lastExport
-                    ? state.mmd.lastExport.ok
-                      ? `上次导出：${baseName(state.mmd.lastExport.output || "")}${state.mmd.lastExport.audio === "wav" ? "（音频取自工程 WAV）" : state.mmd.lastExport.audio === "avi" ? "（含音频）" : "（无音频）"}${state.mmd.lastExport.mask ? "，含 Alpha 遮罩" : ""}`
-                      : `上次导出失败：${state.mmd.lastExport.error}`
-                    : "成片保存在 AVI 同目录，自动合成音频，完成后删除占位 AVI。")}
-            </p>
-            <div className="row-actions">
-              <Button
-                disabled={mmdBusy || !state.mmd.presetId || !!state.mmd.error}
-                onClick={() => mmdCall("mmdTest")}
-              >
-                {mmdBusy ? "处理中…" : "测试编码"}
-              </Button>
-              <Button
-                disabled={!state.mmd.lastExport?.output}
-                title={state.mmd.lastExport?.output}
-                onClick={() => action("mmdOpenLatest")}
-              >
-                <Folder size={15} />
-                打开最新导出
-              </Button>
-              <Button onClick={() => action("mmdOpenLog")}>
-                <FolderOpen size={15} />
-                打开导出日志
-              </Button>
-            </div>
-          </div>
-          {(() => {
-            // Where the last export's time went, measured by the plugin.
-            const e = state.mmd.lastExport;
-            const t = e?.ok ? e.timing : undefined;
-            if (!t || !(t.render > 0)) return null;
-            const s = (v: number) => `${v.toFixed(1)} 秒`;
-            const share = (100 * t.waited) / t.render;
-            const total = t.setup + t.render + t.encoderTail + (t.finish || 0);
-            return (
-              <p className="hint export-timing">
-                上次导出耗时 {s(total)}：准备 {s(t.setup)} · 渲染 {s(t.render)}
-                {e?.frames
-                  ? `（${(e.frames / t.render).toFixed(1)} fps）`
-                  : ""}{" "}
-                · 等待编码器 {s(t.waited)}（{share.toFixed(0)}%，单帧最长{" "}
-                {Math.round(t.longestWait * 1000)} 毫秒） · 编码收尾{" "}
-                {s(t.encoderTail)}
-                {t.finish !== undefined
-                  ? ` · 合成音频与整理 ${s(t.finish)}`
-                  : ""}
-                {share >= 10
-                  ? "。编码器跟不上 MMD 渲染，换更快的预设（如硬件编码）可缩短导出时间。"
-                  : "。编码没有拖慢 MMD，导出时间主要花在 MMD 渲染上。"}
-              </p>
-            );
-          })()}
-        </section>
-      </Modal>
+        mmd={state.mmd}
+        presets={presets}
+        busy={mmdBusy}
+        onCall={mmdCall}
+        action={action}
+      />
       <AboutDialog
         open={modal === "about"}
         onClose={() => setModal("")}
