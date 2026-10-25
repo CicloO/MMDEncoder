@@ -27,6 +27,7 @@ const { commit } = require("./commit.cjs");
 const { createSettingsStore } = require("./settings-store.cjs");
 const { createPreferences } = require("./preferences.cjs");
 const { createPresetOperations } = require("./presets.cjs");
+const { schema } = require("./settings-schema.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
   engineDir,
@@ -318,23 +319,6 @@ function createService({
         state.mmd.test = result;
       },
     });
-  }
-  function schema(p, full = false) {
-    if (!p || typeof p !== "object" || Array.isArray(p))
-      throw Error("设置必须是对象");
-    if (full && Object.keys(core.DEFAULTS).some((k) => !(k in p)))
-      throw Error("预设缺少必要字段");
-    for (const [k, v] of Object.entries(p)) {
-      if (
-        !(k in core.DEFAULTS) ||
-        typeof v !== typeof core.DEFAULTS[k] ||
-        (typeof v === "number" && !Number.isFinite(v))
-      )
-        throw Error("无效设置字段：" + k);
-      if (typeof v === "string" && v.length > 4096)
-        throw Error("设置文本过长：" + k);
-    }
-    return p;
   }
   try {
     const saved = settingsStore.read();
