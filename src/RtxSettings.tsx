@@ -4,19 +4,23 @@ import type { Settings, State } from "./types";
 // generation, and the local check RTX features need before encoding.
 export function RtxSettings({
   s,
-  state,
+  verification,
+  placebo: placeboAvailable,
+  canTest,
   set,
   patch,
   call,
 }: {
   s: Settings;
-  state: State;
+  verification: State["enhancements"];
+  placebo?: boolean;
+  canTest: boolean;
   set: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   patch: (p: Partial<Settings>) => void;
   call: (action: string, payload?: unknown) => Promise<any>;
 }) {
   const upscaler = s.vsr ? "vsr" : s.upscaler || "lanczos";
-  const placebo = state.engineInfo.libplacebo !== false;
+  const placebo = placeboAvailable !== false;
   const number = (
     key: "vsrScale" | "vsrStrength",
     label: string,
@@ -47,9 +51,9 @@ export function RtxSettings({
       "本机未检测到可用的 Vulkan，ArtCNN 无法运行；请更新显卡驱动后重新检测。",
   ].filter(Boolean) as string[];
   const message =
-    state.enhancements.message === "RTX 设置已更改，请重新验证本机设置"
+    verification.message === "RTX 设置已更改，请重新验证本机设置"
       ? "设置已更改，请重新验证。"
-      : state.enhancements.message;
+      : verification.message;
   return (
     <>
       <section className="settings-group" aria-labelledby="upscale-title">
@@ -205,17 +209,12 @@ export function RtxSettings({
           </p>
           <div className="rtx-check-row">
             <Button
-              disabled={
-                state.running ||
-                state.detecting ||
-                !!state.tools?.busy ||
-                state.enhancements.busy
-              }
+              disabled={!canTest}
               onClick={() =>
                 call("testEnhancements", { settings: s }).catch(() => {})
               }
             >
-              {state.enhancements.busy ? "正在验证…" : "验证本机 RTX 设置"}
+              {verification.busy ? "正在验证…" : "验证本机 RTX 设置"}
             </Button>
             {message && (
               <p className="hint" role="status">

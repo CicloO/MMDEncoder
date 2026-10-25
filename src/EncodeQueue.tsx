@@ -33,7 +33,9 @@ const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
 // 视频压制 page, left column: the queue, its pages, and the selected video.
 export function EncodeQueue({
-  state,
+  engines,
+  running,
+  toolsBusy,
   jobs,
   job,
   s,
@@ -57,7 +59,9 @@ export function EncodeQueue({
   setTab,
   setFallback,
 }: {
-  state: State;
+  engines: State["engines"];
+  running: boolean;
+  toolsBusy: boolean;
   jobs: Job[];
   job: Job | undefined;
   s: Settings;
@@ -183,7 +187,7 @@ export function EncodeQueue({
                               className="job-target"
                               title={`单独设置${own.presetName ? "：" + own.presetName : ""}`}
                             >
-                              → {targetLabel(own, state.engines)}
+                              → {targetLabel(own, engines)}
                             </span>
                           )
                         );
@@ -206,7 +210,7 @@ export function EncodeQueue({
                       variant="ghost icon"
                       aria-label={`为 ${j.name} 选择音频`}
                       title="替换音频"
-                      disabled={state.running}
+                      disabled={running}
                       onClick={() => pickAudio(j)}
                     >
                       <Music size={16} />
@@ -222,7 +226,7 @@ export function EncodeQueue({
                           ? "音频对齐：以视频自带的声音为参考检视、微调"
                           : "这个视频没有自带的声音，无法对齐"
                       }
-                      disabled={state.running || !j.meta?.audio}
+                      disabled={running || !j.meta?.audio}
                       onClick={() => setAlignId(j.id)}
                     >
                       <AudioLines size={16} />
@@ -233,7 +237,7 @@ export function EncodeQueue({
                       variant="ghost icon"
                       aria-label={`重新导出 ${j.name}`}
                       title="重新导出：放回队列，按当前设置压制，已有文件不覆盖"
-                      disabled={state.running}
+                      disabled={running}
                       onClick={() =>
                         action(
                           "requeue",
@@ -249,7 +253,7 @@ export function EncodeQueue({
                     variant="ghost icon"
                     aria-label={`移除 ${j.name}`}
                     title="从队列移除"
-                    disabled={j.status === "encoding" || state.running}
+                    disabled={j.status === "encoding" || running}
                     onClick={() => action("remove", { id: j.id })}
                   >
                     <X size={16} />
@@ -302,7 +306,7 @@ export function EncodeQueue({
               <Button
                 variant="ghost"
                 title="转换前 / 后的 ffprobe 参数"
-                disabled={!!state.tools?.busy}
+                disabled={toolsBusy}
                 onClick={async () => {
                   setDetails(null);
                   setModal("details");
@@ -339,7 +343,7 @@ export function EncodeQueue({
                 label="序列帧率"
                 value={String(job.sequence.fps)}
                 disabled={
-                  state.running ||
+                  running ||
                   ![
                     "ready",
                     "invalid",
@@ -379,7 +383,7 @@ export function EncodeQueue({
               </span>
               <Button
                 variant="ghost"
-                disabled={state.running || !job.meta?.audio}
+                disabled={running || !job.meta?.audio}
                 title={
                   job.meta?.audio
                     ? "以视频自带的声音为参考，检视、微调替换音频的对齐"
@@ -392,7 +396,7 @@ export function EncodeQueue({
               </Button>
               <Button
                 variant="ghost"
-                disabled={state.running}
+                disabled={running}
                 onClick={() => action("setAudio", { id: job.id, path: "" })}
               >
                 改回原音轨
@@ -421,7 +425,7 @@ export function EncodeQueue({
                 调整参数
               </Button>
               <Button
-                disabled={state.running}
+                disabled={running}
                 onClick={() => {
                   if (s)
                     persist(s)
@@ -434,10 +438,7 @@ export function EncodeQueue({
               {job.status === "failed" &&
                 !/磁盘|空间|权限|ENOENT|EACCES|ENOSPC/.test(job.error || "") &&
                 /nvenc|qsv|amf/.test(job.settings?.encoder || s.encoder) && (
-                  <Button
-                    disabled={state.running}
-                    onClick={() => setFallback(job)}
-                  >
+                  <Button disabled={running} onClick={() => setFallback(job)}>
                     改用软件编码重试
                   </Button>
                 )}

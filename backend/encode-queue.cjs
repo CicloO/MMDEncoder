@@ -7,7 +7,7 @@ const crypto = require("node:crypto");
 const core = require("./core.cjs");
 const { signature: enhancementSignature } = require("./enhancements.cjs");
 const sequence = require("./sequence.cjs");
-const { uiState } = require("./ui-state.cjs");
+const { createEncoder } = require("./encode-job.cjs");
 // Frame rate a PNG sequence starts with; it can be changed per sequence.
 const SEQUENCE_FPS = 30;
 const SEQUENCE_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120];
@@ -25,10 +25,40 @@ const nameSource = (job) =>
     : job.path;
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
-// ctx: the service's shared state and helpers (see createService). `stopped`
-// and `detectPromise` are read through ctx because other parts change them.
-function createEncodeQueue(ctx) {
-  const { state, emit, emitProgress, run, locate, probeMedia, hasSoxr } = ctx;
+// The service owns shared resources and queue state. Read them through narrow
+// accessors so other queues and detection remain visible without sharing State.
+function createEncodeQueue({
+  getJobs,
+  setJobs,
+  getSettings,
+  engineInfo,
+  engines,
+  verification,
+  isDetecting,
+  isRunning,
+  setRunning,
+  onNotice,
+  isStopped,
+  setStopped,
+  waitDetection,
+  toolsBusy,
+  trimExporting,
+  getDetectionLog,
+  getUiState,
+  appendEvidence,
+  run,
+  locate,
+  probeMedia,
+  hasSoxr,
+  emit,
+  emitProgress,
+  commit,
+  flushEvidence,
+  killActive,
+  probeLimit,
+  schema,
+  reorder,
+}) {
   // Presentation times (seconds, ascending) of about the first 120 frames.
   // Packet timestamps need no decoding (a 4K intermediate took seconds to
   // decode); packets come in decode order, so a few more are read and the
@@ -41,7 +71,7 @@ function createEncodeQueue(ctx) {
       JSON.parse(
         (
           await run(
-            state.engineInfo.ffprobe,
+            engineInfo().ffprobe,
             [
               "-v",
               "error",
@@ -96,7 +126,7 @@ function createEncodeQueue(ctx) {
           seq = await sequence.find(resolved, folders);
       } catch {}
       if (isDir && !seq) {
-        state.notice = "文件夹里没有 PNG 序列：" + path.basename(input);
+        onNotice("文件夹里没有 PNG 序列：" + path.basename(input));
         continue;
       }
       if (seq) {
@@ -113,7 +143,7 @@ function createEncodeQueue(ctx) {
         progress: 0,
         ...(seq ? { sequence: { ...seq, ...sequenceRate(SEQUENCE_FPS) } } : {}),
       };
-      state.jobs.push(job);
+      getJobs().push(job);
       added.push({ job, input, seq });
     }
     // All files are in the queue (in order) before any is read; then a few
@@ -123,18 +153,15 @@ function createEncodeQueue(ctx) {
     emit();
     await Promise.all(
       added.map((a) =>
-        ctx.probeLimit(() =>
-          state.jobs.includes(a.job) ? probeJob(a) : undefined,
-        ),
+        probeLimit(() => (getJobs().includes(a.job) ? probeJob(a) : undefined)),
       ),
     );
-    return uiState(state);
+    return getUiState();
   }
   async function probeJob({ job, input, seq }) {
     const resolved = job.path;
     try {
-      if (!state.engineInfo.ffprobe)
-        throw Error("未找到 ffprobe，无法读取素材");
+      if (!engineInfo().ffprobe) throw Error("未找到 ffprobe，无法读取素材");
       if (/\.png$/i.test(resolved) && !seq)
         throw Error(
           "只有一张 PNG，不是图片序列（需要 name_0001.png 这样带连续编号的文件）",
@@ -150,7 +177,7 @@ function createEncodeQueue(ctx) {
         // Usable now; the total size (one stat per frame) follows, outside
         // the import limit so other files are not held up.
         void sequence
-          .size(seq, () => state.jobs.includes(job))
+          .size(seq, () => getJobs().includes(job))
           .then((total) => {
             if (total === undefined || !job.sequence || !job.meta) return;
             job.sequence.size = total;
@@ -162,7 +189,7 @@ function createEncodeQueue(ctx) {
       const stat = fs.statSync(input);
       if (!stat.isFile()) throw Error("输入不是文件");
       const r = await run(
-        state.engineInfo.ffprobe,
+        engineInfo().ffprobe,
         ["-v", "error", "-show_streams", "-show_format", "-of", "json", input],
         { timeout: 30000 },
       );
@@ -199,7 +226,7 @@ function createEncodeQueue(ctx) {
   async function sequenceMeta(job) {
     const q = job.sequence;
     const r = await run(
-      state.engineInfo.ffprobe,
+      engineInfo().ffprobe,
       [
         "-v",
         "error",
@@ -232,7 +259,7 @@ function createEncodeQueue(ctx) {
     };
   }
   function requireJob(id) {
-    const j = state.jobs.find((j) => j.id === id);
+    const j = getJobs().find((j) => j.id === id);
     if (!j) throw Error("未找到此任务");
     return j;
   }
@@ -240,34 +267,30 @@ function createEncodeQueue(ctx) {
   // (job.ownSettings), otherwise the page's.
   function settingsFor(job) {
     return job.ownSettings
-      ? { ...state.settings, ...job.ownSettings }
-      : state.settings;
+      ? { ...getSettings(), ...job.ownSettings }
+      : getSettings();
   }
   function preview(job, s = settingsFor(job)) {
     const errors = core.validate(s, job.meta);
     if (
       (s.vsr || s.vfg) &&
-      (!state.enhancements.verified ||
-        state.enhancements.signature !== enhancementSignature(s))
+      (!verification().verified ||
+        verification().signature !== enhancementSignature(s))
     )
       errors.push("RTX 设置尚未通过本机验证，请在“超分补帧”页验证所选设置");
     if (!job.meta) errors.push("素材信息尚未读取成功");
-    if (!state.engineInfo.ffmpeg) errors.push("未找到 FFmpeg");
+    if (!engineInfo().ffmpeg) errors.push("未找到 FFmpeg");
     // Mask only encodes with FFmpeg's lossless x264 / VP9, not the chosen encoder.
     const maskOnly = s.alphaMode === "mask";
-    if (
-      !maskOnly &&
-      s.encoder.startsWith("nvencc:") &&
-      !state.engineInfo.nvencc
-    )
+    if (!maskOnly && s.encoder.startsWith("nvencc:") && !engineInfo().nvencc)
       errors.push("未找到 NVEncC");
     if (
       !maskOnly &&
-      !state.detecting &&
-      !state.engines.some((e) => e.id === s.encoder)
+      !isDetecting() &&
+      !engines().some((e) => e.id === s.encoder)
     )
       errors.push("编码器当前不可用，请重新检测或选择其他编码器");
-    const available = state.engines.find((e) => e.id === s.encoder);
+    const available = engines().find((e) => e.id === s.encoder);
     if (!maskOnly && available && !available.depths.includes(s.bitDepth))
       errors.push("此编码器未通过所选位深的实测");
     if (
@@ -284,12 +307,12 @@ function createEncodeQueue(ctx) {
       paths = core.outputPaths(
         nameSource(job),
         s,
-        state.jobs.indexOf(job) + 1,
+        getJobs().indexOf(job) + 1,
         fs.existsSync,
       );
       if (job.meta && errors.length === 0)
         commands = core.singlePass(
-          core.buildCommands(job, s, state.engineInfo, paths),
+          core.buildCommands(job, s, engineInfo(), paths),
         );
     } catch (e) {
       errors.push(e.message);
@@ -315,186 +338,24 @@ function createEncodeQueue(ctx) {
       errors: [...new Set(errors)],
     };
   }
-  function append(job, text) {
-    // The last 200 KB in memory (the whole log goes to disk): cut back only
-    // past 256 KB, so a long encode does not copy 200 KB on every line.
-    job.log = (job.log || "") + text;
-    if (job.log.length > 256000) job.log = job.log.slice(-200000);
-    const pieces = ctx.pendingLogs.get(job.id) || [];
-    pieces.push(text);
-    ctx.pendingLogs.set(job.id, pieces);
-  }
-  // gpuMask: the Alpha mask may go to NVENC (see core.maskOnNvenc); a run
-  // where that fails is done again once with the mask on the CPU.
-  async function encode(job, gpuMask = true) {
-    const s = job.settings;
-    const maskOnly =
-      job.status === "partial" && job.output && fs.existsSync(job.output);
-    job.status = "encoding";
-    job.error = undefined;
-    job.progress = 0;
-    job.startedAt = Date.now();
-    job.stage = maskOnly ? "重试 Alpha 遮罩" : "准备";
-    emit();
-    let tempDir,
-      gpuMaskUsed = false,
-      again = false;
-    try {
-      const errors = core.validate(s, job.meta);
-      if (
-        (s.vsr || s.vfg) &&
-        (!state.enhancements.verified ||
-          state.enhancements.signature !== enhancementSignature(s))
-      )
-        errors.push("RTX 设置未通过本机验证");
-      // Selected but not applicable here (too small an enlargement, mask only):
-      // say so instead of silently scaling another way.
-      const skipped = core.artcnnSkipped(s, job.meta);
-      if (skipped) append(job, "ArtCNN：" + skipped + "\n");
-      if (core.usesArtcnn(s, job.meta) && !state.engineInfo.libplacebo)
-        errors.push(
-          "本机无法运行 ArtCNN 放大（FFmpeg 需要支持 Vulkan 的显卡和驱动），请改用 Lanczos",
-        );
-      if (errors.length) throw Error(errors.join("；"));
-      const engine = state.engines.find((e) => e.id === s.encoder);
-      if (
-        s.alphaMode !== "mask" &&
-        (!engine || !engine.depths.includes(s.bitDepth))
-      )
-        throw Error("所选编码器或位深未通过本机试编码，请调整参数");
-      if (
-        s.encoder === "nvencc:hevc" &&
-        s.alphaMode === "preserve" &&
-        !engine?.alpha
-      )
-        throw Error("本机未通过 HEVC Alpha 试编码，已停止以避免丢失透明通道");
-      let paths = maskOnly
-        ? { output: job.output, maskOutput: job.maskOutput }
-        : core.outputPaths(
-            nameSource(job),
-            s,
-            state.jobs.indexOf(job) + 1,
-            fs.existsSync,
-          );
-      const dir = path.dirname(paths.output);
-      fs.mkdirSync(dir, { recursive: true });
-      fs.accessSync(dir, fs.constants.W_OK);
-      tempDir = fs.mkdtempSync(path.join(dir, ".mmd-"));
-      const temps = {
-        output: path.join(tempDir, "video." + s.container),
-        maskOutput: s.alphaMask
-          ? path.join(tempDir, "mask." + s.container)
-          : undefined,
-      };
-      let commands = core.buildCommands(
-        job,
-        s,
-        gpuMask
-          ? state.engineInfo
-          : { ...state.engineInfo, nvencLossless: false },
-        temps,
-      );
-      gpuMaskUsed = gpuMask && JSON.stringify(commands).includes('"lossless"');
-      // Colour and mask in one pass; redoing just the mask keeps its own run.
-      commands = maskOnly
-        ? commands.filter((c) => c.mask)
-        : core.singlePass(commands);
-      job.output = maskOnly ? job.output : undefined;
-      job.maskOutput = paths.maskOutput;
-      for (let i = 0; i < commands.length; i++) {
-        if (ctx.stopped) throw Error("已取消");
-        const c = commands[i];
-        job.stage = c.stage;
-        append(job, "\n" + core.commandText([c]) + "\n");
-        emit();
-        let progressBuffer = "";
-        await (c.pipeFrom ? run.piped : (c, o) => run(c.exe, c.args, o))(c, {
-          encoding: true,
-          onData: (t, stream) => {
-            append(job, t);
-            progressBuffer = (progressBuffer + t).slice(-8192);
-            const matches = [...progressBuffer.matchAll(/out_time_us=(\d+)/g)];
-            if (matches.length && job.meta.duration) {
-              const seconds = Number(matches.at(-1)[1]) / 1000000;
-              job.progress = Math.min(
-                99,
-                Math.max(
-                  job.progress,
-                  (100 * (i + Math.min(1, seconds / job.meta.duration))) /
-                    commands.length,
-                ),
-              );
-            } else if (c.exe === state.engineInfo.nvencc) {
-              const m = t.match(/(\d+(?:\.\d+)?)%/);
-              if (m)
-                job.progress = Math.min(
-                  99,
-                  (100 * (i + Number(m[1]) / 100)) / commands.length,
-                );
-            }
-            job.elapsed = (Date.now() - job.startedAt) / 1000;
-            emitProgress();
-          },
-        });
-        if (c.output === temps.output) {
-          try {
-            await ctx.commit(temps.output, paths.output);
-          } catch (e) {
-            if (e.code !== "EEXIST") throw e;
-            paths = core.outputPaths(
-              nameSource(job),
-              s,
-              state.jobs.indexOf(job) + 1,
-              fs.existsSync,
-            );
-            await ctx.commit(temps.output, paths.output);
-            job.maskOutput = paths.maskOutput;
-          }
-          job.output = paths.output;
-        }
-        if (c.mask) {
-          await ctx.commit(temps.maskOutput, paths.maskOutput);
-          job.maskOutput = paths.maskOutput;
-        }
-      }
-      job.status = "done";
-      job.progress = 100;
-      job.stage = "完成";
-    } catch (e) {
-      append(job, "\n" + e.message + "\n");
-      // The GPU mask failed (an encoder session limit, an older GPU…) before
-      // anything was kept: once more with the mask on the CPU.
-      if (gpuMaskUsed && !ctx.stopped && !job.output) {
-        append(job, "\n显卡无损遮罩未能完成，改用 CPU（x264）重新压制。\n");
-        again = true;
-        return;
-      }
-      job.status =
-        job.output && fs.existsSync(job.output)
-          ? "partial"
-          : ctx.stopped
-            ? "cancelled"
-            : "failed";
-      job.error = ctx.stopped ? "任务已取消" : e.message;
-      job.stage =
-        job.status === "partial" ? "主视频已完成，遮罩未完成" : "已停止";
-    } finally {
-      if (tempDir)
-        try {
-          fs.rmSync(tempDir, { recursive: true, force: true });
-        } catch (e) {
-          append(job, "临时文件清理失败：" + e.message);
-        }
-      job.elapsed = (Date.now() - job.startedAt) / 1000;
-      emit();
-      if (again) await encode(job, false);
-    }
-  }
+  const encode = createEncoder({
+    engineInfo,
+    engines,
+    verification,
+    isStopped,
+    jobIndex: (job) => getJobs().indexOf(job) + 1,
+    nameSource,
+    appendEvidence,
+    run,
+    commit,
+    emit,
+    emitProgress,
+  });
   async function queue(jobs) {
-    if (ctx.tools.state.busy || state.enhancements.busy)
+    if (toolsBusy() || verification().busy)
       throw Error("工具管理或 RTX 验证中，请稍后处理队列");
-    if (state.running) throw Error("队列正在运行");
-    if (ctx.trimExporting()) throw Error("无损剪辑正在导出，请等它结束");
+    if (isRunning()) throw Error("队列正在运行");
+    if (trimExporting()) throw Error("无损剪辑正在导出，请等它结束");
     // Validate the frozen per-job settings first; a bad alpha source must not
     // prevent valid items from continuing, or be mislabeled as an engine fault.
     jobs = jobs.filter((j) => {
@@ -506,36 +367,36 @@ function createEncodeQueue(ctx) {
       return false;
     });
     if (!jobs.length) {
-      state.notice = "没有可编码的待处理任务";
+      onNotice("没有可编码的待处理任务");
       emit();
       return;
     }
-    state.running = true;
-    ctx.stopped = false;
+    setRunning(true);
+    setStopped(false);
     emit();
     (async () => {
-      await ctx.detectPromise;
-      state.engineInfo.soxr = await hasSoxr();
+      await waitDetection();
+      engineInfo().soxr = await hasSoxr();
       // Take jobs in the queue's current order so drag-sorting during a run applies.
       const pending = new Set(jobs);
       while (pending.size) {
         const job =
-          state.jobs.find((j) => pending.has(j)) ||
+          getJobs().find((j) => pending.has(j)) ||
           pending.values().next().value;
         pending.delete(job);
         // Removed from the queue while waiting: withdrawn, not run.
-        if (!state.jobs.includes(job)) continue;
-        if (ctx.stopped) {
+        if (!getJobs().includes(job)) continue;
+        if (isStopped()) {
           if (job.status !== "partial") job.status = "cancelled";
           continue;
         }
         await encode(job);
       }
     })()
-      .catch((e) => (state.notice = e.message))
+      .catch((e) => onNotice(e.message))
       .finally(() => {
-        state.running = false;
-        ctx.flushEvidence();
+        setRunning(false);
+        flushEvidence();
         emit();
       });
   }
@@ -543,15 +404,15 @@ function createEncodeQueue(ctx) {
   const actions = {
     remove(payload) {
       const job = requireJob(payload.id);
-      if (job.status === "encoding" || (state.running && job.settings))
+      if (job.status === "encoding" || (isRunning() && job.settings))
         throw Error("已提交任务不能在运行中移除");
-      state.jobs = state.jobs.filter((j) => j.id !== job.id);
+      setJobs(getJobs().filter((j) => j.id !== job.id));
     },
     async setAudio(payload) {
       // Replace one video's audio with another file (empty path: use the
       // video's own audio again), as on the media page's merge.
       const job = requireJob(payload?.id);
-      if (job.status === "encoding" || (state.running && job.settings))
+      if (job.status === "encoding" || (isRunning() && job.settings))
         throw Error("已提交任务不能更换音频");
       const file = payload?.path || "";
       if (file && (!path.isAbsolute(file) || !fs.statSync(file).isFile()))
@@ -574,7 +435,7 @@ function createEncodeQueue(ctx) {
     // > 0 its start is cut, < 0 silence first); null clears it.
     setAudioOffset(payload) {
       const job = requireJob(payload?.id);
-      if (job.status === "encoding" || (state.running && job.settings))
+      if (job.status === "encoding" || (isRunning() && job.settings))
         throw Error("已提交任务不能更改对齐");
       const offset = payload?.offset;
       if (offset === null || offset === undefined) {
@@ -589,7 +450,7 @@ function createEncodeQueue(ctx) {
     requeue(payload) {
       // Put a finished or cancelled item back in the queue; the next start
       // freezes the current settings, and existing outputs get a numbered name.
-      if (state.running) throw Error("请等待当前队列结束后再重新导出");
+      if (isRunning()) throw Error("请等待当前队列结束后再重新导出");
       const job = requireJob(payload.id);
       if (!["done", "cancelled"].includes(job.status))
         throw Error("只有已完成或已取消的任务可以重新导出");
@@ -608,27 +469,27 @@ function createEncodeQueue(ctx) {
       job.progress = 0;
     },
     clearCompleted() {
-      state.jobs = state.jobs.filter(
-        (j) => !["done", "cancelled"].includes(j.status),
+      setJobs(
+        getJobs().filter((j) => !["done", "cancelled"].includes(j.status)),
       );
     },
     async start() {
-      if (state.enhancements.busy) throw Error("RTX 验证中，请稍后开始编码");
-      if (ctx.tools.state.busy) throw Error("工具安装中，请稍后开始编码");
+      if (verification().busy) throw Error("RTX 验证中，请稍后开始编码");
+      if (toolsBusy()) throw Error("工具安装中，请稍后开始编码");
       await locate();
-      if (state.detecting) await ctx.detectPromise;
+      if (isDetecting()) await waitDetection();
       await queue(
-        state.jobs.filter(
+        getJobs().filter(
           (j) => j.status === "ready" || (j.status === "invalid" && j.meta),
         ),
       );
     },
     cancel() {
-      ctx.stopped = true;
-      ctx.killActive();
+      setStopped(true);
+      killActive();
     },
     async retry(payload) {
-      if (state.running) throw Error("请等待当前队列停止");
+      if (isRunning()) throw Error("请等待当前队列停止");
       const j = requireJob(payload.id);
       if (!["failed", "partial", "cancelled", "invalid"].includes(j.status))
         throw Error("此任务不需要重试");
@@ -657,7 +518,7 @@ function createEncodeQueue(ctx) {
         s.rateControl = "quality";
         s.lookahead = 0;
         s.lookaheadLevel = 0;
-        state.notice = "软件重试使用 CRF 18；CQ 与 CRF 数值不等效";
+        onNotice("软件重试使用 CRF 18；CQ 与 CRF 数值不等效");
       } else if (j.status !== "partial") s = clone(settingsFor(j));
       const errors = core.validate(s, j.meta);
       if (errors.length) throw Error(errors.join("；"));
@@ -670,17 +531,17 @@ function createEncodeQueue(ctx) {
     // the video's own settings.
     setJobSettings(payload) {
       const job = requireJob(payload?.id);
-      if (job.status === "encoding" || (state.running && job.settings))
+      if (job.status === "encoding" || (isRunning() && job.settings))
         throw Error("已提交任务不能更改设置");
       if (payload.own === false) delete job.ownSettings;
-      else if (payload.own === true) job.ownSettings = clone(state.settings);
+      else if (payload.own === true) job.ownSettings = clone(getSettings());
       if (payload.patch) {
         if (!job.ownSettings) throw Error("这个视频没有开启单独设置");
-        job.ownSettings = { ...job.ownSettings, ...ctx.schema(payload.patch) };
+        job.ownSettings = { ...job.ownSettings, ...schema(payload.patch) };
       }
     },
     reorderJobs(payload) {
-      state.jobs = ctx.reorder(state.jobs, payload.ids);
+      setJobs(reorder(getJobs(), payload.ids));
     },
     setSequenceFps(payload) {
       const job = requireJob(payload?.id);
@@ -705,15 +566,13 @@ function createEncodeQueue(ctx) {
   // while it reads each file and returns the state when done).
   const queries = {
     add(payload) {
-      if (state.enhancements.busy) throw Error("RTX 验证中，请稍后添加素材");
-      if (ctx.tools.state.busy) throw Error("工具安装中，请稍后添加素材");
+      if (verification().busy) throw Error("RTX 验证中，请稍后添加素材");
+      if (toolsBusy()) throw Error("工具安装中，请稍后添加素材");
       return add(payload.paths);
     },
     preview: (payload) => preview(requireJob(payload.id)),
     logs: (payload) =>
-      payload.id
-        ? requireJob(payload.id).log || "暂无日志"
-        : state.detectionLog,
+      payload.id ? requireJob(payload.id).log || "暂无日志" : getDetectionLog(),
   };
   return { actions, queries, requireJob };
 }

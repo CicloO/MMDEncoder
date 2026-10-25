@@ -5,10 +5,7 @@ const os = require("node:os");
 const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const core = require("./core.cjs");
-const {
-  signature: enhancementSignature,
-  probe: probeEnhancements,
-} = require("./enhancements.cjs");
+const { probe: probeEnhancements } = require("./enhancements.cjs");
 const media = require("./media.cjs");
 const trim = require("./trim.cjs");
 const { createTools, DEFAULT_ROOT } = require("./tools.cjs");
@@ -27,6 +24,11 @@ const { commit } = require("./commit.cjs");
 const { createSettingsStore } = require("./settings-store.cjs");
 const { createPreferences } = require("./preferences.cjs");
 const { createPresetOperations } = require("./presets.cjs");
+const {
+  testEnhancements,
+  invalidateSettings,
+  invalidateTools,
+} = require("./rtx-check.cjs");
 const { schema } = require("./settings-schema.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
@@ -712,7 +714,42 @@ function createService({
     killActive: () => active?.kill(),
   };
   const mediaQueue = createMediaQueue(ctx);
-  const encodeQueue = createEncodeQueue(ctx);
+  const encodeQueue = createEncodeQueue({
+    getJobs: () => state.jobs,
+    setJobs: (jobs) => (state.jobs = jobs),
+    getSettings: () => state.settings,
+    engineInfo: () => state.engineInfo,
+    engines: () => state.engines,
+    verification: () => state.enhancements,
+    isDetecting: () => state.detecting,
+    isRunning: () => state.running,
+    setRunning: (value) => (state.running = value),
+    onNotice: (message) => (state.notice = message),
+    isStopped: () => stopped,
+    setStopped: (value) => (stopped = value),
+    waitDetection: () => detectPromise,
+    toolsBusy: () => tools.state.busy,
+    trimExporting: () => state.trim.running,
+    getDetectionLog: () => state.detectionLog,
+    getUiState: () => uiState(state),
+    appendEvidence: (id, text) => {
+      const pieces = pendingLogs.get(id) || [];
+      pieces.push(text);
+      pendingLogs.set(id, pieces);
+    },
+    run,
+    locate,
+    probeMedia,
+    hasSoxr,
+    emit,
+    emitProgress,
+    commit,
+    flushEvidence,
+    killActive: ctx.killActive,
+    probeLimit: ctx.probeLimit,
+    schema,
+    reorder,
+  });
   const alignService = createAlignService({
     engineInfo: () => state.engineInfo,
     locate,
@@ -807,29 +844,17 @@ function createService({
         if (isBusy()) throw Error("请等待当前任务结束");
         const s = { ...state.settings, ...schema(payload.settings || {}) };
         await locate();
-        state.enhancements = {
-          busy: true,
-          signature: enhancementSignature(s),
-          verified: false,
-          message: "正在用所选设置执行 RTX 试编码…",
-        };
-        emit();
-        try {
-          state.detectionLog +=
-            "\n" + (await probeEnhancements(s, state.engineInfo, run));
-          state.enhancements.verified = true;
-          state.enhancements.message = "所选 RTX 设置已通过本机试编码";
-        } catch (e) {
-          state.enhancements.message =
-            "RTX 验证失败：" +
-            e.message +
-            "。请检查驱动、NVIDIA VFX SDK 运行库与模型";
-          state.detectionLog += "\n" + state.enhancements.message;
-          throw e;
-        } finally {
-          state.enhancements.busy = false;
-          emit();
-        }
+        await testEnhancements({
+          settings: s,
+          check: async () => {
+            state.detectionLog +=
+              "\n" + (await probeEnhancements(s, state.engineInfo, run));
+          },
+          onStart: (result) => (state.enhancements = result),
+          onPatch: (patch) => Object.assign(state.enhancements, patch),
+          onLog: (text) => (state.detectionLog += text),
+          emit,
+        });
         break;
       }
       case "compatibility":
@@ -845,9 +870,7 @@ function createService({
           await tools.run(action === "installTools");
         } finally {
           if (action === "installTools") {
-            state.enhancements.verified = false;
-            state.enhancements.signature = "";
-            state.enhancements.message = "工具已重新检查，请重新验证 RTX 设置";
+            invalidateTools(state.enhancements);
             locatePromise = null;
             await detect({ force: true });
           }
@@ -881,13 +904,7 @@ function createService({
       case "settings":
         schema(payload.patch);
         state.settings = { ...state.settings, ...payload.patch };
-        if (
-          state.enhancements.signature !== enhancementSignature(state.settings)
-        ) {
-          state.enhancements.verified = false;
-          if (state.settings.vsr || state.settings.vfg)
-            state.enhancements.message = "RTX 设置已更改，请重新验证本机设置";
-        }
+        invalidateSettings(state.enhancements, state.settings);
         persist();
         break;
       case "savePreset":
