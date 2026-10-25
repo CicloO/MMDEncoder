@@ -59,7 +59,9 @@ test("NVEncC presets: MMD's frames go through FFmpeg to NVEncC, then into the co
     assert.ok(p.args[0].endsWith("mmd-pipe.cjs"));
     assert.equal(p.env.ELECTRON_RUN_AS_NODE, "1");
     const job = JSON.parse(p.env.MMD_PIPE_JOB);
-    const [encode, mux] = job.steps;
+    assert.equal(job.steps.length, 1);
+    const [encode] = job.steps;
+    const mux = encode.pipeTo;
     assert.equal(encode.exe, engines.nvencc);
     const from = encode.pipeFrom.args;
     assert.equal(encode.pipeFrom.exe, engines.ffmpeg);
@@ -72,11 +74,16 @@ test("NVEncC presets: MMD's frames go through FFmpeg to NVEncC, then into the co
       );
       assert.ok(p.maskOutput);
     } else assert.match(from[from.indexOf("-vf") + 1], /^vflip,/);
-    // The container step reads only NVEncC's file: no pipe, no progress.
+    // The container reads the encoded pipe; finish adds sound later.
     assert.equal(mux.exe, engines.ffmpeg);
     assert.ok(!mux.args.includes("pipe:0") && !mux.args.includes("-progress"));
     assert.equal(mux.args.at(-1), p.temp);
-    assert.equal(job.temporary.length, 1);
+    assert.deepEqual(job.outputs, [
+      p.temp,
+      ...(p.maskTemp ? [p.maskTemp] : []),
+    ]);
+    assert.equal(job.temporary, undefined);
+    assert.equal(mux.args[mux.args.indexOf("-i") + 1], "-");
   }
 });
 

@@ -14,12 +14,10 @@ function nvenccCommands({
   colors,
   tag,
 }) {
-  const result = [];
   // FFmpeg applies the filters and hands NVEncC raw frames through a
   // pipe (NUT keeps each frame's time and the alpha plane), so no
   // intermediate file is written. Audio is taken from the source when
   // the result is packaged.
-  const encoded = output + ".nvenc.mkv";
   const prepare = {
     exe: ffmpeg,
     args: [
@@ -36,9 +34,6 @@ function nvenccCommands({
       ...colors,
       "-fps_mode",
       "passthrough",
-      // stdout carries the frames; progress goes with the log.
-      "-progress",
-      "pipe:2",
       "-nostats",
       "-f",
       "nut",
@@ -52,7 +47,11 @@ function nvenccCommands({
     "-i",
     "-",
     "-o",
-    encoded,
+    "-",
+    // Streaming Matroska retains the old MKV timestamps. NVEncC's NUT
+    // muxer shifts the first PTS by two frames with B-frames (live probe).
+    "--output-format",
+    "matroska",
     "--codec",
     s.encoder.split(":")[1],
     "--output-depth",
@@ -105,38 +104,42 @@ function nvenccCommands({
   }
   if (s.gop >= 0) a.push("--gop-len", String(s.gop));
   if (s.bframes >= 0) a.push("--bframes", String(s.bframes));
-  result.push({
-    exe: nvencc,
-    args: a,
-    pipeFrom: prepare,
-    stage: stage("nvencc_encoding"),
-    temporary: encoded,
-  });
-  result.push({
-    exe: ffmpeg,
-    args: [
-      "-hide_banner",
-      "-nostdin",
-      "-n",
-      "-i",
-      encoded,
-      ...audioSource,
-      "-map",
-      "0:v:0",
-      "-c:v",
-      "copy",
-      // The source's (or replacement) audio, encoded as set (input 1).
-      ...audio.map((x) => (x === "0:a:0?" ? "1:a:0?" : x)),
-      ...colors,
-      "-metadata",
-      "comment=" + tag,
-      "-progress",
-      "pipe:1",
+  return [
+    {
+      exe: nvencc,
+      args: a,
+      pipeFrom: prepare,
+      stage: stage("nvencc_encoding_muxing"),
+      pipeTo: {
+        exe: ffmpeg,
+        args: [
+          "-hide_banner",
+          "-nostdin",
+          "-n",
+          "-f",
+          "matroska",
+          "-i",
+          "-",
+          ...audioSource,
+          "-map",
+          "0:v:0",
+          "-c:v",
+          "copy",
+          // The source's (or replacement) audio, encoded as set (input 1).
+          ...audio.map((x) => (x === "0:a:0?" ? "1:a:0?" : x)),
+          ...colors,
+          "-metadata",
+          "comment=" + tag,
+          ...(["mp4", "mov"].includes(s.container)
+            ? ["-movflags", "+faststart"]
+            : []),
+          "-progress",
+          "pipe:1",
+          output,
+        ],
+      },
       output,
-    ],
-    stage: stage("muxing"),
-    output,
-  });
-  return result;
+    },
+  ];
 }
 module.exports = { nvenccCommands };

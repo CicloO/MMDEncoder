@@ -123,6 +123,9 @@ function createEncoder({
           encoding: true,
           onData: (t, stream) => {
             append(job, t);
+            // A three-stage chain reports progress only on the muxer's
+            // stdout; upstream diagnostics must not advance its timeline.
+            if (c.pipeTo && stream !== "out") return;
             progressBuffer = (progressBuffer + t).slice(-8192);
             const matches = [...progressBuffer.matchAll(/out_time_us=(\d+)/g)];
             if (matches.length && job.meta.duration) {

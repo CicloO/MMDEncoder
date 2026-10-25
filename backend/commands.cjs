@@ -227,8 +227,9 @@ function singlePass(commands) {
               ...c.pipeFrom,
               args: joinMask(c.pipeFrom.args, mask.args),
             },
-            stage: stage("nvencc_encoding_with_mask"),
+            stage: stage("nvencc_encoding_muxing_with_mask"),
             mask: true,
+            maskOutput: mask.output,
           }
         : c,
     );

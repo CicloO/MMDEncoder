@@ -52,7 +52,7 @@ test("replacement audio: NVEncC packaging takes it as input 1, cut to the video"
     { ffmpeg: "ff", nvencc: "nv" },
     { output: "C:/o.mp4" },
   );
-  const pack = cmds.at(-1).args;
+  const pack = cmds[0].pipeTo.args;
   assert.deepEqual(pack.slice(pack.indexOf("-t"), pack.indexOf("-t") + 4), [
     "-t",
     "4.000000",
@@ -72,7 +72,7 @@ test("replacement audio: NVEncC packaging takes it as input 1, cut to the video"
     { ffmpeg: "ff", nvencc: "nv" },
     { output: "C:/o.mp4" },
   );
-  assert.ok(plain.at(-1).args.includes("1:a:0?"));
+  assert.ok(plain[0].pipeTo.args.includes("1:a:0?"));
 });
 
 test(

@@ -64,47 +64,84 @@ function createRunner({ isDisposed, children, getActive, setActive }) {
       child.on("close", (code) => done(null, code));
     });
   }
-  // A command fed by another program's output (FFmpeg -> NVEncC). Fails if
-  // either side fails: a writer that stops early would otherwise look like
-  // a short but complete video to the reader.
-  function runPiped(c, options) {
+  // Start the whole chain concurrently. Only the last stdout is text;
+  // intermediate stdout is binary and is consumed by the next process.
+  async function runPiped(c, options = {}) {
     if (isDisposed()) return Promise.reject(Error("应用已关闭"));
-    const [source, destination] = commandProcesses(c);
-    const writer = spawn(source.exe, source.args, {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      shell: false,
-    });
-    children.add(writer);
-    let stderr = "",
-      failure = null;
-    writer.stderr.on("data", (b) => {
+    const processes = commandProcesses(c),
+      group = [],
+      closed = [];
+    let stdout = "",
+      stderr = "",
+      failure,
+      timer;
+    const stop = (error) => {
+      failure ||= error;
+      for (const child of group) {
+        if (child.exitCode === null && child.signalCode === null) child.kill();
+      }
+    };
+    const controller = { kill: () => stop(Error("编码已取消")) };
+    if (options.encoding) setActive(controller);
+    const data = (stream, b) => {
       const s = b.toString();
-      stderr = (stderr + s).slice(-64 * 1024);
-      options.onData?.(s, "err");
-    });
-    writer.on("error", (e) => (failure = e));
-    const written = new Promise((resolve) =>
-      writer.on("close", (code) => {
-        children.delete(writer);
-        resolve(code);
-      }),
-    );
-    const read = run(destination.exe, destination.args, {
-      ...options,
-      stdin: writer.stdout,
-    });
-    read.catch(() => writer.kill());
-    return Promise.allSettled([read, written]).then(([r, code]) => {
-      if (r.status === "rejected") throw r.reason;
-      if (failure || code.value !== 0)
-        throw Error(
-          failure?.message ||
-            stderr.trim().slice(-3000) ||
-            "预处理退出：" + code.value,
+      if (stream === "out") stdout = (stdout + s).slice(-1024 * 1024);
+      else stderr = (stderr + s).slice(-1024 * 1024);
+      options.onData?.(s, stream);
+    };
+    try {
+      for (let i = 0; i < processes.length; i++) {
+        const p = processes[i];
+        const child = spawn(p.exe, p.args, {
+          windowsHide: true,
+          stdio: [i ? "pipe" : options.stdin || "ignore", "pipe", "pipe"],
+          shell: false,
+        });
+        group.push(child);
+        children.add(child);
+        closed.push(
+          new Promise((resolve) =>
+            child.once("close", () => {
+              children.delete(child);
+              resolve();
+            }),
+          ),
         );
-      return r.value;
-    });
+        child.on("error", (e) => stop(e));
+        child.on("exit", (code, signal) => {
+          if (code !== 0)
+            stop(
+              Object.assign(Error("管道进程退出：" + (code ?? signal)), {
+                code,
+              }),
+            );
+        });
+        child.stderr.on("data", (b) => data("err", b));
+        if (i) {
+          child.stdin.on("error", (e) => stop(e));
+          group[i - 1].stdout.pipe(child.stdin);
+        }
+      }
+      group.at(-1).stdout.on("data", (b) => data("out", b));
+      if (options.timeout)
+        timer = setTimeout(() => stop(Error("引擎运行超时")), options.timeout);
+    } catch (e) {
+      stop(e);
+    }
+    await Promise.all(closed);
+    clearTimeout(timer);
+    if (getActive() === controller) setActive(null);
+    if (failure) {
+      const error = Error(stderr.trim().slice(-3000) || failure.message);
+      Object.assign(error, {
+        stdout,
+        stderr,
+        code: failure.code,
+        systemCode: failure.code,
+      });
+      throw error;
+    }
+    return { stdout, stderr };
   }
   run.piped = runPiped; // for callers that only get run (RTX check)
 

@@ -377,7 +377,7 @@ test(
             j.status === "encoding" &&
             [
               "alpha_mask",
-              "nvencc_encoding_with_mask",
+              "nvencc_encoding_muxing_with_mask",
               "video_encoding_with_mask",
             ].includes(j.stage?.stage),
         );

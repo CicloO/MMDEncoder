@@ -814,9 +814,6 @@ export function VideoSettings({
           </div>
         </>
       )}
-      {s.encoder.startsWith("nvencc:") && (
-        <p className="help-box">{t("video.nvenccHint")}</p>
-      )}
     </form>
   );
 }

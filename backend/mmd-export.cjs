@@ -190,16 +190,17 @@ function plan(runtime, config = readConfig()) {
   // NVEncC: FFmpeg (MMD's frames, the mask) piped to NVEncC, then FFmpeg
   // puts the video in its container; mmd-pipe.cjs runs them (see there).
   if (commands.some((c) => c.pipeFrom)) {
+    const videoOnly = (c) => {
+      // Container step: video only (finish adds the sound), so not the
+      // source's second input, which here would be MMD's pipe again.
+      const args = [...c.args];
+      const i = args.indexOf("pipe:0");
+      if (i > 0 && args[i - 1] === "-i") args.splice(i - 1, 2);
+      for (let p; (p = args.indexOf("-progress")) >= 0;) args.splice(p, 2);
+      return { exe: c.exe, args };
+    };
     const steps = core.singlePass(commands).map((c) => {
-      if (!c.pipeFrom) {
-        // Container step: video only (finish adds the sound), so not the
-        // source's second input, which here would be MMD's pipe again.
-        const args = [...c.args];
-        const i = args.indexOf("pipe:0");
-        if (i > 0 && args[i - 1] === "-i") args.splice(i - 1, 2);
-        for (let p; (p = args.indexOf("-progress")) >= 0;) args.splice(p, 2);
-        return { exe: c.exe, args };
-      }
+      if (!c.pipeFrom) return videoOnly(c);
       const from = fromPipe(c.pipeFrom.args, runtime, rate, alpha);
       if (flip) {
         const vf = from.indexOf("-vf");
@@ -212,6 +213,7 @@ function plan(runtime, config = readConfig()) {
         exe: c.exe,
         args: c.args,
         pipeFrom: { exe: c.pipeFrom.exe, args: from },
+        ...(c.pipeTo ? { pipeTo: videoOnly(c.pipeTo) } : {}),
       };
     });
     return finishPlan({
@@ -221,7 +223,7 @@ function plan(runtime, config = readConfig()) {
         ELECTRON_RUN_AS_NODE: "1",
         MMD_PIPE_JOB: JSON.stringify({
           steps,
-          temporary: commands.map((c) => c.temporary).filter(Boolean),
+          outputs: commands.map((c) => c.output).filter(Boolean),
         }),
       },
     });

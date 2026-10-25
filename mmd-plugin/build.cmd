@@ -11,3 +11,4 @@ cl /nologo /std:c++17 /EHsc /O2 /W3 /utf-8 /LD src\plugin.cpp src\settings.cpp s
 cl /nologo /std:c++17 /EHsc /O2 /W3 /utf-8 /DUNICODE /D_UNICODE tests\mmd-sim.cpp /Fobuild\ /Febuild\mmd-sim.exe || exit /b 1
 cl /nologo /std:c++17 /EHsc /O2 /W3 /utf-8 tests\message-check.cpp src\messages.cpp src\json.cpp src\platform.cpp /Fobuild\ /Febuild\message-check.exe /link ole32.lib shell32.lib || exit /b 1
 echo Built build\MMDEncoderPlugin.dll and build\mmd-sim.exe
+cl /nologo /std:c++17 /EHsc /O2 /W3 /utf-8 tests\process-check.cpp src\processes.cpp src\platform.cpp src\json.cpp /Fobuild\ /Febuild\process-check.exe /link ole32.lib shell32.lib user32.lib || exit /b 1

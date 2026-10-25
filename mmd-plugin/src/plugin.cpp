@@ -310,6 +310,7 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
   }
   ~Encoder() {
     finish();
+    if (encoderGroup_) CloseHandle(encoderGroup_);
     if (haveIn_) MoFreeMediaType(&in_);
     if (haveOut_) MoFreeMediaType(&out_);
     g_objects--;
@@ -556,6 +557,7 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
   void fail(const std::wstring& message) {
     if (!failed_) plog(L"FAILED: %s", message.c_str());
     failed_ = true;
+    if (encoderGroup_) TerminateJobObject(encoderGroup_, 1);
     if (error_.empty()) error_ = message;
   }
 
@@ -623,9 +625,7 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
       if (kv.second.type == Json::String) extra.push_back({kv.first, kv.second.s});
     std::vector<wchar_t> env;
     if (!extra.empty()) env = environmentWith(extra);
-    BOOL ok = CreateProcessW(ffmpeg.c_str(), cmd.data(), nullptr, nullptr, TRUE,
-                             CREATE_NO_WINDOW | (env.empty() ? 0 : CREATE_UNICODE_ENVIRONMENT),
-                             env.empty() ? nullptr : env.data(), nullptr, &si, &pi);
+    const bool ok = startProcessGroup(ffmpeg, cmd, env.empty() ? nullptr : env.data(), si, pi, encoderGroup_);
     CloseHandle(readPipe);
     if (err != INVALID_HANDLE_VALUE) CloseHandle(err);
     if (nul != INVALID_HANDLE_VALUE) CloseHandle(nul);
@@ -667,12 +667,15 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
     DWORD code = 1;
     if (encoder_) {
       if (WaitForSingleObject(encoder_, 30 * 60 * 1000) == WAIT_TIMEOUT) {
-        TerminateProcess(encoder_, 1);
+        TerminateJobObject(encoderGroup_, 1);
+        WaitForSingleObject(encoder_, 5000);
         fail(L"FFmpeg 超过 30 分钟未结束，已停止");
       }
       GetExitCodeProcess(encoder_, &code);
       CloseHandle(encoder_);
       encoder_ = nullptr;
+      CloseHandle(encoderGroup_);
+      encoderGroup_ = nullptr;
       if (code != 0) fail(L"FFmpeg 编码失败（退出码 " + std::to_wstring(code) + L"），详见 FFmpeg 日志");
     }
     plog(L"render end: %llu frames, ffmpeg exit %lu", frames_, code);
@@ -743,7 +746,7 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
   MmdState mmd_;
   Json config_;
   std::wstring avi_, temp_, output_, appExe_, helper_, error_;
-  HANDLE stdin_ = nullptr, encoder_ = nullptr;
+  HANDLE stdin_ = nullptr, encoder_ = nullptr, encoderGroup_ = nullptr;
   std::vector<BYTE> row_;
 };
 

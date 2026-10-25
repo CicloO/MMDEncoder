@@ -297,18 +297,9 @@ try {
     .getAttribute("value");
   await page.locator("#encoder").selectOption(nvenccChoice);
   await expect(
-    page.getByText(
-      "NVEncC 会先输出一个临时视频文件，再与音频封装成最终文件，期间约需成品两倍的磁盘空间；完成后自动删除。",
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await page.locator("#encoder").selectOption("libx264");
-  await expect(
-    page.getByText(
-      "NVEncC 会先输出一个临时视频文件，再与音频封装成最终文件，期间约需成品两倍的磁盘空间；完成后自动删除。",
-      { exact: true },
-    ),
+    page.locator(".help-box").filter({ hasText: /NVEncC.*(临时|磁盘)/ }),
   ).toHaveCount(0);
+  await page.locator("#encoder").selectOption("libx264");
   await page.locator("#fps").selectOption("custom");
   await page.locator("#custom-fps").fill("30000/1001");
   const videoBefore = await page.evaluate(() =>

@@ -20,6 +20,5 @@ export function formatVideoSummary(runtime, value) {
   });
   if (p.repeatFrames)
     text = runtime.t("video.previewWithRepeat", { summary: text });
-  if (p.nvencc) text = runtime.t("video.previewWithNvencc", { summary: text });
   return text;
 }

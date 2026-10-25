@@ -269,6 +269,7 @@ int wmain(int argc, wchar_t** argv) {
   const LONG w = _wtol(argv[5]), h = _wtol(argv[6]);
   const int fps = _wtoi(argv[7]), start = _wtoi(argv[8]), end = _wtoi(argv[9]);
   const int frames = (end - start + 1) * fps / 30;  // MMD includes the end frame
+  const int pauseAfter = argc >= 12 && wcscmp(argv[10], L"--pause-after") == 0 ? _wtoi(argv[11]) : 0;
   CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
   HWND main = makeWindow(L"Polygon Movie Maker", L"MikuMikuDance [" + pmm + L"]", false);
@@ -335,6 +336,11 @@ int wmain(int argc, wchar_t** argv) {
     if (dmo->ProcessOutput(0, 1, &ob, &st) == S_OK && std::memcmp(sample->data_.data(), "MMDE", 4) == 0)
       placeholders++;
     sample->Release();
+    if (pauseAfter && i + 1 == pauseAfter) {
+      std::printf("paused frames=%d\n", i + 1);
+      std::fflush(stdout);
+      std::getchar(); // Tests kill this process after observing the exact count.
+    }
   }
   SetWindowTextW(recWindow, L"done");
   dmo->FreeStreamingResources();

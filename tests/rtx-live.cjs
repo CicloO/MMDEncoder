@@ -1,13 +1,10 @@
 require("./isolate.cjs");
 const fs = require("node:fs"),
-  path = require("node:path"),
-  { promisify } = require("node:util"),
-  { execFile } = require("node:child_process");
+  path = require("node:path");
 const { createTools } = require("../backend/tools.cjs"),
   { probe } = require("../backend/enhancements.cjs"),
   { DEFAULTS } = require("../backend/core.cjs");
-const exec = promisify(execFile),
-  root = path.resolve(__dirname, "../verification");
+const root = path.resolve(__dirname, "../verification");
 fs.mkdirSync(root, { recursive: true });
 const tools = createTools({
   root: process.env.MMD_TEST_TOOLS_ROOT || path.join(root, "tools-live"),
@@ -37,45 +34,16 @@ const tools = createTools({
         ],
         ["vfg", { vfg: true, vfgMultiplier: 2, vfgMode: "medium" }],
       ];
-  const run = (exe, args, options = {}) =>
-    exec(exe, args, {
-      timeout: options.timeout,
-      windowsHide: true,
-      maxBuffer: 8 * 1024 * 1024,
-    });
-  run.piped = (c, options) =>
-    new Promise((resolve, reject) => {
-      const { spawn } = require("node:child_process");
-      const a = spawn(c.pipeFrom.exe, c.pipeFrom.args, { windowsHide: true }),
-        b = spawn(c.exe, c.args, { windowsHide: true });
-      let log = "",
-        remaining = 2,
-        failed = false;
-      const timer = setTimeout(() => {
-        a.kill();
-        b.kill();
-        reject(Error("pipeline timeout"));
-      }, options.timeout);
-      for (const child of [a, b]) {
-        child.stderr.on("data", (d) => (log += d));
-        child.on("error", (e) => {
-          clearTimeout(timer);
-          a.kill();
-          b.kill();
-          reject(e);
-        });
-        child.on("close", (code) => {
-          failed ||= code !== 0;
-          if (--remaining === 0) {
-            clearTimeout(timer);
-            failed ? reject(Error(log)) : resolve({ stdout: "", stderr: log });
-          }
-        });
-      }
-      a.stdout.pipe(b.stdin);
-      b.stdin.on("error", () => {});
-      b.stdout.resume();
-    });
+  let active;
+  const { createRunner } = require("../backend/process-runner.cjs");
+  const run = createRunner({
+    isDisposed: () => false,
+    children: new Set(),
+    getActive: () => active,
+    setActive: (v) => {
+      active = v;
+    },
+  });
   for (const [name, patch] of cases) {
     let log = "";
     try {

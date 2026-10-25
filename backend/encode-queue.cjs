@@ -358,7 +358,6 @@ function createEncodeQueue({
             audio: s.audio,
             container: s.container,
             repeatFrames: !maskOnly && target > meta.fps,
-            nvencc: !maskOnly && s.encoder.startsWith("nvencc:"),
           },
           message: "",
         }
