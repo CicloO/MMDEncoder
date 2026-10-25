@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 #include <thread>
+#include <atomic>
 
 #pragma comment(lib, "msdmo.lib")
 #pragma comment(lib, "dmoguids.lib")
@@ -131,6 +132,66 @@ static void inspectSettings(HWND dialog) {
     DeleteObject(bitmap); DeleteDC(memory); ReleaseDC(dialog,dc);
   }
 }
+
+// A render failure must fail this simulator, not wait for a person to dismiss
+// the plugin's error box. Only inspect our render thread's own MB_OK window.
+class RenderFailureGuard {
+ public:
+  explicit RenderFailureGuard(DWORD thread) : thread_(thread), watcher_([this] {
+    while (!stop_) {
+      HWND dialog = nullptr;
+      EnumThreadWindows(thread_, [](HWND window, LPARAM data) -> BOOL {
+        wchar_t cls[64]{};
+        GetClassNameW(window, cls, 64);
+        if (!wcscmp(cls, L"#32770")) {
+          *(HWND*)data = window;
+          return FALSE;
+        }
+        return TRUE;
+      }, (LPARAM)&dialog);
+      if (dialog) inspect(dialog);
+      Sleep(10);
+    }
+  }) {}
+  ~RenderFailureGuard() { stop_ = true; watcher_.join(); }
+  bool failed() const { return failed_; }
+ private:
+  void inspect(HWND dialog) {
+    wchar_t cls[64]{}, title[128]{};
+    DWORD pid = 0;
+    GetWindowThreadProcessId(dialog, &pid);
+    GetClassNameW(dialog, cls, 64);
+    HWND ok = GetDlgItem(dialog, IDOK);
+    if (pid != GetCurrentProcessId() || wcscmp(cls, L"#32770") || !ok) return;
+    DWORD_PTR copied = 0;
+    if (!SendMessageTimeoutW(dialog, WM_GETTEXT, 128, (LPARAM)title,
+          SMTO_ABORTIFHUNG | SMTO_BLOCK, 100, &copied) || wcscmp(title, L"MMDEncoder")) return;
+    if (!failed_.exchange(true)) {
+      std::wstring text;
+      std::vector<HWND> children;
+      EnumChildWindows(dialog, [](HWND child, LPARAM p) -> BOOL {
+        wchar_t name[64]{};
+        GetClassNameW(child, name, 64);
+        if (!wcscmp(name, L"Static")) ((std::vector<HWND>*)p)->push_back(child);
+        return TRUE;
+      }, (LPARAM)&children);
+      for (HWND child : children) {
+        wchar_t value[8192]{};
+        if (SendMessageTimeoutW(child, WM_GETTEXT, 8192, (LPARAM)value,
+              SMTO_ABORTIFHUNG | SMTO_BLOCK, 100, &copied) && copied)
+          text += std::wstring(value) + L"\n";
+      }
+      int size = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, nullptr, 0, nullptr, nullptr);
+      std::string bytes(size, 0);
+      WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, bytes.data(), size, nullptr, nullptr);
+      std::printf("renderFailure=%s\n", bytes.c_str());
+    }
+    PostMessageW(ok, BM_CLICK, 0, 0);
+  }
+  DWORD thread_;
+  std::atomic<bool> stop_{false}, failed_{false};
+  std::thread watcher_;
+};
 
 int wmain(int argc, wchar_t** argv) {
   setvbuf(stdout, nullptr, _IONBF, 0);
@@ -249,6 +310,7 @@ int wmain(int argc, wchar_t** argv) {
   if (dmo->SetInputType(0, &in, 0) != S_OK || dmo->GetOutputType(0, 0, &out) != S_OK ||
       dmo->SetOutputType(0, &out, 0) != S_OK)
     return std::printf("type negotiation failed\n"), 1;
+  RenderFailureGuard failureGuard(GetCurrentThreadId());
   dmo->AllocateStreamingResources();
   int placeholders = 0;
   for (int i = 0; i < frames; i++) {
@@ -285,5 +347,5 @@ int wmain(int argc, wchar_t** argv) {
   DestroyWindow(main);
   std::printf("frames=%d placeholders=%d\n", frames, placeholders);
   CoUninitialize();
-  return placeholders == frames ? 0 : 1;
+  return !failureGuard.failed() && placeholders == frames ? 0 : 1;
 }
