@@ -10,7 +10,7 @@ import {
 import { Button, Modal, useDragSort, PAGE_SIZE } from "./components";
 import { MediaDetails } from "./MediaDetails";
 import { AlignDialog } from "./AlignDialog";
-import { autoAlign } from "./autoAlign";
+import { createMediaAudioReplacement } from "./mediaAudioReplacement";
 import { FileMeta } from "./FileMeta";
 import {
   t,
@@ -190,17 +190,11 @@ export function MediaTools({
     const file = Array.isArray(files) ? files[0] : files;
     if (file) await setAudio(job, file);
   }
-  // Pair an audio file with a video and, when chosen, line it up at once.
-  async function setAudio(job: MediaJob, file: string) {
-    const r = await run("mediaSetAudio", { id: job.id, path: file });
-    if (r && o.autoAlign) {
-      const note = await autoAlign(job.path, file, (offset) =>
-        run("mediaSetAudioOffset", { id: job.id, offset }),
-      );
-      if (note) setError({ notice: note });
-    }
-    return r;
-  }
+  const { setAudio } = createMediaAudioReplacement({
+    run,
+    notify: (notice) => setError({ notice }),
+    enabled: o.autoAlign,
+  });
   async function pickFolder() {
     const dir = await run("pickDirectory", {
       title: t("media.outputDirTitle"),
