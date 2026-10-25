@@ -692,7 +692,26 @@ function createService({
     engineInfo: () => state.engineInfo,
     locate,
   });
-  const trimQueue = createTrimQueue(ctx);
+  const trimQueue = createTrimQueue({
+    getClips: () => state.trim.clips,
+    setClips: (clips) => {
+      state.trim.clips = clips;
+    },
+    isRunning: () => state.trim.running,
+    isSmart: () => state.trim.smart,
+    setSmart: (smart) => {
+      state.trim.smart = smart;
+    },
+    updateExport: (patch) => Object.assign(state.trim, patch),
+    engineInfo: () => state.engineInfo,
+    isEncoding: () => state.running,
+    isResourcesBusy: () =>
+      state.detecting || tools.state.busy || state.enhancements.busy,
+    emit,
+    emitProgress,
+    locate,
+    reorder,
+  });
   const readDetails = createFileDetails({
     isToolsBusy: () => tools.state.busy,
     requireMediaJob: mediaQueue.requireMediaJob,
