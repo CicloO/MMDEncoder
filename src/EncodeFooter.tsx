@@ -133,7 +133,8 @@ export function EncodeFooter({
                 ? t("output.replacedAudio")
                 : ""}{" "}
               {s.alphaMode === "preserve" && t("output.preserveAlpha")}
-              <i /> {t("output.format", {
+              <i />{" "}
+              {t("output.format", {
                 format: s.container.toUpperCase(),
               })}{" "}
               {s.alphaMask && (
