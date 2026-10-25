@@ -1,4 +1,6 @@
-export type MessageParams = Record<string, string | number>;
+export type JsonValue =
+  string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+export type MessageParams = Record<string, JsonValue>;
 export type Message = string | { one?: string; other: string };
 export type Catalog = Record<string, Message>;
 export type Translator = {

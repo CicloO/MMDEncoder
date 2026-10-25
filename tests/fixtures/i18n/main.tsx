@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BackgroundColor } from "../../../src/BackgroundColor";
 import { LocaleRoot } from "../../../src/LocaleRoot";
 import { localeRuntime } from "../../../src/i18n";
+import { invoke } from "../../../src/ipc";
 import source from "../../../locales/zh-CN.json";
 import { pseudoCatalog } from "./pseudo.mjs";
 import "../../../src/tokens.css";
@@ -25,6 +26,7 @@ function Fixture() {
   );
 }
 (window as any).localeFixture = {
+  invoke,
   choose: localeRuntime.setLocale,
   pseudo,
   mounts: () => mounts,

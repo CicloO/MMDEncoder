@@ -1,6 +1,16 @@
 import zhCN from "../locales/zh-CN.json";
 import registry from "../locales/registry.json";
 import { createTranslator } from "../locales/runtime.mjs";
+import { formatDescriptor, serializeError } from "../locales/messages.mjs";
+import type {
+  MessageDescriptor,
+  StageDescriptor,
+} from "../locales/messages.mjs";
+export type {
+  ErrorData,
+  MessageDescriptor,
+  StageDescriptor,
+} from "../locales/messages.mjs";
 export type { Catalog, MessageParams } from "../locales/runtime.mjs";
 import type { MessageParams } from "../locales/runtime.mjs";
 
@@ -19,15 +29,23 @@ export function t(key: MessageKey, params: MessageParams = {}) {
 }
 
 export function errorMessage(error: unknown) {
-  const e = error as {
-    code?: string;
-    params?: MessageParams;
-    message?: string;
-  } | null;
-  const key = `error.${e?.code}`;
-  if (localeRuntime.has(key)) return localeRuntime.t(key, e?.params);
-  return String(e?.message ?? error).replace(
-    /^Error invoking remote method '[^']+': (?:Error: )?/,
-    "",
-  );
+  const e = serializeError(error);
+  const lines = [
+    formatDescriptor(localeRuntime, "error", e),
+    ...(e.issues || []).map((issue) =>
+      formatDescriptor(localeRuntime, "error", issue),
+    ),
+  ];
+  return lines
+    .filter(Boolean)
+    .join("\n")
+    .replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
+}
+
+export function stageMessage(value: StageDescriptor | string) {
+  return formatDescriptor(localeRuntime, "stage", value);
+}
+
+export function summaryMessage(value: MessageDescriptor | string) {
+  return formatDescriptor(localeRuntime, "message", value);
 }

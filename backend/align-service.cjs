@@ -12,6 +12,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { createLimit } = require("./limit.cjs");
 const { appError } = require("./errors.cjs");
+const { createWorkerErrorReader } = require("./worker-protocol.cjs");
 
 const WORKER = path.join(__dirname, "align-worker.cjs");
 // Preview: mono 16-bit at this rate, up to this long (as the dialog draws).
@@ -67,10 +68,10 @@ function createAlignService({ engineInfo, locate }) {
         t.cancel();
       }, timeout);
       const chunks = [];
-      let err = "";
+      const errors = createWorkerErrorReader();
       child.stdin.on("error", () => {});
       child.stdout.on("data", (b) => chunks.push(b));
-      child.stderr.on("data", (b) => (err = (err + b).slice(-4000)));
+      child.stderr.on("data", (b) => errors.write(b));
       child.on("error", reject);
       child.on("close", (code) => {
         clearTimeout(timer);
@@ -78,10 +79,7 @@ function createAlignService({ engineInfo, locate }) {
         if (t.timedOut) return reject(appError("ALIGN_TIMEOUT"));
         if (t.cancelled) return reject(appError("ALIGN_CANCELLED"));
         if (code === 0) resolve(Buffer.concat(chunks));
-        else
-          reject(
-            appError("ALIGN_FAILED", { detail: err.trim() || String(code) }),
-          );
+        else reject(errors.finish(code));
       });
     });
   }

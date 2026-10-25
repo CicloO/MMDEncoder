@@ -4,7 +4,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 const Module = require("node:module");
 const ts = require("typescript");
-const { appError } = require("../backend/errors.cjs");
+const {
+  appError,
+  validationIssue,
+  validationError,
+  summary,
+} = require("../backend/errors.cjs");
 const { registerAction } = require("../desktop/actions.cjs");
 function load(file, dependencies = {}) {
   const filename = path.resolve(file);
@@ -68,4 +73,75 @@ test("coded errors cross the IPC boundary and are reconstructed in the renderer"
   } finally {
     delete global.window;
   }
+});
+
+test("validation issues keep separate codes and structured params through IPC and locale changes", async () => {
+  const i18n = load("src/i18n.ts");
+  const issues = [
+    validationIssue("ALIGN_TOO_SHORT", { seconds: 1 }),
+    {
+      code: "FUTURE_ISSUE",
+      params: { paths: ["舞台.wav", "a{b}.wav"], retry: false, empty: null },
+      message: "raw future detail",
+    },
+  ];
+  let handler;
+  registerAction(
+    {
+      handle: (_name, fn) => {
+        handler = fn;
+      },
+    },
+    async () => {
+      throw validationError(issues);
+    },
+  );
+  const result = JSON.parse(JSON.stringify(await handler()));
+  assert.deepEqual(result.__mmdError.issues, issues);
+  global.window = { encoder: { invokeResult: async () => result } };
+  try {
+    const { invoke } = load("src/ipc.ts", { "./i18n": i18n });
+    let received;
+    await assert.rejects(invoke("validate"), (error) => {
+      received = error;
+      return (
+        error.code === "VALIDATION_FAILED" &&
+        error.message ===
+          "请检查以下设置\n自动对齐失败：音频太短，至少需要 1 秒\nraw future detail"
+      );
+    });
+    assert.deepEqual(received.issues, issues);
+    i18n.localeRuntime.registerCatalog("en-XA", {
+      "error.VALIDATION_FAILED": "⟦ Check ··· ⟧",
+      "error.ALIGN_TOO_SHORT": "⟦ {seconds} s ··· ⟧",
+    });
+    i18n.setLocale("en-XA");
+    assert.equal(
+      i18n.errorMessage(received),
+      "⟦ Check ··· ⟧\n⟦ 1 s ··· ⟧\nraw future detail",
+    );
+  } finally {
+    delete global.window;
+  }
+});
+
+test("stage and history descriptors format at display time and preserve legacy or unknown messages", () => {
+  const i18n = load("src/i18n.ts");
+  const { stageDescriptor } = require("../locales/messages.mjs");
+  const stage = stageDescriptor("copying_segment", { current: 2, total: 5 });
+  const history = summary("FUTURE_SUMMARY", { frames: 120 });
+  history.message = "saved fallback";
+  const stored = JSON.parse(JSON.stringify({ stage, history }));
+  assert.equal(i18n.stageMessage(stored.stage), "copying_segment");
+  assert.equal(i18n.summaryMessage(stored.history), "saved fallback");
+  assert.equal(i18n.stageMessage("准备"), "准备");
+  assert.equal(i18n.summaryMessage("旧的中文记录"), "旧的中文记录");
+  i18n.localeRuntime.registerCatalog("en-XA", {
+    "stage.copying_segment": "⟦ {current}/{total} ··· ⟧",
+    "message.FUTURE_SUMMARY": "⟦ {frames} frames ··· ⟧",
+  });
+  i18n.setLocale("en-XA");
+  assert.equal(i18n.stageMessage(stored.stage), "⟦ 2/5 ··· ⟧");
+  assert.equal(i18n.summaryMessage(stored.history), "⟦ 120 frames ··· ⟧");
+  assert.equal(stored.history.message, "saved fallback");
 });

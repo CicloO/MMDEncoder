@@ -5,11 +5,22 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
 const require = createRequire(import.meta.url);
 require("./isolate.cjs");
 const root = path.resolve(import.meta.dirname, "..");
 const dir = fs.mkdtempSync(path.join(root, "verification/i18n/locale-ui-"));
 const outDir = path.join(dir, "fixture-dist");
+const shortAudio = path.join(dir, "short.wav");
+execFileSync(require("./engines.cjs").ff, [
+  "-v",
+  "error",
+  "-f",
+  "lavfi",
+  "-i",
+  "sine=d=0.2:r=24000",
+  shortAudio,
+]);
 await build({
   root,
   base: "./",
@@ -57,6 +68,19 @@ try {
     path.join(outDir, "tests/fixtures/i18n/index.html"),
   );
   await page.getByRole("radiogroup", { name: "背景颜色" }).waitFor();
+  const workerError = await page.evaluate(async (file) => {
+    try {
+      await window.localeFixture.invoke("alignRun", {
+        reference: file,
+        target: file,
+      });
+    } catch (error) {
+      return { code: error.code, params: error.params, message: error.message };
+    }
+  }, shortAudio);
+  assert.equal(workerError.code, "ALIGN_TOO_SHORT");
+  assert.deepEqual(workerError.params, { seconds: 1 });
+  assert.match(workerError.message, /至少需要 1 秒/);
   await page
     .getByRole("textbox", { name: "draft", exact: true })
     .fill("unsaved draft");

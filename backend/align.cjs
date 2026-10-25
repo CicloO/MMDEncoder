@@ -21,6 +21,7 @@
 // The waveforms are used when they match clearly, else the onsets. Then the
 // waveforms at 48 kHz around the answer give it to the sample.
 const { spawn } = require("node:child_process");
+const { appError } = require("./errors.cjs");
 
 const DECODE_RATE = 4000;
 // How much of the reference the waveform pass uses (seconds); the onset
@@ -87,7 +88,9 @@ function decodeRaw(
     child.on("close", (code) => {
       if (code !== 0)
         return reject(
-          Error("无法读取音频：" + (err.trim() || "退出码 " + code)),
+          err.trim()
+            ? appError("ALIGN_DECODE_FAILED", { detail: err.trim() })
+            : appError("ALIGN_DECODE_EXIT", { exitCode: code }),
         );
       resolve(Buffer.concat(chunks));
     });
@@ -226,7 +229,7 @@ async function align(tools, reference, target, { signal } = {}) {
     decode(ff, target, DECODE_RATE, { length: LONGEST, signal }),
   ]);
   if (ref.length < DECODE_RATE || tgt.length < DECODE_RATE)
-    throw Error("音频太短，至少需要 1 秒");
+    throw appError("ALIGN_TOO_SHORT", { seconds: 1 });
   // Waveforms first.
   const wave = gccPhat(ref.subarray(0, WAVE_REFERENCE * DECODE_RATE), tgt);
   const w = peak(wave, wave.min, wave.max, DECODE_RATE / 20);

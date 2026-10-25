@@ -98,8 +98,8 @@ contextBridge.exposeInMainWorld("encoder", {
       .invoke("encoder:action", action, payload)
       .then((result) => {
         if (result?.__mmdError) {
-          const { message, code, params } = result.__mmdError;
-          throw Object.assign(new Error(message), { code, params });
+          const { message, code, params, issues } = result.__mmdError;
+          throw Object.assign(new Error(message), { code, params, issues });
         }
         return result;
       })

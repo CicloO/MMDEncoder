@@ -12,5 +12,10 @@
   "error.ALIGN_INPUT_INVALID": "请选择有效的音频或视频文件",
   "error.ALIGN_TRACKS_REQUIRED": "请选择参考音频与目标音频",
   "error.ALIGN_NO_AUDIO": "这个文件没有可用的音轨",
-  "error.ALIGN_FAILED": "自动对齐失败：{detail}"
+  "error.ALIGN_FAILED": "自动对齐失败：{detail}",
+  "error.ALIGN_REQUEST_INVALID": "音频对齐请求无效：{detail}",
+  "error.ALIGN_DECODE_FAILED": "自动对齐失败：无法读取音频：{detail}",
+  "error.ALIGN_DECODE_EXIT": "自动对齐失败：无法读取音频：退出码 {exitCode}",
+  "error.ALIGN_TOO_SHORT": "自动对齐失败：音频太短，至少需要 {seconds} 秒",
+  "error.VALIDATION_FAILED": "请检查以下设置"
 }
