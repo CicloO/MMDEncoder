@@ -397,6 +397,7 @@ else {
           "mediaSetAudioOffset",
           "setAudioOffset",
           "alignPreview",
+          "alignReferenceInfo",
           "alignRun",
           "alignCancel",
           "mmdStatus",
