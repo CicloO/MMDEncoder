@@ -12,6 +12,7 @@ const source = require("../locales/zh-CN.json");
 const { createTranslator } = require("../locales/runtime.mjs");
 const { presetDisplayName } = require("../locales/preset-names.mjs");
 const baseline = require("./fixtures/i18n/preset-baseline.json");
+const bitrateDelta = require("./fixtures/i18n/bitrate-320-baseline.json");
 const hash = (x) =>
   crypto.createHash("sha256").update(JSON.stringify(x)).digest("hex");
 const legacySettings = ({ maskFormat, ...settings }) => {
@@ -73,16 +74,30 @@ function fixture(t, saved) {
   };
 }
 
-test("all seven defaults keep pre-migration settings, commands and persisted fingerprints", async (t) => {
+test("all seven defaults retain the original commands and only the authorized 0-to-320 settings/fingerprint delta", async (t) => {
   const f = fixture(t);
   for (const golden of baseline.presets) {
     const p = f.svc.getState().presets.find((p) => p.id === golden.id);
+    const expected = bitrateDelta.presets.find((p) => p.id === golden.id);
+    assert.equal(
+      expected.commandsHash,
+      golden.commandsHash,
+      p.id + " unchanged command",
+    );
+    if (expected.previousBitrate === 320) {
+      assert.equal(expected.settingsHash, golden.settingsHash);
+      assert.equal(expected.fingerprint, golden.fingerprint);
+    } else {
+      assert.equal(expected.previousBitrate, 0);
+      assert.equal(p.settings.audioBitrate, 320);
+      assert.notEqual(expected.fingerprint, golden.fingerprint);
+    }
     assert.equal(p.name, golden.name);
     assert.equal(source[p.nameKey], golden.name);
     assert.equal(p.nameSource, "builtin");
     assert.equal(
       hash(legacySettings(p.settings)),
-      golden.settingsHash,
+      expected.settingsHash,
       p.id + " settings",
     );
     const pipeline = commands(p);
@@ -107,9 +122,12 @@ test("all seven defaults keep pre-migration settings, commands and persisted fin
       settings: p.settings,
     });
     const override = f.saved().builtins[p.id];
-    assert.equal(override.base, golden.fingerprint, p.id + " base");
+    assert.equal(override.base, expected.fingerprint, p.id + " base");
     assert.equal(override.nameSource, "builtin");
-    assert.equal(hash(legacySettings(override.settings)), golden.settingsHash);
+    assert.equal(
+      hash(legacySettings(override.settings)),
+      expected.settingsHash,
+    );
   }
 });
 

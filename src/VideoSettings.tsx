@@ -461,22 +461,15 @@ export function VideoSettings({
           <Select
             id="audioBitrate"
             label={t("video.audioBitrate")}
-            value={s.audioBitrate ?? 0}
-            options={[
-              {
-                value: 0,
-                label:
-                  s.audio === "aac"
-                    ? t("video.audioBitrateDefaultAac")
-                    : t("video.audioBitrateDefault"),
-              },
-              ...[64, 96, 128, 160, 192, 256, 320, 384, 512].map((value) => ({
+            value={s.audioBitrate}
+            options={[64, 96, 128, 160, 192, 256, 320, 384, 512].map(
+              (value) => ({
                 value,
                 label: t("video.bitrateOption", {
                   bitrate: localeRuntime.number(value),
                 }),
-              })),
-            ]}
+              }),
+            )}
             onChange={(v) => set("audioBitrate", Number(v))}
             disabled={!["aac", "libopus"].includes(s.audio)}
             hint={

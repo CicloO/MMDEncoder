@@ -59,6 +59,9 @@ test("32 default mask command records stay exact, with only the independently ac
     for (const explicit of [false, true]) {
       const settings = {
         ...old.settings,
+        // Feature 7 intentionally rejects the former default bitrate 0.
+        // These mask-only/no-audio command records remain otherwise exact.
+        audioBitrate: core.DEFAULTS.audioBitrate,
         ...(explicit ? { maskFormat: "lossless" } : {}),
       };
       const commands = core.singlePass(

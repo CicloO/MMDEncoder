@@ -1,0 +1,62 @@
+{
+  "sourceCommit": "dea5575",
+  "change": "Only audioBitrate 0 -> 320; no compatibility mapping",
+  "presets": [
+    {
+      "id": "builtin-4k",
+      "previousBitrate": 320,
+      "audioBitrate": 320,
+      "settingsHash": "95ea79c960e51c47b89ddaec219ed99e8d15dd6b8e0ebc4293726a7aea42bd8a",
+      "commandsHash": "63cc2f4e6785b59789a7ea970385bdeaa7ccedce43c2bf1cb14e529f80259eaa",
+      "fingerprint": "30141f4abe82cd08"
+    },
+    {
+      "id": "builtin-4k-sw",
+      "previousBitrate": 320,
+      "audioBitrate": 320,
+      "settingsHash": "5d9a926a483c817ae05feb12d970fb33771ec765036b484eb750dda1be0b3d3a",
+      "commandsHash": "481e12de90c55cfd803a5f83dc72e4e890477a227ecde03cb011b1cbbb64102c",
+      "fingerprint": "01fa58f1458152b4"
+    },
+    {
+      "id": "builtin-1080",
+      "previousBitrate": 320,
+      "audioBitrate": 320,
+      "settingsHash": "e8d907c93c1de825e9b45fb37367ee7db906a0139901f631258f8e51ef0aac38",
+      "commandsHash": "8c2aae67ac7e61d3333a69cad75c143595ea063a53904405326d4d92ddf551a4",
+      "fingerprint": "f3e83a46f7388858"
+    },
+    {
+      "id": "builtin-1080-sw",
+      "previousBitrate": 320,
+      "audioBitrate": 320,
+      "settingsHash": "ede7c7f9ae618e6ed452b523a90ea470550bd58db0484583568e430238e035c3",
+      "commandsHash": "14bff64b6d43e7c8249c43df5c7a94036f1016e4b337c0d577c0c1a303c642f1",
+      "fingerprint": "e879bb904407cf21"
+    },
+    {
+      "id": "builtin-alpha-mask",
+      "previousBitrate": 320,
+      "audioBitrate": 320,
+      "settingsHash": "6735abd4eb8f2f4ecbd79aa8bd46065135e731f8c1219b4cc624f6705e0d096e",
+      "commandsHash": "1c7fb91a07f40f58a5b9dbab9c73e5cdea500c13c56b3775eb718c05251456f5",
+      "fingerprint": "53079486a68e9868"
+    },
+    {
+      "id": "builtin-alpha",
+      "previousBitrate": 0,
+      "audioBitrate": 320,
+      "settingsHash": "dc757db10d64c75ac1a867162f708f06783db0beb5025cf95a1008b64119becf",
+      "commandsHash": "92e0ea0a58db97b8e9cdeb5736bbf17e3c80783a604efe1afbc6a04858c8d439",
+      "fingerprint": "3eda29ade3babf88"
+    },
+    {
+      "id": "builtin-prores422",
+      "previousBitrate": 0,
+      "audioBitrate": 320,
+      "settingsHash": "cca236ebb9e17669cbdf8011c69a1fadf243adb9dfb599c700269275bdb444f1",
+      "commandsHash": "c46aaa411eba4509a5f112a23e1a162dcbdb9bfb1faf49548516d67b51eeff0d",
+      "fingerprint": "5905d1995ab1e5a2"
+    }
+  ]
+}

@@ -59,7 +59,7 @@ function createPresetOperations({ schema, reorder }) {
       ...p,
       settings: {
         ...core.DEFAULTS,
-        audioBitrate: 0,
+        audioBitrate: 320,
         resizeMode: "source",
         width: 1920,
         height: 1080,

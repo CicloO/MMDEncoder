@@ -299,11 +299,9 @@ function buildCommands(job, s, engines, paths) {
               : [
                   "-c:a",
                   s.audio,
-                  ...(["aac", "libopus"].includes(s.audio) && s.audioBitrate
+                  ...(["aac", "libopus"].includes(s.audio)
                     ? ["-b:a", s.audioBitrate + "k"]
-                    : s.audio === "aac"
-                      ? ["-b:a", "192k"]
-                      : []),
+                    : []),
                 ],
             [
               audioOffset

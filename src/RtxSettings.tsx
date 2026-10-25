@@ -61,10 +61,7 @@ export function RtxSettings({
         : summaryMessage(verification.messageData || verification.message);
   return (
     <>
-      <section className="settings-group" aria-labelledby="upscale-title">
-        <h3 id="upscale-title" className="settings-group-title">
-          {t("rtx.upscale")}
-        </h3>
+      <section className="settings-group">
         <Select
           id="upscaler"
           label={t("rtx.upscaler")}
@@ -154,10 +151,7 @@ export function RtxSettings({
         )}
       </section>
 
-      <section className="settings-group" aria-labelledby="vfg-title">
-        <h3 id="vfg-title" className="settings-group-title">
-          {t("rtx.frameGeneration")}
-        </h3>
+      <section className="settings-group">
         <label className="checkbox-row">
           <input
             id="vfg"

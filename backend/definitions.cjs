@@ -18,7 +18,7 @@ const DEFAULTS = {
   keepAspect: true,
   resizeAxis: "width",
   audio: "aac",
-  audioBitrate: 0,
+  audioBitrate: 320,
   // Seconds of fade-in at the start and fade-out at the end (0 = off).
   audioFade: 0,
   // Hi-Res audio (FLAC / PCM): 24-bit, twice the rate below 48 kHz.

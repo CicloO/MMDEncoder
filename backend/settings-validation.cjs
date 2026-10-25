@@ -138,9 +138,7 @@ function validateIssues(s, meta) {
       { field: k },
     );
   check(
-    [0, 64, 96, 128, 160, 192, 256, 320, 384, 512].includes(
-      s.audioBitrate ?? 0,
-    ),
+    [64, 96, 128, 160, 192, 256, 320, 384, 512].includes(s.audioBitrate),
     "AUDIO_BITRATE_INVALID",
   );
   check(FADES.includes(s.audioFade ?? 0), "AUDIO_FADE_INVALID");

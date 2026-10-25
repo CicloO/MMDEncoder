@@ -300,6 +300,15 @@ try {
     page.locator(".help-box").filter({ hasText: /NVEncC.*(临时|磁盘)/ }),
   ).toHaveCount(0);
   await page.locator("#encoder").selectOption("libx264");
+  await page.getByRole("button", { name: "音频", exact: true }).click();
+  assert.deepEqual(
+    await page
+      .locator("#audioBitrate option")
+      .evaluateAll((nodes) => nodes.map((n) => n.value)),
+    ["64", "96", "128", "160", "192", "256", "320", "384", "512"],
+  );
+  await expect(page.locator("#audioBitrate")).toHaveValue("320");
+  await page.getByRole("button", { name: "画质", exact: true }).click();
   await page.locator("#fps").selectOption("custom");
   await page.locator("#custom-fps").fill("30000/1001");
   await page.getByRole("button", { name: "透明通道", exact: true }).click();
@@ -361,6 +370,29 @@ try {
   await page
     .getByRole("button", { name: labels["video.tab.rtx"], exact: true })
     .click();
+  await expect(page.locator("#upscale-title, #vfg-title")).toHaveCount(0);
+  const groupBorder = await page
+    .locator(".settings-group")
+    .nth(1)
+    .evaluate((node) => getComputedStyle(node).borderTopWidth);
+  assert.ok(parseFloat(groupBorder) > 0);
+  await page.locator("#upscaler").selectOption("artcnn");
+  await expect(
+    page.getByText(labels["rtx.artcnnModelHint"], { exact: true }),
+  ).toBeVisible();
+  const firstGroupGap = await page
+    .locator(".settings-group")
+    .first()
+    .evaluate(
+      (node) =>
+        node.firstElementChild.getBoundingClientRect().top -
+        node.getBoundingClientRect().top,
+    );
+  assert.ok(Math.abs(firstGroupGap) <= 1);
+  await page.locator(".page-scroll").evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  await screenshot(path.join(dir, "pseudo-video-rtx-top.png"));
   await page.locator("#vfg").check();
   await expect(
     page.getByText(labels["rtx.changed"], { exact: true }),
