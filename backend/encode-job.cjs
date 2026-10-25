@@ -13,6 +13,7 @@ const path = require("node:path");
 const core = require("./core.cjs");
 const { commandProcesses } = require("./command-processes.cjs");
 const { signature: enhancementSignature } = require("./enhancements.cjs");
+const { withMaskCapabilities } = require("./mask-settings.cjs");
 function createEncoder({
   engineInfo,
   engines,
@@ -33,8 +34,8 @@ function createEncoder({
     if (job.log.length > 256000) job.log = job.log.slice(-200000);
     appendEvidence(job.id, text);
   }
-  // gpuMask: the Alpha mask may go to NVENC (see core.maskOnNvenc); a run
-  // where that fails is done again once with the mask on the CPU.
+  // A failed GPU mask gets one CPU attempt. A lossy retry after the colour
+  // was committed keeps that file and only re-encodes the missing mask.
   async function encode(job, gpuMask = true) {
     const s = job.settings;
     const maskOnly =
@@ -43,6 +44,7 @@ function createEncoder({
     job.error = undefined;
     job.errorData = undefined;
     job.softwareRetry = undefined;
+    if (gpuMask) delete job.noteData;
     job._maskReady = false;
     job.progress = 0;
     job.startedAt = Date.now();
@@ -50,7 +52,8 @@ function createEncoder({
     emit();
     let tempDir,
       gpuMaskUsed = false,
-      again = false;
+      again = false,
+      failedGpuMask = false;
     try {
       const issues = core.validateIssues(s, job.meta);
       if (
@@ -98,10 +101,19 @@ function createEncoder({
       let commands = core.buildCommands(
         job,
         s,
-        gpuMask ? engineInfo() : { ...engineInfo(), nvencLossless: false },
+        {
+          ...withMaskCapabilities(engineInfo(), engines()),
+          allowGpuMask: gpuMask,
+        },
         temps,
       );
-      gpuMaskUsed = gpuMask && JSON.stringify(commands).includes('"lossless"');
+      gpuMaskUsed = gpuMask && commands.some((c) => c.maskEncoding?.gpu);
+      const note = commands.find((c) => c.maskEncoding?.note)?.maskEncoding
+        .note;
+      if (gpuMask && note) {
+        job.noteData = note;
+        append(job, note.message + "\n");
+      }
       // Colour and mask in one pass; redoing just the mask keeps its own run.
       commands = maskOnly
         ? commands.filter((c) => c.mask)
@@ -115,6 +127,7 @@ function createEncoder({
         append(job, "\n" + core.commandText([c]) + "\n");
         emit();
         let progressBuffer = "";
+        failedGpuMask = !!c.maskEncoding?.gpu;
         await (
           commandProcesses(c).length > 1
             ? run.piped
@@ -150,6 +163,7 @@ function createEncoder({
             emitProgress();
           },
         });
+        failedGpuMask = false;
         if (c.output === temps.output) {
           try {
             await commit(temps.output, paths.output);
@@ -177,10 +191,28 @@ function createEncoder({
       job.stage = stage("done");
     } catch (e) {
       append(job, "\n" + diagnosticMessage(e) + "\n");
-      // The GPU mask failed (an encoder session limit, an older GPU…) before
-      // anything was kept: once more with the mask on the CPU.
-      if (gpuMaskUsed && !isStopped() && !job.output) {
-        append(job, "\n" + summary("VIDEO_GPU_MASK_RETRY").message + "\n");
+      // Retry a lossy GPU mask once. Storage, cancellation, timeout and a
+      // downstream colour encoder/muxer failure are not GPU-mask failures.
+      const lossy = s.maskFormat === "gpu-lossy";
+      const retryLossyMask =
+        failedGpuMask &&
+        !e.timedOut &&
+        !e.cancelled &&
+        !["ENOSPC", "EACCES", "EPERM", "ENOENT"].includes(
+          e.systemCode || e.code,
+        ) &&
+        !(e.processIndex > 0);
+      if (
+        gpuMask &&
+        !isStopped() &&
+        (lossy ? retryLossyMask : gpuMaskUsed && !job.output)
+      ) {
+        const note = summary(
+          lossy ? "MASK_GPU_RUNTIME_FALLBACK" : "VIDEO_GPU_MASK_RETRY",
+        );
+        job.noteData = note;
+        append(job, "\n" + note.message + "\n");
+        if (job.output && fs.existsSync(job.output)) job.status = "partial";
         again = true;
         return;
       }

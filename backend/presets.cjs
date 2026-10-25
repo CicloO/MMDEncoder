@@ -32,7 +32,8 @@ function createPresetOperations({ schema, reorder }) {
                       (["hiRes", "editFriendly"].includes(k) && v === false) ||
                       (k === "audioFade" && v === 0) ||
                       (k === "artcnnModel" && v === "C4F16") ||
-                      (k === "upscaler" && v === "lanczos")
+                      (k === "upscaler" && v === "lanczos") ||
+                      (k === "maskFormat" && v === "lossless")
                     ),
                 ),
               ),

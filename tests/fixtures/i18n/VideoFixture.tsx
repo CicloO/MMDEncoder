@@ -85,6 +85,11 @@ export function VideoFixture({ state }: { state: State }) {
       status: "done",
       progress: 100,
       elapsed: 2,
+      noteData: {
+        code: "MASK_GPU_RUNTIME_FALLBACK",
+        params: {},
+        message: source["message.MASK_GPU_RUNTIME_FALLBACK"],
+      },
       output:
         "C:/output/用户保留很长的成品名称用于检查省略位置保留扩展名和完整路径提示 (2).mp4",
       maskOutput:

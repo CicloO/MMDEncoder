@@ -1,4 +1,4 @@
-import type { Engine, Preset, Settings, Job } from "./types";
+import type { Engine, Preset, Settings, Job, Preview } from "./types";
 import { localeRuntime, t, summaryMessage } from "./i18n";
 import type { MessageKey } from "./i18n";
 import { presetDisplayName } from "../locales/preset-names.mjs";
@@ -103,6 +103,36 @@ export function engineLabel(engine: Engine) {
 }
 export const presetLabel = (p: Preset, peers: Preset[] = []) =>
   presetDisplayName(localeRuntime, p, peers);
+export function maskFormatLabel(format = "lossless") {
+  const keys: Record<string, MessageKey> = {
+    lossless: "mask.lossless",
+    "gpu-lossy": "mask.gpuLossy",
+    "x264-lossy": "mask.x264Lossy",
+  };
+  return keys[format] ? t(keys[format]) : format;
+}
+export function maskFacts(s: Settings, preview: Preview | null) {
+  if ((s.maskFormat ?? "lossless") === "lossless")
+    return t("output.maskFacts", {
+      codec: s.container === "webm" ? "VP9" : "H.264",
+    });
+  const actual = preview?.maskEncoding;
+  if (!actual)
+    return s.container === "webm"
+      ? t("mask.vp9Lossy")
+      : maskFormatLabel(s.maskFormat);
+  const codec =
+    actual.encoder === "hevc_nvenc"
+      ? "HEVC"
+      : actual.encoder === "libvpx-vp9"
+        ? "VP9"
+        : "H.264";
+  return t("mask.encodingFacts", {
+    codec,
+    mode: actual.gpu ? "CQ" : "CRF",
+    quality: localeRuntime.number(actual.quality),
+  });
+}
 
 // What a set of settings makes, in a few words (queue tags, preset choices).
 export function targetLabel(s: Settings, engines: Engine[]) {

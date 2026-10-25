@@ -22,6 +22,7 @@ export type Settings = {
   audio: string;
   audioBitrate: number;
   alphaMask: boolean;
+  maskFormat: "lossless" | "gpu-lossy" | "x264-lossy";
   // Hi-Res audio (FLAC / PCM): 24-bit, twice the rate below 48 kHz.
   hiRes: boolean;
   // A keyframe every second (automatic GOP only), for lossless cutting.
@@ -92,6 +93,7 @@ export type Job = {
   error?: string;
   errorData?: ErrorData;
   softwareRetry?: boolean;
+  noteData?: MessageDescriptor;
   log?: string;
   output?: string;
   maskOutput?: string;
@@ -290,6 +292,13 @@ export type State = {
   };
 };
 export type Preview = {
+  maskEncoding?: {
+    format: string;
+    encoder: string;
+    gpu: boolean;
+    quality: number;
+    note?: MessageDescriptor;
+  };
   dimensions?: { width: number; height: number } | null;
   summary: string;
   summaryData?: MessageDescriptor;

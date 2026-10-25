@@ -68,7 +68,17 @@ test(
           encoding: true,
           timeout: mode === "timeout" ? 350 : 5000,
         });
-        const checked = mode === "ok" ? result : assert.rejects(result);
+        const checked =
+          mode === "ok"
+            ? result
+            : assert.rejects(result, (error) => {
+                if (mode === "timeout") assert.equal(error.timedOut, true);
+                if (mode === "cancel") assert.equal(error.cancelled, true);
+                if (typeof mode === "number")
+                  assert.equal(error.processIndex, mode);
+                if (mode === "spawn") assert.equal(error.processIndex, 1);
+                return true;
+              });
         if (mode === "cancel") {
           for (let i = 0; i < 200 && fs.readdirSync(dir).length < 3; i++)
             await wait(10);

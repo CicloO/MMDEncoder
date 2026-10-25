@@ -57,6 +57,7 @@ function createRunner({ isDisposed, children, getActive, setActive }) {
           e.stderr = stderr;
           e.code = code;
           e.systemCode = err?.code;
+          e.timedOut = timed;
           reject(e);
         } else resolve({ stdout, stderr });
       };
@@ -81,7 +82,9 @@ function createRunner({ isDisposed, children, getActive, setActive }) {
         if (child.exitCode === null && child.signalCode === null) child.kill();
       }
     };
-    const controller = { kill: () => stop(Error("编码已取消")) };
+    const controller = {
+      kill: () => stop(Object.assign(Error("编码已取消"), { cancelled: true })),
+    };
     if (options.encoding) setActive(controller);
     const data = (stream, b) => {
       const s = b.toString();
@@ -107,24 +110,30 @@ function createRunner({ isDisposed, children, getActive, setActive }) {
             }),
           ),
         );
-        child.on("error", (e) => stop(e));
+        child.on("error", (e) => stop(Object.assign(e, { processIndex: i })));
         child.on("exit", (code, signal) => {
           if (code !== 0)
             stop(
               Object.assign(Error("管道进程退出：" + (code ?? signal)), {
                 code,
+                processIndex: i,
               }),
             );
         });
         child.stderr.on("data", (b) => data("err", b));
         if (i) {
-          child.stdin.on("error", (e) => stop(e));
+          child.stdin.on("error", (e) =>
+            stop(Object.assign(e, { processIndex: i })),
+          );
           group[i - 1].stdout.pipe(child.stdin);
         }
       }
       group.at(-1).stdout.on("data", (b) => data("out", b));
       if (options.timeout)
-        timer = setTimeout(() => stop(Error("引擎运行超时")), options.timeout);
+        timer = setTimeout(
+          () => stop(Object.assign(Error("引擎运行超时"), { timedOut: true })),
+          options.timeout,
+        );
     } catch (e) {
       stop(e);
     }
@@ -138,6 +147,9 @@ function createRunner({ isDisposed, children, getActive, setActive }) {
         stderr,
         code: failure.code,
         systemCode: failure.code,
+        timedOut: !!failure.timedOut,
+        cancelled: !!failure.cancelled,
+        processIndex: failure.processIndex,
       });
       throw error;
     }

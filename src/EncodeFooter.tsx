@@ -1,7 +1,7 @@
 import { ArrowDownToLine, ArrowRight, Play, Square } from "lucide-react";
 import { Button } from "./components";
 import { t, localeRuntime } from "./i18n";
-import { audioLabels, engineLabel, formatFPS } from "./presentation";
+import { audioLabels, engineLabel, formatFPS, maskFacts } from "./presentation";
 import type { Settings, Job, Engine, Preview } from "./types";
 export function EncodeFooter({
   s,
@@ -86,9 +86,7 @@ export function EncodeFooter({
         <span className="output-facts">
           {s.alphaMode === "mask" ? (
             <>
-              {t("output.maskFacts", {
-                codec: s.container === "webm" ? "VP9" : "H.264",
-              })}
+              {maskFacts(s, preview)}
               <i /> {t("output.noAudio")}
               <i /> {t("output.format", { format: s.container.toUpperCase() })}
             </>

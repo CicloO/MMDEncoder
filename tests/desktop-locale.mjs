@@ -302,6 +302,28 @@ try {
   await page.locator("#encoder").selectOption("libx264");
   await page.locator("#fps").selectOption("custom");
   await page.locator("#custom-fps").fill("30000/1001");
+  await page.getByRole("button", { name: "透明通道", exact: true }).click();
+  await expect(page.locator("#maskFormat")).toHaveCount(0);
+  await page.locator("#alphaMode").selectOption("split");
+  assert.deepEqual(await page.locator("#maskFormat option").allTextContents(), [
+    "无损",
+    "显卡有损",
+    "x264 有损",
+  ]);
+  await expect(page.locator("#maskFormat")).toHaveValue("lossless");
+  await page.locator("#maskFormat").selectOption("gpu-lossy");
+  await expect(
+    page.getByText(
+      "半透明边缘较多（发光、动态模糊、发丝）时可能有轻微毛边，需要精确抠像请用无损。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.locator("#alphaMode").selectOption("mask");
+  await expect(page.locator("#maskFormat")).toHaveValue("gpu-lossy");
+  await page.locator("#maskFormat").selectOption("x264-lossy");
+  await page.locator("#alphaMode").selectOption("discard");
+  await expect(page.locator("#maskFormat")).toHaveCount(0);
+  await page.getByRole("button", { name: "画质", exact: true }).click();
   const videoBefore = await page.evaluate(() =>
     window.localeFixture.videoSnapshot(),
   );
@@ -315,6 +337,9 @@ try {
   );
   await expect(page.locator('#fps option[value="source"]')).toHaveText(
     labels["video.fpsSource"],
+  );
+  await expect(page.locator(".job-note")).toHaveText(
+    labels["message.MASK_GPU_RUNTIME_FALLBACK"],
   );
   await expect(page.locator('#fps option[value="24000/1001"]')).toContainText(
     "23.976",
@@ -434,6 +459,43 @@ try {
   );
   await page.getByRole("button", { name: "关闭提示", exact: true }).click();
   await expect(page.locator(".error-banner")).toHaveCount(0);
+  await page.setViewportSize({ width: 1360, height: 920 });
+  await page.getByRole("button", { name: "透明通道", exact: true }).click();
+  await page.locator("#alphaMode").selectOption("split");
+  await expect(page.locator("#maskFormat")).toHaveValue("x264-lossy");
+  await page.locator("#maskFormat").selectOption("gpu-lossy");
+  const maskBefore = await page.evaluate(() =>
+    window.localeFixture.videoSnapshot(),
+  );
+  await page.evaluate(() => window.localeFixture.choose("en-XA"));
+  await expect(
+    page.locator('#maskFormat option[value="gpu-lossy"]'),
+  ).toHaveText(labels["mask.gpuLossy"]);
+  await expect(
+    page.getByText(labels["mask.lossyWarning"], { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("#maskFormat")).toHaveValue("gpu-lossy");
+  assert.deepEqual(
+    await page.evaluate(() => window.localeFixture.videoSnapshot()),
+    maskBefore,
+  );
+  await page.setViewportSize({ width: 680, height: 760 });
+  await page.locator("#maskFormat").scrollIntoViewIfNeeded();
+  await screenshot(path.join(dir, "pseudo-mask-narrow.png"));
+  assert.equal(
+    await page
+      .locator(".page-scroll")
+      .evaluate((node) => node.scrollWidth <= node.clientWidth),
+    true,
+  );
+  await page.evaluate(() => window.localeFixture.choose("zh-CN"));
+  await page.locator("#alphaMode").selectOption("mask");
+  await page.getByRole("button", { name: "画质", exact: true }).click();
+  await page.locator("#container").selectOption("webm");
+  await page.getByRole("button", { name: "透明通道", exact: true }).click();
+  await expect(
+    page.getByText("WebM 的两种有损选项均使用 VP9 有损编码。", { exact: true }),
+  ).toBeVisible();
   console.log("Desktop locale PASS", dir);
 } finally {
   await app.close();

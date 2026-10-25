@@ -4,7 +4,7 @@ const path = require("node:path");
 const { FADES } = require("./media.cjs");
 const { ENGINES } = require("./definitions.cjs");
 const { parseFps, dimensions } = require("./filter.cjs");
-const { maskSettings } = require("./mask-settings.cjs");
+const { maskSettings, MASK_FORMATS } = require("./mask-settings.cjs");
 function filename(name) {
   if (
     !name ||
@@ -35,6 +35,10 @@ function validateIssues(s, meta) {
     if (!ok) e.push(validationIssue(code, params));
   };
   const eng = ENGINES.find((x) => x.id === s.encoder);
+  check(
+    MASK_FORMATS.includes(s.maskFormat ?? "lossless"),
+    "MASK_FORMAT_INVALID",
+  );
   if (s.vsr || s.vfg) {
     check(eng?.backend === "nvencc", "RTX_NVENCC_REQUIRED");
     check(s.alphaMode !== "preserve" && !s.alphaMask, "RTX_ALPHA_UNSUPPORTED");

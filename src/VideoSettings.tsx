@@ -8,6 +8,7 @@ import {
   engineLabel,
   fadeOptions,
   fadeHint,
+  maskFormatLabel,
 } from "./presentation";
 import type { Settings, Engine, Job, Preview, State } from "./types";
 const options = (values: string[]) =>
@@ -640,7 +641,11 @@ export function VideoSettings({
                 <Plus size={16} />
                 <div className="alpha-swatch mask">A</div>
               </div>
-              <p className="hint">{t("video.alphaSplitHint")}</p>
+              <p className="hint">
+                {t("video.alphaSplitHint", {
+                  format: maskFormatLabel(s.maskFormat),
+                })}
+              </p>
             </>
           )}
           {s.alphaMode === "mask" && (
@@ -648,7 +653,35 @@ export function VideoSettings({
               <div className="alpha-diagram">
                 <div className="alpha-swatch mask">A</div>
               </div>
-              <p className="hint">{t("video.alphaMaskHint")}</p>
+              <p className="hint">
+                {t(
+                  (s.maskFormat ?? "lossless") === "lossless"
+                    ? "video.alphaMaskHint"
+                    : "video.alphaMaskLossyHint",
+                )}
+              </p>
+            </>
+          )}
+          {(s.alphaMask || s.alphaMode === "mask") && (
+            <>
+              <Select
+                id="maskFormat"
+                label={t("mask.format")}
+                value={s.maskFormat ?? "lossless"}
+                options={["lossless", "gpu-lossy", "x264-lossy"].map(
+                  (value) => ({ value, label: maskFormatLabel(value) }),
+                )}
+                onChange={(value) =>
+                  set("maskFormat", value as Settings["maskFormat"])
+                }
+              />
+              {(s.maskFormat ?? "lossless") !== "lossless" && (
+                <p className="hint">{t("mask.lossyWarning")}</p>
+              )}
+              {s.container === "webm" &&
+                (s.maskFormat ?? "lossless") !== "lossless" && (
+                  <p className="hint">{t("mask.webmHint")}</p>
+                )}
             </>
           )}
           {(s.alphaMask || s.alphaMode === "mask") &&

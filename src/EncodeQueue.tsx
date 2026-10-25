@@ -3,6 +3,7 @@ import {
   localeRuntime,
   errorMessage,
   stageMessage,
+  summaryMessage,
   notification,
 } from "./i18n";
 import { serializeError } from "../locales/messages.mjs";
@@ -267,6 +268,11 @@ export function EncodeQueue({
                           />
                         )}
                       </span>
+                      {j.noteData && (
+                        <span className="job-note">
+                          {summaryMessage(j.noteData)}
+                        </span>
+                      )}
                     </span>
                   </button>
                   {!["encoding", "done"].includes(j.status) && (

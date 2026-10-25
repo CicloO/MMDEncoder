@@ -24,6 +24,7 @@ const DEFAULTS = {
   // Hi-Res audio (FLAC / PCM): 24-bit, twice the rate below 48 kHz.
   hiRes: false,
   alphaMask: false,
+  maskFormat: "lossless",
   alphaMode: "discard",
   // alphaMode "color": the background composited under the picture.
   alphaBackground: "#00FF00",

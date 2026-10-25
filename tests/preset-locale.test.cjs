@@ -14,6 +14,10 @@ const { presetDisplayName } = require("../locales/preset-names.mjs");
 const baseline = require("./fixtures/i18n/preset-baseline.json");
 const hash = (x) =>
   crypto.createHash("sha256").update(JSON.stringify(x)).digest("hex");
+const legacySettings = ({ maskFormat, ...settings }) => {
+  assert.equal(maskFormat, "lossless");
+  return settings;
+};
 const commands = (p) =>
   core.buildCommands(
     {
@@ -76,7 +80,11 @@ test("all seven defaults keep pre-migration settings, commands and persisted fin
     assert.equal(p.name, golden.name);
     assert.equal(source[p.nameKey], golden.name);
     assert.equal(p.nameSource, "builtin");
-    assert.equal(hash(p.settings), golden.settingsHash, p.id + " settings");
+    assert.equal(
+      hash(legacySettings(p.settings)),
+      golden.settingsHash,
+      p.id + " settings",
+    );
     const pipeline = commands(p);
     assert.ok(
       pipeline.every(
@@ -101,7 +109,7 @@ test("all seven defaults keep pre-migration settings, commands and persisted fin
     const override = f.saved().builtins[p.id];
     assert.equal(override.base, golden.fingerprint, p.id + " base");
     assert.equal(override.nameSource, "builtin");
-    assert.equal(hash(override.settings), golden.settingsHash);
+    assert.equal(hash(legacySettings(override.settings)), golden.settingsHash);
   }
 });
 
@@ -195,6 +203,55 @@ test("locale never changes saved preset data, ordering, case-insensitive conflic
     );
   }
   assert.deepEqual(f.saved().presets, [unknown]);
+});
+
+test("mask choices survive personal preset persistence, import and MMD configuration while absent legacy fields default to lossless", async (t) => {
+  const { maskFormat, ...oldSettings } = core.DEFAULTS;
+  const f = fixture(t, {
+    presets: [{ id: "old", name: "Old mask preset", settings: oldSettings }],
+  });
+  assert.equal(
+    f.svc.getState().presets.find((p) => p.id === "old").settings.maskFormat,
+    "lossless",
+  );
+  for (const format of ["lossless", "gpu-lossy", "x264-lossy"]) {
+    await f.svc.invoke("savePreset", {
+      name: "Mask " + format,
+      settings: { ...core.DEFAULTS, alphaMask: true, maskFormat: format },
+    });
+  }
+  f.restart();
+  const mine = f.svc
+    .getState()
+    .presets.filter((p) => p.name.startsWith("Mask "));
+  assert.deepEqual(
+    mine.map((p) => p.settings.maskFormat),
+    ["lossless", "gpu-lossy", "x264-lossy"],
+  );
+  const copies = JSON.parse(JSON.stringify(mine)).map((p) => ({
+    ...p,
+    name: p.name + " imported",
+  }));
+  await f.svc.invoke("importPresets", { presets: copies });
+  for (const p of mine)
+    assert.equal(
+      f.svc.getState().presets.find((q) => q.name === p.name + " imported")
+        .settings.maskFormat,
+      p.settings.maskFormat,
+    );
+  const mx = require("../backend/mmd-export.cjs");
+  mx.writeConfig({
+    presets: mine,
+    engines: { ffmpeg: "ff", ffprobe: "fp" },
+    appExe: process.execPath,
+    helper: path.resolve("backend/mmd-export.cjs"),
+  });
+  for (const p of mine)
+    assert.equal(
+      mx.readConfig({ presetId: p.id, maskMode: "with", followMmd: true })
+        .settings.maskFormat,
+      p.settings.maskFormat,
+    );
 });
 
 test("display-name collisions identify only translated defaults; user names and technical values stay exact", () => {

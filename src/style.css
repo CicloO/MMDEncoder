@@ -516,6 +516,11 @@ svg {
   font: 10px/1.7 var(--font-mono);
   color: var(--color-muted);
 }
+.job-note {
+  font-size: 11px;
+  color: var(--color-warning);
+  overflow-wrap: anywhere;
+}
 .job-status {
   font-size: 11px;
   display: flex;

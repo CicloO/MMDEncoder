@@ -7,11 +7,7 @@ const { nvenccCommands } = require("./nvencc-commands.cjs");
 const { ENGINES } = require("./definitions.cjs");
 const { parseFps, pix, usesArtcnn, filter } = require("./filter.cjs");
 const { validateIssues } = require("./settings-validation.cjs");
-const {
-  maskSettings,
-  maskOnNvenc,
-  NVENC_LOSSLESS,
-} = require("./mask-settings.cjs");
+const { maskChoice } = require("./mask-settings.cjs");
 function videoOptions(s) {
   const e = ENGINES.find((x) => x.id === s.encoder);
   const a = ["-c:v", s.encoder, "-pix_fmt", pix(s)];
@@ -230,6 +226,7 @@ function singlePass(commands) {
             stage: stage("nvencc_encoding_muxing_with_mask"),
             mask: true,
             maskOutput: mask.output,
+            ...(mask.maskEncoding ? { maskEncoding: mask.maskEncoding } : {}),
           }
         : c,
     );
@@ -240,6 +237,7 @@ function singlePass(commands) {
       args: joinMask(colour.args, mask.args),
       stage: stage("video_encoding_with_mask"),
       mask: true,
+      ...(mask.maskEncoding ? { maskEncoding: mask.maskEncoding } : {}),
     },
     ...rest.slice(1),
   ];
@@ -349,7 +347,8 @@ function buildCommands(job, s, engines, paths) {
         }),
       );
     } else {
-      const ms = mask ? maskSettings(s) : s;
+      const choice = mask ? maskChoice(s, job.meta || {}, engines) : null;
+      const ms = choice ? choice.settings : s;
       result.push({
         exe: engines.ffmpeg,
         args: [
@@ -359,9 +358,7 @@ function buildCommands(job, s, engines, paths) {
           "0:v:0",
           "-vf",
           filter(ms, job.meta || {}, mask),
-          ...(mask && maskOnNvenc(s, job.meta || {}, engines)
-            ? NVENC_LOSSLESS
-            : videoOptions(ms)),
+          ...(choice?.options || videoOptions(ms)),
           ...(mask ? ["-an"] : audio),
           ...colors,
           "-metadata",
@@ -378,6 +375,17 @@ function buildCommands(job, s, engines, paths) {
         stage: stage(mask ? "alpha_mask" : "video_encoding"),
         output,
         mask: mask && !maskOnly,
+        ...(choice && (choice.gpu || choice.format !== "lossless")
+          ? {
+              maskEncoding: {
+                format: choice.format,
+                encoder: choice.encoder,
+                gpu: choice.gpu,
+                quality: ms.quality,
+                ...(choice.note ? { note: choice.note } : {}),
+              },
+            }
+          : {}),
       });
     }
   }

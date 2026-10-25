@@ -17,6 +17,7 @@ const core = require("./core.cjs");
 const { signature: enhancementSignature } = require("./enhancements.cjs");
 const sequence = require("./sequence.cjs");
 const { createEncoder } = require("./encode-job.cjs");
+const { withMaskCapabilities } = require("./mask-settings.cjs");
 // Frame rate a PNG sequence starts with; it can be changed per sequence.
 const SEQUENCE_FPS = 30;
 const SEQUENCE_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120];
@@ -329,7 +330,12 @@ function createEncodeQueue({
       );
       if (job.meta && issues.length === 0)
         commands = core.singlePass(
-          core.buildCommands(job, s, engineInfo(), paths),
+          core.buildCommands(
+            job,
+            s,
+            withMaskCapabilities(engineInfo(), engines()),
+            paths,
+          ),
         );
     } catch (e) {
       issues.push(serializeError(e));
@@ -358,6 +364,11 @@ function createEncodeQueue({
             audio: s.audio,
             container: s.container,
             repeatFrames: !maskOnly && target > meta.fps,
+            maskFormat: s.maskFormat ?? "lossless",
+            maskEncoder:
+              commands.find((c) => c.maskEncoding)?.maskEncoding.encoder || "",
+            maskQuality:
+              commands.find((c) => c.maskEncoding)?.maskEncoding.quality ?? 0,
           },
           message: "",
         }
@@ -372,6 +383,7 @@ function createEncodeQueue({
       dimensions: meta ? core.dimensions(s, meta) : null,
       summary: summaryData?.message || "",
       summaryData,
+      maskEncoding: commands.find((c) => c.maskEncoding)?.maskEncoding,
       command: core.commandText(commands, { prepare: true }),
       errors: [...new Set(issues.map((issue) => issue.message))],
       issues,
@@ -504,6 +516,7 @@ function createEncodeQueue({
         "error",
         "errorData",
         "softwareRetry",
+        "noteData",
         "stage",
         "elapsed",
         "startedAt",
