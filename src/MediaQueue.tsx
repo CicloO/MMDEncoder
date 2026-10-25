@@ -15,6 +15,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { Button, PAGE_SIZE, useDragSort } from "./components";
+import { OutputFiles } from "./OutputFiles";
+import { formatDuration } from "./presentation";
 import { metaSummary } from "./FileMeta";
 import { offsetText } from "./autoAlign";
 import { AUDIO_EXT, STATUS, baseName } from "./mediaOptions";
@@ -116,6 +118,15 @@ export function MediaQueue({
               <LoaderCircle size={12} className="spin" />
             )}
             {STATUS()[j.status] || j.status}
+            {j.status === "done" && j.elapsed !== undefined
+              ? t("queue.completedTime", {
+                  time:
+                    j.elapsed < 1
+                      ? t("queue.lessThanSecond")
+                      : formatDuration(j.elapsed),
+                })
+              : ""}
+            {j.status === "done" && <OutputFiles output={j.output} />}
             {j.status === "failed" && jobError(j)
               ? t("media.failureDetail", { detail: jobError(j).slice(0, 60) })
               : ""}

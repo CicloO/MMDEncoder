@@ -93,3 +93,88 @@ test("500 completed video tasks retain the existing payload size without duplica
     `500 video tasks: output payload ${beforeBytes} -> ${afterBytes} bytes`,
   );
 });
+
+test("completed media rows reuse output filenames after elapsed time and hide stale paths on waiting rows", () => {
+  const i18n = load("src/i18n.ts");
+  const presentation = load("src/presentation.ts", { "./i18n": i18n });
+  const options = load("src/mediaOptions.ts", { "./i18n": i18n });
+  const { MediaQueue } = load("src/MediaQueue.tsx", {
+    "./i18n": i18n,
+    "./presentation": presentation,
+    "./components": {
+      PAGE_SIZE: 20,
+      Button: ({ children }) => React.createElement("button", {}, children),
+    },
+    "./OutputFiles": { OutputFiles },
+    "./FileMeta": { metaSummary: () => "Metadata" },
+    "./autoAlign": { offsetText: () => "Offset" },
+    "./mediaOptions": options,
+  });
+  const completed = {
+    id: "done",
+    name: "User input.wav",
+    path: "H:/source/User input.wav",
+    status: "done",
+    size: 0,
+    elapsed: 12.5,
+    output: "H:/output/User result (2).wav",
+  };
+  const props = {
+    jobs: [completed],
+    operation: "audio",
+    running: false,
+    locked: false,
+    clearable: true,
+    page: 0,
+    pageCount: 1,
+    sortJob: () => ({}),
+    onSelect: () => {},
+    onPage: () => {},
+    onPickFiles: () => {},
+    onPickAudio: () => {},
+    onAlign: () => {},
+    onRequeue: () => {},
+    onRemove: () => {},
+    onClear: () => {},
+  };
+  const html = renderToStaticMarkup(React.createElement(MediaQueue, props));
+  assert.match(html, /已完成 · 用时 00:00:12/);
+  assert.match(html, /title="H:\/output\/User result \(2\).wav"/);
+  assert.equal((html.match(/class="output-file-name"/g) || []).length, 1);
+  for (const status of ["ready", "running", "failed", "cancelled"]) {
+    const next = renderToStaticMarkup(
+      React.createElement(MediaQueue, {
+        ...props,
+        jobs: [{ ...completed, status }],
+      }),
+    );
+    assert.ok(!next.includes('class="output-file-name"'));
+  }
+});
+
+test("500 completed media tasks keep the existing payload size and one copy of each output path", () => {
+  const state = {
+    jobs: [],
+    mediaJobs: Array.from({ length: 500 }, (_, i) => ({
+      id: "m" + i,
+      name: `用户音频${i}.wav`,
+      path: `H:/source/用户音频${i}.wav`,
+      status: "done",
+      elapsed: 12,
+      output: `H:/Encoded/用户音频${i} (2).flac`,
+      log: "",
+    })),
+  };
+  const before = Buffer.byteLength(JSON.stringify(state));
+  const projected = uiState(state);
+  const after = Buffer.byteLength(JSON.stringify(projected));
+  assert.equal(after, before);
+  assert.ok(
+    projected.mediaJobs.every(
+      (job) =>
+        Object.keys(job).filter((key) => key.toLowerCase().includes("output"))
+          .length === 1,
+    ),
+  );
+  console.log(`500 media tasks: output payload ${before} -> ${after} bytes`);
+});

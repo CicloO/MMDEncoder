@@ -49,6 +49,16 @@ const jobs: MediaJob[] = [
     size: 100,
     status: "cancelled",
   },
+  {
+    id: "done",
+    path: "C:/source/User done.wav",
+    name: "User done.wav",
+    status: "done",
+    size: 100,
+    elapsed: 12,
+    output:
+      "C:/output/User 保存后的很长文件名用于验证中部省略与完整可访问文字 (2).wav",
+  },
 ];
 export function MediaFixture() {
   return (

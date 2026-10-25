@@ -178,15 +178,34 @@ try {
   );
   await expect(page.locator(".output-path").first()).toHaveText(first);
   await page.getByRole("button", { name: "开始处理", exact: true }).click();
-  await expect(mediaQueue.locator(".job-status.done")).toHaveText("已完成");
+  await expect(mediaQueue.locator(".job-status.done")).toContainText(
+    "已完成 · 用时",
+  );
+  await expect(mediaQueue.locator(".output-file-name")).toHaveText(
+    path.basename(first),
+  );
+  await expect(mediaQueue.locator(".output-file-name")).toHaveAttribute(
+    "title",
+    first,
+  );
   assert.ok(fs.existsSync(first));
   checks.push("media queue item completes with an automatic same-folder name");
   await page
     .getByRole("button", { name: "重新导出 " + name, exact: true })
     .click();
   await expect(mediaQueue.locator(".job-status.ready")).toHaveText("等待处理");
+  await expect(mediaQueue.locator(".output-file-name")).toHaveCount(0);
   await page.getByRole("button", { name: "开始处理", exact: true }).click();
-  await expect(mediaQueue.locator(".job-status.done")).toHaveText("已完成");
+  await expect(mediaQueue.locator(".job-status.done")).toContainText(
+    "已完成 · 用时",
+  );
+  await expect(mediaQueue.locator(".output-file-name")).toHaveText(
+    path.parse(fixture).name + " (2).wav",
+  );
+  await expect(mediaQueue.locator(".output-file-name")).toHaveAttribute(
+    "title",
+    path.join(path.dirname(fixture), path.parse(fixture).name + " (2).wav"),
+  );
   assert.ok(
     fs.existsSync(
       path.join(path.dirname(fixture), path.parse(fixture).name + " (2).wav"),
@@ -208,7 +227,17 @@ try {
   await page.getByRole("button", { name: "移除 " + name, exact: true }).click();
   await page.getByRole("button", { name: "添加文件", exact: true }).click();
   await page.getByRole("button", { name: "开始处理", exact: true }).click();
-  await expect(mediaQueue.locator(".job-status.done")).toHaveText("已完成");
+  await expect(mediaQueue.locator(".job-status.done")).toContainText(
+    "已完成 · 用时",
+  );
+  await expect(mediaQueue.locator(".output-file-name")).toHaveAttribute(
+    "title",
+    path.join(
+      path.dirname(fixture),
+      "Encoded",
+      path.parse(fixture).name + ".wav",
+    ),
+  );
   await page.getByRole("button", { name: "清除已完成", exact: true }).click();
   await expect(page.getByText("把音视频放进来", { exact: true })).toBeVisible();
   checks.push("Encoded location, remove and clear completed");

@@ -116,7 +116,7 @@ try {
     await page.evaluate(() => window.alignLocale.choose("en-XA"));
     await expect(
       page.getByRole("heading", {
-        name: labels["media.queue"] + " 3",
+        name: labels["media.queue"] + " 4",
         exact: true,
       }),
     ).toBeVisible();
@@ -140,6 +140,13 @@ try {
     await expect(page.locator(".media-log")).toHaveText(
       "Foreign diagnostic stays exact",
     );
+    await expect(page.locator(".output-file-name")).toHaveText(
+      "User 保存后的很长文件名用于验证中部省略与完整可访问文字 (2).wav",
+    );
+    await expect(page.locator(".output-file-name")).toHaveAttribute(
+      "title",
+      "C:/output/User 保存后的很长文件名用于验证中部省略与完整可访问文字 (2).wav",
+    );
     assert.equal(
       await page.evaluate(() => localStorage.getItem("mmd-media-options")),
       before,
@@ -162,6 +169,19 @@ try {
       assert.ok(metrics.scroll <= metrics.width + 1, JSON.stringify(metrics));
       dimensions.push({ width, ...metrics });
       await screenshot(path.join(dir, `pseudo-media-${width}.png`));
+      if (width === 680) {
+        const file = page.locator(".output-file-name");
+        await file.scrollIntoViewIfNeeded();
+        const lead = await file
+          .locator(".output-file-lead")
+          .evaluate((node) => ({
+            width: node.clientWidth,
+            scroll: node.scrollWidth,
+          }));
+        assert.ok(lead.scroll > lead.width, JSON.stringify(lead));
+        await expect(file.locator(".output-file-tail")).toBeVisible();
+        await screenshot(path.join(dir, "pseudo-media-filename-narrow.png"));
+      }
     }
     fs.writeFileSync(
       path.join(dir, "media-results.json"),
