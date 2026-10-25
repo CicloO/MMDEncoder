@@ -12,6 +12,7 @@ import { MediaDetails } from "./MediaDetails";
 import { AlignDialog } from "./AlignDialog";
 import { autoAlign } from "./autoAlign";
 import { FileMeta } from "./FileMeta";
+import { t, errorMessage } from "./i18n";
 import type { MediaJob } from "./types";
 import { MediaQueue } from "./MediaQueue";
 import { MediaSettings } from "./MediaSettings";
@@ -53,7 +54,7 @@ export function MediaTools({
     [error, setError] = useState(""),
     [details, setDetails] = useState<any>(null),
     [detailsOpen, setDetailsOpen] = useState(false),
-    [detailsError, setDetailsError] = useState(""),
+    [detailsError, setDetailsError] = useState<unknown>(null),
     // The file whose 音频对齐 dialog is open.
     [alignId, setAlignId] = useState("");
   // Same paging as the video queue.
@@ -230,7 +231,7 @@ export function MediaTools({
                       disabled={toolsBusy}
                       onClick={async () => {
                         setDetails(null);
-                        setDetailsError("");
+                        setDetailsError(null);
                         setDetailsOpen(true);
                         try {
                           setDetails(
@@ -240,7 +241,7 @@ export function MediaTools({
                             }),
                           );
                         } catch (e) {
-                          setDetailsError((e as Error).message);
+                          setDetailsError(e);
                         }
                       }}
                     >
@@ -395,9 +396,9 @@ export function MediaTools({
       <Modal
         open={detailsOpen}
         onClose={() => setDetailsOpen(false)}
-        title="文件详情"
-        description="直接读取源文件与实际生成文件的 ffprobe 参数。"
-        error={detailsError}
+        title={t("details.title")}
+        description={t("details.description")}
+        error={detailsError ? errorMessage(detailsError) : ""}
         wide
       >
         <MediaDetails details={details} media />

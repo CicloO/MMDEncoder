@@ -927,8 +927,8 @@ export default function App() {
       <Modal
         open={modal === "details"}
         onClose={() => setModal("")}
-        title="文件详情"
-        description="直接读取源文件与实际生成文件的 ffprobe 参数。"
+        title={t("details.title")}
+        description={t("details.description")}
         error={error}
         wide
       >

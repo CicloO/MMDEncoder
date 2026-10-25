@@ -1,5 +1,6 @@
 "use strict";
 const fs = require("node:fs");
+const { appError, serializeError } = require("./errors.cjs");
 // Reads actual source/output metadata. Queue membership and process resources
 // remain with their existing owners; no settings or application State enters.
 function createFileDetails({
@@ -12,7 +13,7 @@ function createFileDetails({
   inputArgs,
 }) {
   return async function readDetails(payload) {
-    if (isToolsBusy()) throw Error("工具安装中，请稍后查看详情");
+    if (isToolsBusy()) throw appError("DETAILS_TOOLS_BUSY");
     // payload.media: a job from the audio / video tools queue
     const job = payload.media
       ? requireMediaJob(payload.id)
@@ -31,9 +32,13 @@ function createFileDetails({
           ["mask", job.maskOutput],
         ]) {
       if (!file || !fs.existsSync(file)) {
-        result[key] = {
-          message: key === "before" ? "源文件不存在" : "尚未生成文件",
-        };
+        result[key] = serializeError(
+          appError(
+            key === "before"
+              ? "DETAILS_SOURCE_MISSING"
+              : "DETAILS_OUTPUT_MISSING",
+          ),
+        );
         continue;
       }
       try {
@@ -60,7 +65,9 @@ function createFileDetails({
       } catch (e) {
         result[key] = {
           path: file,
-          message: "无法读取实际文件：" + e.message,
+          ...serializeError(
+            appError("DETAILS_READ_FAILED", { detail: e.message }),
+          ),
         };
       }
     }

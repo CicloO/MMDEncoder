@@ -85,110 +85,195 @@ try {
     .waitFor();
   const labels = await page.evaluate(() => window.alignLocale.pseudo);
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.evaluate(
-    (file) =>
-      window.alignLocale.open({
-        targetPath: file,
-        initial: { reference: file, offset: 0.125, trim: true },
-      }),
-    audio,
-  );
-  let dialog = page.getByRole("dialog", { name: "音频对齐", exact: true });
-  await expect(
-    dialog.getByRole("button", { name: "播放", exact: true }),
-  ).toBeEnabled();
-  await dialog.locator("#align-step").selectOption("0.001");
-  await dialog.getByRole("button", { name: "目标左移", exact: true }).click();
-  await dialog
-    .getByRole("checkbox", { name: "导出时截到参考的长度（不够时补静音）" })
-    .uncheck();
-  await expect(dialog.getByText(/目标开头多出 0\.1260 秒/)).toBeVisible();
-  await page.evaluate(() => window.alignLocale.choose("en-XA"));
-  dialog = page.getByRole("dialog", {
-    name: labels["align.title"],
-    exact: true,
-  });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.locator("#align-step")).toHaveValue("0.001");
-  await expect(dialog.locator('#align-step option[value="0.001"]')).toHaveText(
-    labels["align.step1ms"],
-  );
-  await expect(
-    dialog.getByRole("checkbox", { name: labels["align.trim"] }),
-  ).not.toBeChecked();
-  await expect(dialog.locator(".path-text")).toHaveText("User 音频.wav");
-  await expect(
-    dialog.getByText(labels["align.trimHead"].replace("{seconds}", "0.1260")),
-  ).toBeVisible();
-  await expect(
-    dialog.getByRole("button", { name: labels["align.play"], exact: true }),
-  ).toBeEnabled();
-  await expect(
-    dialog.getByLabel(labels["align.targetWave"], { exact: true }),
-  ).toBeVisible();
-  for (const width of [1280, 680]) {
-    await page.setViewportSize({ width, height: 900 });
-    const overflow = await dialog.evaluate((node) => ({
-      scroll: node.scrollWidth,
-      width: node.clientWidth,
-    }));
-    assert.ok(overflow.scroll <= overflow.width + 1, JSON.stringify(overflow));
-    await screenshot(path.join(dir, `pseudo-align-${width}.png`));
+  if (process.argv[2] === "metadata") {
+    await page.evaluate(
+      (file) => window.encoder.invoke("mediaAdd", { paths: [file] }),
+      audio,
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(
+          async () =>
+            !!(await window.encoder.invoke("state")).mediaJobs[0]?.meta,
+        ),
+      )
+      .toBe(true);
+    const data = await page.evaluate(async () => {
+      const job = (await window.encoder.invoke("state")).mediaJobs[0];
+      const details = await window.encoder.invoke("details", {
+        id: job.id,
+        media: true,
+      });
+      window.alignLocale.showMetadata({ meta: job.meta, details });
+      return { meta: job.meta, details };
+    });
+    let dialog = page.getByRole("dialog", { name: "文件详情", exact: true });
+    await expect(
+      dialog.getByText("尚未生成文件", { exact: true }),
+    ).toBeVisible();
+    await page.evaluate(() => window.alignLocale.choose("en-XA"));
+    dialog = page.getByRole("dialog", {
+      name: labels["details.title"],
+      exact: true,
+    });
+    await expect(
+      dialog.getByText(labels["meta.audioOnly"], { exact: true }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByText(labels["details.before"], { exact: true }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByText(labels["error.DETAILS_OUTPUT_MISSING"], { exact: true }),
+    ).toBeVisible();
+    await expect(dialog.locator(".path-text")).toHaveText(audio);
+    await dialog.locator("details > summary").click();
+    assert.deepEqual(
+      JSON.parse(await dialog.locator("pre").innerText()),
+      data.details.before,
+    );
+    await dialog.locator("details > summary").click();
+    for (const width of [1280, 680]) {
+      await page.setViewportSize({ width, height: 900 });
+      const overflow = await dialog.evaluate((node) => ({
+        scroll: node.scrollWidth,
+        width: node.clientWidth,
+      }));
+      assert.ok(
+        overflow.scroll <= overflow.width + 1,
+        JSON.stringify(overflow),
+      );
+      await screenshot(path.join(dir, `pseudo-metadata-${width}.png`));
+    }
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    fs.writeFileSync(
+      path.join(dir, "metadata-results.json"),
+      JSON.stringify(
+        {
+          data,
+          checks: [
+            "metadata-label-refresh",
+            "structured-missing-output",
+            "actual-ffprobe-json-unchanged",
+            "user-path-exact",
+            "wide-narrow-overflow",
+            "escape",
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+    console.log("Desktop metadata locale PASS", dir);
+  } else {
+    await page.evaluate(
+      (file) =>
+        window.alignLocale.open({
+          targetPath: file,
+          initial: { reference: file, offset: 0.125, trim: true },
+        }),
+      audio,
+    );
+    let dialog = page.getByRole("dialog", { name: "音频对齐", exact: true });
+    await expect(
+      dialog.getByRole("button", { name: "播放", exact: true }),
+    ).toBeEnabled();
+    await dialog.locator("#align-step").selectOption("0.001");
+    await dialog.getByRole("button", { name: "目标左移", exact: true }).click();
+    await dialog
+      .getByRole("checkbox", { name: "导出时截到参考的长度（不够时补静音）" })
+      .uncheck();
+    await expect(dialog.getByText(/目标开头多出 0\.1260 秒/)).toBeVisible();
+    await page.evaluate(() => window.alignLocale.choose("en-XA"));
+    dialog = page.getByRole("dialog", {
+      name: labels["align.title"],
+      exact: true,
+    });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator("#align-step")).toHaveValue("0.001");
+    await expect(
+      dialog.locator('#align-step option[value="0.001"]'),
+    ).toHaveText(labels["align.step1ms"]);
+    await expect(
+      dialog.getByRole("checkbox", { name: labels["align.trim"] }),
+    ).not.toBeChecked();
+    await expect(dialog.locator(".path-text")).toHaveText("User 音频.wav");
+    await expect(
+      dialog.getByText(labels["align.trimHead"].replace("{seconds}", "0.1260")),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: labels["align.play"], exact: true }),
+    ).toBeEnabled();
+    await expect(
+      dialog.getByLabel(labels["align.targetWave"], { exact: true }),
+    ).toBeVisible();
+    for (const width of [1280, 680]) {
+      await page.setViewportSize({ width, height: 900 });
+      const overflow = await dialog.evaluate((node) => ({
+        scroll: node.scrollWidth,
+        width: node.clientWidth,
+      }));
+      assert.ok(
+        overflow.scroll <= overflow.width + 1,
+        JSON.stringify(overflow),
+      );
+      await screenshot(path.join(dir, `pseudo-align-${width}.png`));
+    }
+    await dialog
+      .getByRole("button", { name: labels["align.apply"], exact: true })
+      .click();
+    await expect(dialog).toBeHidden();
+    const applied = await page.evaluate(() => window.alignLocale.applied());
+    assert.equal(applied.reference, audio);
+    assert.ok(Math.abs(applied.offset - 0.126) < 1e-12);
+    assert.equal(applied.trim, false);
+    // A real worker error stays structured while the open dialog changes language.
+    await page.evaluate(() => window.alignLocale.choose("zh-CN"));
+    await page.evaluate(
+      (file) =>
+        window.alignLocale.open({ targetPath: file, fixedReference: file }),
+      short,
+    );
+    dialog = page.getByRole("dialog", { name: "音频对齐", exact: true });
+    await expect(dialog.getByRole("alert")).toHaveText(
+      "自动对齐失败：音频太短，至少需要 1 秒",
+    );
+    await page.evaluate(() => window.alignLocale.choose("en-XA"));
+    dialog = page.getByRole("dialog", {
+      name: labels["align.title"],
+      exact: true,
+    });
+    await expect(dialog.getByRole("alert")).toHaveText(
+      labels["error.ALIGN_TOO_SHORT"].replace("{seconds}", "1"),
+    );
+    await expect(
+      dialog.getByRole("button", { name: labels["align.auto"], exact: true }),
+    ).toBeEnabled();
+    await screenshot(path.join(dir, "pseudo-align-error.png"));
+    await dialog
+      .getByRole("button", { name: labels["align.cancel"], exact: true })
+      .click();
+    await expect(dialog).toBeHidden();
+    fs.writeFileSync(
+      path.join(dir, "results.json"),
+      JSON.stringify(
+        {
+          applied,
+          checks: [
+            "open-locale-refresh",
+            "draft-offset-trim-preserved",
+            "technical-values-and-user-path",
+            "wide-narrow-overflow",
+            "worker-error-reformatted",
+            "cancel",
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+    console.log("Desktop alignment locale PASS", dir);
   }
-  await dialog
-    .getByRole("button", { name: labels["align.apply"], exact: true })
-    .click();
-  await expect(dialog).toBeHidden();
-  const applied = await page.evaluate(() => window.alignLocale.applied());
-  assert.equal(applied.reference, audio);
-  assert.ok(Math.abs(applied.offset - 0.126) < 1e-12);
-  assert.equal(applied.trim, false);
-  // A real worker error stays structured while the open dialog changes language.
-  await page.evaluate(() => window.alignLocale.choose("zh-CN"));
-  await page.evaluate(
-    (file) =>
-      window.alignLocale.open({ targetPath: file, fixedReference: file }),
-    short,
-  );
-  dialog = page.getByRole("dialog", { name: "音频对齐", exact: true });
-  await expect(dialog.getByRole("alert")).toHaveText(
-    "自动对齐失败：音频太短，至少需要 1 秒",
-  );
-  await page.evaluate(() => window.alignLocale.choose("en-XA"));
-  dialog = page.getByRole("dialog", {
-    name: labels["align.title"],
-    exact: true,
-  });
-  await expect(dialog.getByRole("alert")).toHaveText(
-    labels["error.ALIGN_TOO_SHORT"].replace("{seconds}", "1"),
-  );
-  await expect(
-    dialog.getByRole("button", { name: labels["align.auto"], exact: true }),
-  ).toBeEnabled();
-  await screenshot(path.join(dir, "pseudo-align-error.png"));
-  await dialog
-    .getByRole("button", { name: labels["align.cancel"], exact: true })
-    .click();
-  await expect(dialog).toBeHidden();
-  fs.writeFileSync(
-    path.join(dir, "results.json"),
-    JSON.stringify(
-      {
-        applied,
-        checks: [
-          "open-locale-refresh",
-          "draft-offset-trim-preserved",
-          "technical-values-and-user-path",
-          "wide-narrow-overflow",
-          "worker-error-reformatted",
-          "cancel",
-        ],
-      },
-      null,
-      2,
-    ),
-  );
-  console.log("Desktop alignment locale PASS", dir);
 } finally {
   await app.close();
 }
