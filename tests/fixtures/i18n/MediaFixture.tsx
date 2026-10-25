@@ -56,8 +56,7 @@ const jobs: MediaJob[] = [
     status: "done",
     size: 100,
     elapsed: 12,
-    output:
-      "C:/output/User 保存后的很长文件名用于验证中部省略与完整可访问文字 (2).wav",
+    output: "C:/output/User " + "保存后的长文件名".repeat(12) + " (2).wav",
   },
 ];
 export function MediaFixture() {

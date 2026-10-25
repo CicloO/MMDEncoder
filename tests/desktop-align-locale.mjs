@@ -86,6 +86,7 @@ try {
   const labels = await page.evaluate(() => window.alignLocale.pseudo);
   await page.setViewportSize({ width: 1280, height: 900 });
   if (process.argv[2] === "media") {
+    const longOutputName = "User " + "保存后的长文件名".repeat(12) + " (2).wav";
     await page.evaluate(() => window.alignLocale.showMedia());
     await page.getByLabel("操作", { exact: true }).selectOption("merge");
     await page.getByLabel("输出音频", { exact: true }).selectOption("opus");
@@ -140,12 +141,10 @@ try {
     await expect(page.locator(".media-log")).toHaveText(
       "Foreign diagnostic stays exact",
     );
-    await expect(page.locator(".output-file-name")).toHaveText(
-      "User 保存后的很长文件名用于验证中部省略与完整可访问文字 (2).wav",
-    );
+    await expect(page.locator(".output-file-name")).toHaveText(longOutputName);
     await expect(page.locator(".output-file-name")).toHaveAttribute(
       "title",
-      "C:/output/User 保存后的很长文件名用于验证中部省略与完整可访问文字 (2).wav",
+      "C:/output/" + longOutputName,
     );
     assert.equal(
       await page.evaluate(() => localStorage.getItem("mmd-media-options")),
