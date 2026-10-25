@@ -15,23 +15,20 @@ const version = JSON.parse(
 // folder there is moved aside during the build and put back afterwards.
 const keep = path.join(path.dirname(dest), ".data-keep");
 let keptData = false;
-// Builds before the rename shipped "MMD Encoder.exe"; both names count as ours.
-const EXE_NAMES = ["MMDEncoder.exe", "MMD Encoder.exe"];
+const EXE = "MMDEncoder.exe";
 async function replacePrevious() {
-  for (const name of EXE_NAMES) {
-    const running = execFileSync(
-      "tasklist",
-      ["/FI", `IMAGENAME eq ${name}`, "/NH"],
-      { encoding: "utf8", windowsHide: true },
-    );
-    if (running.includes(name))
-      throw new Error("MMDEncoder 正在运行，请先关闭再打包");
-  }
+  const running = execFileSync(
+    "tasklist",
+    ["/FI", `IMAGENAME eq ${EXE}`, "/NH"],
+    { encoding: "utf8", windowsHide: true },
+  );
+  if (running.includes(EXE))
+    throw new Error("MMDEncoder 正在运行，请先关闭再打包");
   const entries = await fs.readdir(dest);
   // An empty folder (or one holding only data) is fine; anything else must be our build.
   if (
     entries.some((n) => n !== "data" && n !== ".update") &&
-    !entries.some((n) => EXE_NAMES.includes(n))
+    !entries.includes(EXE)
   )
     throw new Error("发行目录不是 MMDEncoder 便携版，请手动处理：" + dest);
   try {
@@ -120,7 +117,7 @@ if (
 )
   throw new Error("Invalid generated path");
 await fs.rm(generatedDist, { recursive: true, force: true });
-for (const name of ["desktop", "backend", "dist", "assets"])
+for (const name of ["desktop", "backend", "dist", "assets", "locales"])
   await fs.cp(path.join(root, name), path.join(appDir, name), {
     recursive: true,
   });

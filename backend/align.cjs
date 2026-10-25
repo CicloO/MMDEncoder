@@ -38,7 +38,24 @@ const RELIABLE_ONSETS = 2;
 
 // Mono samples at `rate` from `start` for `length` seconds (whole file when
 // length is 0). Any file FFmpeg reads; a video's first audio track.
-function decode(ffmpeg, file, rate, { start = 0, length = 0, signal } = {}) {
+async function decode(ffmpeg, file, rate, options) {
+  const buf = await decodeRaw(ffmpeg, file, rate, "f32le", options);
+  const out = new Float32Array(buf.length >> 2);
+  for (let i = 0; i < out.length; i++) out[i] = buf.readFloatLE(i * 4);
+  return out;
+}
+// The same as 16-bit samples, the raw bytes (the dialog's preview): FFmpeg
+// converts and clips them, so they need no pass of their own.
+function decodeS16(ffmpeg, file, rate, options) {
+  return decodeRaw(ffmpeg, file, rate, "s16le", options);
+}
+function decodeRaw(
+  ffmpeg,
+  file,
+  rate,
+  format,
+  { start = 0, length = 0, signal } = {},
+) {
   return new Promise((resolve, reject) => {
     const args = [
       "-hide_banner",
@@ -58,7 +75,7 @@ function decode(ffmpeg, file, rate, { start = 0, length = 0, signal } = {}) {
       "-ar",
       String(rate),
       "-f",
-      "f32le",
+      format,
       "-",
     ];
     const child = spawn(ffmpeg, args, { windowsHide: true, signal });
@@ -72,10 +89,7 @@ function decode(ffmpeg, file, rate, { start = 0, length = 0, signal } = {}) {
         return reject(
           Error("无法读取音频：" + (err.trim() || "退出码 " + code)),
         );
-      const buf = Buffer.concat(chunks);
-      const out = new Float32Array(buf.length >> 2);
-      for (let i = 0; i < out.length; i++) out[i] = buf.readFloatLE(i * 4);
-      resolve(out);
+      resolve(Buffer.concat(chunks));
     });
   });
 }
@@ -284,4 +298,4 @@ async function align(tools, reference, target, { signal } = {}) {
   return { offset, confidence, reliable };
 }
 
-module.exports = { align, decode, gccPhat, fft, onsets, RELIABLE };
+module.exports = { align, decode, decodeS16, gccPhat, fft, onsets, RELIABLE };

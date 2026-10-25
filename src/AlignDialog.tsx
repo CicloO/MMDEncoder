@@ -9,31 +9,10 @@ import {
   Wand2,
 } from "lucide-react";
 import { Button, Modal } from "./components";
+import { draw, envelope, type Track } from "./alignWave";
+import { useAlignPlayer } from "./useAlignPlayer";
+import { ask, isCancelled } from "./alignRequests";
 
-// Sound of a file as the backend sends it (alignPreview): mono 16-bit.
-type Track = { rate: number; duration: number; pcm: Int16Array };
-// Min / max of every BLOCK samples, so a long view draws without reading
-// every sample.
-const BLOCK = 64;
-type Envelope = { min: Int16Array; max: Int16Array };
-function envelope(pcm: Int16Array): Envelope {
-  const n = Math.ceil(pcm.length / BLOCK);
-  const min = new Int16Array(n),
-    max = new Int16Array(n);
-  for (let b = 0; b < n; b++) {
-    let lo = 32767,
-      hi = -32768;
-    const end = Math.min(pcm.length, (b + 1) * BLOCK);
-    for (let i = b * BLOCK; i < end; i++) {
-      const v = pcm[i];
-      if (v < lo) lo = v;
-      if (v > hi) hi = v;
-    }
-    min[b] = lo;
-    max[b] = hi;
-  }
-  return { min, max };
-}
 // Nudge steps (seconds): an MMD frame, 10 ms, 1 ms, one sample at 48 kHz.
 const STEPS = [
   { value: String(1 / 30), label: "1 帧（1/30 秒）" },
@@ -41,89 +20,16 @@ const STEPS = [
   { value: "0.001", label: "1 毫秒" },
   { value: String(1 / 48000), label: "1 个采样" },
 ];
+// The dialog's requests: one of each at a time; a newer one, or closing,
+// stops the older (align-service.cjs), which then fails with "已取消".
+const SLOTS = {
+  target: "align:target",
+  reference: "align:reference",
+  run: "align:run",
+};
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 const seconds = (t: number) =>
   `${t < 0 ? "-" : ""}${Math.floor(Math.abs(t) / 60)}:${(Math.abs(t) % 60).toFixed(3).padStart(6, "0")}`;
-
-// Draws one track over the view [start, start + span] of the reference's
-// time; the target's sound at reference time t is its own time t + shift.
-function draw(
-  canvas: HTMLCanvasElement | null,
-  track: Track | null,
-  env: Envelope | null,
-  start: number,
-  span: number,
-  shift: number,
-  playhead: number,
-  // Where each recording starts (reference time): dashed lines.
-  starts: { t: number; color: string }[],
-) {
-  if (!canvas) return;
-  const dpr = window.devicePixelRatio || 1;
-  const w = Math.max(1, Math.round(canvas.clientWidth * dpr)),
-    h = Math.max(1, Math.round(canvas.clientHeight * dpr));
-  if (canvas.width !== w) canvas.width = w;
-  if (canvas.height !== h) canvas.height = h;
-  const g = canvas.getContext("2d")!;
-  const css = getComputedStyle(canvas);
-  g.clearRect(0, 0, w, h);
-  g.fillStyle = css.getPropertyValue("--wave-bg") || "transparent";
-  g.fillRect(0, 0, w, h);
-  g.strokeStyle = css.getPropertyValue("--wave-axis");
-  g.beginPath();
-  g.moveTo(0, h / 2);
-  g.lineTo(w, h / 2);
-  g.stroke();
-  if (track && env) {
-    g.fillStyle = css.getPropertyValue("--wave-fill");
-    const perPx = (span * track.rate) / w;
-    for (let x = 0; x < w; x++) {
-      const t = start + (x / w) * span + shift;
-      const a = Math.floor(t * track.rate),
-        b = Math.floor(a + Math.max(1, perPx));
-      if (b <= 0 || a >= track.pcm.length) continue;
-      let lo = 32767,
-        hi = -32768;
-      if (b - a >= 2 * BLOCK) {
-        for (
-          let k = Math.max(0, Math.floor(a / BLOCK));
-          k < Math.min(env.min.length, Math.ceil(b / BLOCK));
-          k++
-        ) {
-          if (env.min[k] < lo) lo = env.min[k];
-          if (env.max[k] > hi) hi = env.max[k];
-        }
-      } else
-        for (let i = Math.max(0, a); i < Math.min(track.pcm.length, b); i++) {
-          const v = track.pcm[i];
-          if (v < lo) lo = v;
-          if (v > hi) hi = v;
-        }
-      if (hi < lo) continue;
-      const y0 = h / 2 - (hi / 32768) * (h / 2),
-        y1 = h / 2 - (lo / 32768) * (h / 2);
-      g.fillRect(x, y0, 1, Math.max(1, y1 - y0));
-    }
-  }
-  g.save();
-  g.setLineDash([4 * dpr, 4 * dpr]);
-  g.lineWidth = Math.max(1, dpr);
-  for (const s of starts) {
-    const x = Math.round(((s.t - start) / span) * w) + 0.5;
-    if (x < 0 || x > w) continue;
-    g.strokeStyle = css.getPropertyValue(s.color);
-    g.beginPath();
-    g.moveTo(x, 0);
-    g.lineTo(x, h);
-    g.stroke();
-  }
-  g.restore();
-  const px = ((playhead - start) / span) * w;
-  if (px >= 0 && px <= w) {
-    g.fillStyle = css.getPropertyValue("--wave-head");
-    g.fillRect(Math.round(px), 0, Math.max(1, Math.round(dpr)), h);
-  }
-}
 
 // 音频对齐: line a file's audio (the target) up with a reference, for
 // extracting it cut or padded to match (see media.command, alignFilter).
@@ -169,20 +75,28 @@ export function AlignDialog({
     [trim, setTrim] = useState(true),
     [view, setView] = useState({ start: 0, span: 10 }),
     [playhead, setPlayhead] = useState(0),
-    [playing, setPlaying] = useState(false),
     [listen, setListen] = useState("both"),
     [split, setSplit] = useState(false),
     [step, setStep] = useState(STEPS[0].value),
     [dropping, setDropping] = useState(false);
   const refCanvas = useRef<HTMLCanvasElement>(null),
-    tgtCanvas = useRef<HTMLCanvasElement>(null),
-    audio = useRef<{
-      ctx: AudioContext;
-      nodes: AudioScheduledSourceNode[];
-      when: number;
-      from: number;
-      frame: number;
-    } | null>(null);
+    tgtCanvas = useRef<HTMLCanvasElement>(null);
+  const {
+    playing,
+    play: playFrom,
+    stop,
+    release,
+  } = useAlignPlayer((t) => {
+    setPlayhead(t);
+    if (t > length) return; // playback ends there
+    // Keep the playhead in view.
+    setView((v) =>
+      t > v.start + v.span ? { ...v, start: t - v.span * 0.1 } : v,
+    );
+  });
+  // From the playhead (or `from`), the target shifted by `shift`.
+  const play = (from = playhead, shift = offset) =>
+    playFrom({ from, shift, reference, target, listen, split, length });
   const refEnv = useMemo(
     () => (reference ? envelope(reference.pcm) : null),
     [reference],
@@ -209,22 +123,28 @@ export function AlignDialog({
     setView({ start: lo - pad, span: hi - lo + 2 * pad });
   }
 
-  async function load(path: string) {
-    const t = (await call("alignPreview", { path })) as Track;
-    // The structured clone may arrive as a plain array buffer view.
-    return { ...t, pcm: new Int16Array(t.pcm) };
+  async function load(path: string, slot: string) {
+    const t = (await ask("alignPreview", { path, slot })) as Track;
+    // Used as it arrives; copied only if it came as another kind of view.
+    return t.pcm instanceof Int16Array
+      ? t
+      : { ...t, pcm: new Int16Array(t.pcm) };
   }
   async function run(ref = refPath, refDuration = reference?.duration || 0) {
     if (!targetPath || !ref) return;
     setBusy("正在自动对齐…");
     setError("");
     try {
-      const r = await call("alignRun", { reference: ref, target: targetPath });
+      const r = await ask("alignRun", {
+        reference: ref,
+        target: targetPath,
+        slot: SLOTS.run,
+      });
       setOffset(r.offset);
       fit(r.offset, refDuration);
       setResult({ confidence: r.confidence, reliable: r.reliable });
     } catch (e) {
-      setError((e as Error).message);
+      if (!isCancelled(e)) setError((e as Error).message);
     } finally {
       setBusy("");
     }
@@ -238,14 +158,14 @@ export function AlignDialog({
     setBusy("正在读取参考音频…");
     setError("");
     try {
-      const r = await load(file);
+      const r = await load(file, SLOTS.reference);
       setReference(r);
       setRefPath(file);
       fit(offset, r.duration);
       setBusy("");
       await run(file, r.duration);
     } catch (e) {
-      setError((e as Error).message);
+      if (!isCancelled(e)) setError((e as Error).message);
       setBusy("");
     }
   }
@@ -266,12 +186,12 @@ export function AlignDialog({
     setBusy("正在读取音频…");
     (async () => {
       try {
-        const t = await load(targetPath);
+        const t = await load(targetPath, SLOTS.target);
         if (cancelled) return;
         setTarget(t);
         let span = t.duration;
         if (ref) {
-          const r = await load(ref);
+          const r = await load(ref, SLOTS.reference);
           if (cancelled) return;
           setReference(r);
           span = r.duration;
@@ -284,14 +204,19 @@ export function AlignDialog({
           await run(ref, span);
         }
       } catch (e) {
-        if (!cancelled) setError((e as Error).message);
+        if (!cancelled && !isCancelled(e)) setError((e as Error).message);
       } finally {
         if (!cancelled) setBusy("");
       }
     })();
+    // Closed (or opened on another file): stop what is still being read or
+    // aligned, and let go of the sound.
     return () => {
       cancelled = true;
-      stop();
+      release();
+      void ask("alignCancel", { slots: Object.values(SLOTS) }).catch(() => {});
+      setTarget(null);
+      setReference(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, targetPath, fixedReference]);
@@ -327,68 +252,6 @@ export function AlignDialog({
     return () => window.removeEventListener("resize", paint);
   });
 
-  function stop() {
-    const a = audio.current;
-    if (!a) return;
-    cancelAnimationFrame(a.frame);
-    for (const n of a.nodes)
-      try {
-        n.stop();
-      } catch {
-        /* not started */
-      }
-    a.nodes = [];
-    setPlaying(false);
-  }
-  function buffer(ctx: AudioContext, t: Track) {
-    const b = ctx.createBuffer(1, t.pcm.length, t.rate);
-    const d = b.getChannelData(0);
-    for (let i = 0; i < t.pcm.length; i++) d[i] = t.pcm[i] / 32768;
-    return b;
-  }
-  const buffers = useRef(new Map<Track, AudioBuffer>());
-  function play(from = playhead, shift = offset) {
-    stop();
-    const ctx = audio.current?.ctx || new AudioContext();
-    const when = ctx.currentTime + 0.05;
-    const nodes: AudioScheduledSourceNode[] = [];
-    const start = (t: Track | null, at: number, pan: number) => {
-      if (!t) return;
-      let b = buffers.current.get(t);
-      if (!b) buffers.current.set(t, (b = buffer(ctx, t)));
-      if (at >= t.duration) return;
-      const src = ctx.createBufferSource();
-      src.buffer = b;
-      const panner = ctx.createStereoPanner();
-      panner.pan.value = split ? pan : 0;
-      src.connect(panner).connect(ctx.destination);
-      // Before the track begins (target padded): start it that much later.
-      if (at < 0) src.start(when - at, 0);
-      else src.start(when, at);
-      nodes.push(src);
-    };
-    if (listen !== "target") start(reference, from, -1);
-    if (listen !== "reference") start(target, from + shift, 1);
-    const tick = () => {
-      const a = audio.current!;
-      const t = a.from + (ctx.currentTime - a.when);
-      setPlayhead(t);
-      if (t > length) return stop();
-      // Keep the playhead in view.
-      setView((v) =>
-        t > v.start + v.span ? { ...v, start: t - v.span * 0.1 } : v,
-      );
-      a.frame = requestAnimationFrame(tick);
-    };
-    audio.current = {
-      ctx,
-      nodes,
-      when,
-      from,
-      frame: requestAnimationFrame(tick),
-    };
-    setPlaying(true);
-  }
   // A change while playing is heard at once.
   function setShift(next: number) {
     setOffset(next);

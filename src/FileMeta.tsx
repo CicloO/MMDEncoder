@@ -37,12 +37,16 @@ const mbps = (bits?: number) => {
   return m >= 100 ? m.toFixed(0) : m >= 10 ? m.toFixed(1) : m.toFixed(2);
 };
 
+// A PNG sequence's size is added up after it is usable.
+const sizeText = (meta: MediaMeta) =>
+  meta.sizing ? "大小统计中" : formatSize(meta.size);
+
 // One-line summary for queue rows.
 export function metaSummary(meta: MediaMeta) {
   const video = mbps(meta.videoBitRate);
   return meta.audioOnly
-    ? `${meta.audio ? audioText(meta.audio) : meta.codec.toUpperCase()} · ${formatDuration(meta.duration)} · ${formatSize(meta.size)}`
-    : `${meta.width}×${meta.height} · ${formatFPS(meta.fpsText || meta.fps || 0)} FPS · ${[meta.sequence ? `${meta.sequence.count} 张 PNG` : video && video + " Mbps", meta.sequence ? "" : audioShort(meta.audio), formatSize(meta.size)].filter(Boolean).join(" · ")}`;
+    ? `${meta.audio ? audioText(meta.audio) : meta.codec.toUpperCase()} · ${formatDuration(meta.duration)} · ${sizeText(meta)}`
+    : `${meta.width}×${meta.height} · ${formatFPS(meta.fpsText || meta.fps || 0)} FPS · ${[meta.sequence ? `${meta.sequence.count} 张 PNG` : video && video + " Mbps", meta.sequence ? "" : audioShort(meta.audio), sizeText(meta)].filter(Boolean).join(" · ")}`;
 }
 
 // Parameter block shown under "当前素材" / "当前文件".
@@ -63,7 +67,7 @@ export function FileMeta({ meta }: { meta: MediaMeta }) {
             <span>{rateText(meta.audio)}</span>
           ) : null}
           {meta.audio && <span>{channelText(meta.audio)}</span>}
-          <span>{formatSize(meta.size)}</span>
+          <span>{sizeText(meta)}</span>
           <span>仅音频</span>
         </div>
       </>
@@ -93,7 +97,7 @@ export function FileMeta({ meta }: { meta: MediaMeta }) {
         <span>{meta.pixFmt}</span>
         <span>{meta.bitDepth || "未知"}-bit</span>
         <span>{formatDuration(meta.duration)}</span>
-        <span>{formatSize(meta.size)}</span>
+        <span>{sizeText(meta)}</span>
         <span>{meta.hasAlpha ? "含 Alpha" : "无 Alpha"}</span>
       </div>
       <div className="metadata audio-row">

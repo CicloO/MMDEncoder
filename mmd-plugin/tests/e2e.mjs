@@ -10,7 +10,11 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, "../..");
 const core = require(path.join(root, "backend/core.cjs"));
-const { ff, fp } = require(path.join(root, "tests/engines.cjs"));
+// engines.cjs isolates ordinary service tests. This DLL instead uses Windows'
+// known folder, so this one integration test must restore the actual location.
+const localAppData = process.env.LOCALAPPDATA;
+const { ff, fp, nv } = require(path.join(root, "tests/engines.cjs"));
+process.env.LOCALAPPDATA = localAppData;
 const appExe = path.resolve(
   process.argv[2] || path.join(root, "release/MMDEncoder/MMDEncoder.exe"),
 );
@@ -23,20 +27,37 @@ const pluginDir = path.join(
 const configPath = path.join(pluginDir, "mmd-export.json");
 const historyPath = path.join(pluginDir, "exports.jsonl");
 const selectionPath = path.join(pluginDir, "mmd-selection.json");
+for (const image of ["MMDEncoder.exe", "MikuMikuDance.exe"]) {
+  const running = execFileSync(
+    "tasklist",
+    ["/FI", `IMAGENAME eq ${image}`, "/NH"],
+    { encoding: "utf8", windowsHide: true },
+  );
+  if (running.includes(image))
+    throw Error(`Close ${image} before the plugin integration test`);
+}
 
 let failures = 0;
 const check = (ok, what) => {
   console.log(`${ok ? "PASS" : "FAIL"} ${what}`);
   if (!ok) failures++;
 };
-const probe = (file) =>
-  JSON.parse(
-    execFileSync(
-      fp,
-      ["-v", "error", "-show_streams", "-show_format", "-of", "json", file],
-      { encoding: "utf8" },
-    ),
-  );
+// An unreadable or missing file gives no streams, so the checks that use it
+// fail and are reported instead of ending the whole run.
+const probe = (file) => {
+  try {
+    return JSON.parse(
+      execFileSync(
+        fp,
+        ["-v", "error", "-show_streams", "-show_format", "-of", "json", file],
+        { encoding: "utf8" },
+      ),
+    );
+  } catch (e) {
+    console.log(`probe failed for ${file}: ${e.message.split("\n")[0]}`);
+    return { streams: [], format: {} };
+  }
+};
 const pixel = (file, y) =>
   execFileSync(ff, [
     "-v",
@@ -60,6 +81,9 @@ const savedSelection = fs.existsSync(selectionPath)
   : null;
 const savedConfig = fs.existsSync(configPath)
   ? fs.readFileSync(configPath)
+  : null;
+const savedHistory = fs.existsSync(historyPath)
+  ? fs.readFileSync(historyPath)
   : null;
 try {
   // Project music under a Chinese folder; the .pmm stores the path in GBK.
@@ -161,7 +185,9 @@ try {
   if (fs.existsSync(mask)) {
     const m = probe(mask).streams;
     check(
-      m.length === 1 && m[0].profile === "High 4:4:4 Predictive" && Number(m[0].nb_frames) === 120,
+      m.length === 1 &&
+        m[0].profile === "High 4:4:4 Predictive" &&
+        Number(m[0].nb_frames) === 120,
       "lossless alpha mask with 120 frames next to the MP4",
     );
   } else check(false, "alpha mask written");
@@ -201,11 +227,223 @@ try {
     (entry.notes || []).some((n) => n.includes("采样点 441000–529200")),
     "WAV cut from frame 300 for 120 frames at 60 fps",
   );
+
+  // An NVEncC preset: FFmpeg → NVEncC → container, run by mmd-pipe.cjs.
+  if (fs.existsSync(nv)) {
+    require(path.join(root, "backend/mmd-export.cjs")).writeConfig({
+      settings: {
+        ...settings,
+        encoder: "nvencc:hevc",
+        preset: "P4",
+        quality: 28,
+        rateControl: "quality",
+      },
+      presetName: "NVEncC HEVC",
+      presetId: "nvencc-test",
+      maskMode: "with",
+      engines: { ffmpeg: ff, ffprobe: fp, nvencc: nv },
+      appExe,
+      helper: path.join(root, "backend/mmd-export.cjs"),
+    });
+    // A running MMDEncoder rewrites this file with its own (packaged) helper.
+    check(
+      JSON.parse(fs.readFileSync(configPath, "utf8")).helper ===
+        path.join(root, "backend/mmd-export.cjs"),
+      "NVEncC: plugin config points at this checkout (MMDEncoder closed)",
+    );
+    const nvAvi = path.join(dir, "NVEncC test.avi");
+    const nvOut = execFileSync(
+      path.join(build, "mmd-sim.exe"),
+      [
+        path.join(build, "MMDEncoderPlugin.dll"),
+        template,
+        nvAvi,
+        pmm,
+        "320",
+        "240",
+        "60",
+        "300",
+        "359",
+      ],
+      { encoding: "utf8" },
+    );
+    check(/frames=120/.test(nvOut), "NVEncC: MMD side sent 120 frames");
+    const nvMp4 = path.join(dir, "NVEncC test_0300-0359f.mp4");
+    for (
+      let i = 0;
+      i < 120 && (fs.existsSync(nvAvi) || !fs.existsSync(nvMp4));
+      i++
+    )
+      await new Promise((r) => setTimeout(r, 500));
+    if (fs.existsSync(nvMp4)) {
+      const info = probe(nvMp4);
+      const v = info.streams.find((s) => s.codec_type === "video");
+      const a = info.streams.find((s) => s.codec_type === "audio");
+      check(
+        v?.codec_name === "hevc" && Number(v.nb_frames) === 120,
+        "NVEncC: HEVC with all 120 frames",
+      );
+      check(a?.codec_name === "aac", "NVEncC: sound added by finish");
+      check(
+        pixel(nvMp4, 0)[0] < 60 && pixel(nvMp4, 238)[0] > 200,
+        "NVEncC: picture upright",
+      );
+      const nvMask = path.join(dir, "NVEncC test_0300-0359f_alpha.mp4");
+      check(
+        fs.existsSync(nvMask) &&
+          Number(probe(nvMask).streams[0].nb_frames) === 120,
+        "NVEncC: alpha mask with 120 frames",
+      );
+    } else check(false, "NVEncC: MP4 created");
+    check(
+      !fs
+        .readdirSync(dir)
+        .some((n) => n.includes(".mmdencoder-") || n.includes(".nvenc.")),
+      "NVEncC: temporary files removed",
+    );
+  } else console.log("SKIP NVEncC export (NVEncC not installed)");
+
+  const mx = require(path.join(root, "backend/mmd-export.cjs"));
+  const configure = (patch = {}) =>
+    mx.writeConfig({
+      settings,
+      presetName: "Encoding test",
+      presetId: "test",
+      maskMode: "off",
+      engines: { ffmpeg: ff, ffprobe: fp, nvencc: nv },
+      appExe,
+      helper: path.join(root, "backend/mmd-export.cjs"),
+      ...patch,
+    });
+  configure();
+  // An obsolete field must no longer select a mask in the new DLL.
+  const oldSelection = { ...mx.readSelection(), alphaMask: true };
+  delete oldSelection.maskMode;
+  fs.writeFileSync(selectionPath, JSON.stringify(oldSelection));
+  const beforeTest = fs.readFileSync(selectionPath, "utf8");
+  // The button shows the result briefly; the whole message (and a failure's
+  // reason) is in this run's plugin log, appended here for the checks.
+  const logs = path.join(pluginDir, "logs");
+  const dialog = (mask, save = false) => {
+    const before = new Set(fs.existsSync(logs) ? fs.readdirSync(logs) : []);
+    const out = execFileSync(
+      path.join(build, "mmd-sim.exe"),
+      [
+        "--dialog-test",
+        path.join(build, "MMDEncoderPlugin.dll"),
+        String(mask),
+        save ? "save" : "cancel",
+      ],
+      { encoding: "utf8", timeout: 100000 },
+    );
+    const log = fs
+      .readdirSync(logs)
+      .filter((n) => !before.has(n) && !n.endsWith("-ffmpeg.log"))
+      .map((n) => fs.readFileSync(path.join(logs, n), "utf8"))
+      .join("\n");
+    return out + "\n" + (log.match(/encoding test: .*/g) || []).join("\n");
+  };
+  const cancelled = dialog(1);
+  check(
+    /initialMask=0/.test(cancelled),
+    "settings: legacy alphaMask no longer read",
+  );
+  check(
+    /测试编码通过.*含 Alpha 遮罩/.test(cancelled),
+    "settings: encoding test uses unsaved mask choice",
+  );
+  check(
+    /testResult=✓/.test(cancelled) && !/unexpected message box/.test(cancelled),
+    "settings: result shown in the dialog, no message box",
+  );
+  check(
+    fs.readFileSync(selectionPath, "utf8") === beforeTest,
+    "settings: Cancel after testing leaves selection unchanged",
+  );
+  const saved = dialog(2, true);
+  const selection = JSON.parse(fs.readFileSync(selectionPath, "utf8"));
+  check(
+    /测试编码通过/.test(saved) && selection.maskMode === "only",
+    "settings: test then OK saves mask-only choice",
+  );
+  check(
+    !Object.hasOwn(selection, "alphaMask"),
+    "settings: obsolete alphaMask no longer written",
+  );
+  const broken = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  broken.engines.ffmpeg = path.join(dir, "missing-ffmpeg.exe");
+  fs.writeFileSync(configPath, JSON.stringify(broken));
+  check(
+    /编码测试失败/.test(dialog(0)),
+    "settings: encoding failure is shown and dialog remains usable",
+  );
+
+  if (fs.existsSync(nv)) {
+    for (const [name, enhancement, expected] of [
+      [
+        "VSR",
+        { vsr: true, vsrScale: 2, vsrQuality: 1 },
+        { width: 1280, height: 720, frames: 30, fps: 30 },
+      ],
+      [
+        "VFG",
+        { vfg: true, vfgMultiplier: 2, vfgMode: "medium" },
+        // Interpolation supplies the points between 30 originals: 29 * 2 + 1.
+        { width: 640, height: 360, frames: 59, fps: 60 },
+      ],
+    ]) {
+      configure({
+        settings: {
+          ...settings,
+          encoder: "nvencc:hevc",
+          preset: "P4",
+          resizeMode: "source",
+          ...enhancement,
+        },
+        followMmd: false,
+      });
+      const result = JSON.parse(
+        execFileSync(appExe, [path.join(root, "backend/mmd-export.cjs")], {
+          env: {
+            ...process.env,
+            ELECTRON_RUN_AS_NODE: "1",
+            MMD_EXPORT_MODE: "test",
+            MMD_EXPORT_JOB: "{}",
+          },
+          encoding: "utf8",
+          timeout: 90000,
+          windowsHide: true,
+        }),
+      );
+      const [num, den] = (result.video?.avg_frame_rate || "0/1")
+        .split("/")
+        .map(Number);
+      check(
+        result.ok &&
+          result.video.width === expected.width &&
+          result.video.height === expected.height &&
+          Number(result.video.nb_read_frames) === expected.frames &&
+          // The Matroska intermediate uses millisecond timestamps; use the
+          // same 0.1 fps tolerance as enhancements.probe on this short clip.
+          Math.abs(num / den - expected.fps) < 0.1,
+        `shared test: ${name} actual dimensions, frames and FPS (${JSON.stringify(result)})`,
+      );
+    }
+  }
 } finally {
   if (savedConfig) fs.writeFileSync(configPath, savedConfig);
   else fs.rmSync(configPath, { force: true });
   if (savedSelection) fs.writeFileSync(selectionPath, savedSelection);
   else fs.rmSync(selectionPath, { force: true });
+  if (savedHistory) fs.writeFileSync(historyPath, savedHistory);
+  else fs.rmSync(historyPath, { force: true });
+  const pending = path.join(pluginDir, "pending");
+  for (const name of fs.existsSync(pending) ? fs.readdirSync(pending) : []) {
+    if (!name.endsWith(".json")) continue;
+    const file = path.join(pending, name);
+    const entry = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (entry.temp && path.dirname(entry.temp) === dir) fs.rmSync(file);
+  }
   fs.rmSync(dir, { recursive: true, force: true });
 }
 console.log(failures ? `E2E FAILED (${failures})` : "E2E OK");

@@ -7,6 +7,7 @@ const crypto = require("node:crypto");
 const core = require("./core.cjs");
 const { signature: enhancementSignature } = require("./enhancements.cjs");
 const sequence = require("./sequence.cjs");
+const { uiState } = require("./ui-state.cjs");
 // Frame rate a PNG sequence starts with; it can be changed per sequence.
 const SEQUENCE_FPS = 30;
 const SEQUENCE_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120];
@@ -80,6 +81,7 @@ function createEncodeQueue(ctx) {
     // A video can be queued more than once (e.g. two different settings);
     // only several pictures of one sequence picked together count once.
     const sequences = new Set();
+    const added = [];
     for (const input of paths) {
       if (typeof input !== "string" || !path.isAbsolute(input))
         throw Error("素材必须为绝对路径");
@@ -89,9 +91,9 @@ function createEncodeQueue(ctx) {
       let seq = null,
         isDir = false;
       try {
-        isDir = fs.statSync(resolved).isDirectory();
+        isDir = (await fs.promises.stat(resolved)).isDirectory();
         if (isDir || /\.png$/i.test(resolved))
-          seq = sequence.find(resolved, folders);
+          seq = await sequence.find(resolved, folders);
       } catch {}
       if (isDir && !seq) {
         state.notice = "文件夹里没有 PNG 序列：" + path.basename(input);
@@ -112,68 +114,85 @@ function createEncodeQueue(ctx) {
         ...(seq ? { sequence: { ...seq, ...sequenceRate(SEQUENCE_FPS) } } : {}),
       };
       state.jobs.push(job);
-      emit();
-      try {
-        if (!state.engineInfo.ffprobe)
-          throw Error("未找到 ffprobe，无法读取素材");
-        if (/\.png$/i.test(resolved) && !seq)
-          throw Error(
-            "只有一张 PNG，不是图片序列（需要 name_0001.png 这样带连续编号的文件）",
-          );
-        if (seq?.missing !== null && seq?.missing !== undefined)
-          throw Error(
-            `PNG 序列不连续：缺少第 ${seq.missing} 帧（从 ${seq.start} 开始找到 ${seq.total} 张）`,
-          );
-        if (seq) {
-          job.meta = await sequenceMeta(job);
-          job.status = "ready";
-          emit();
-          continue;
-        }
-        const stat = fs.statSync(input);
-        if (!stat.isFile()) throw Error("输入不是文件");
-        const r = await run(
-          state.engineInfo.ffprobe,
-          [
-            "-v",
-            "error",
-            "-show_streams",
-            "-show_format",
-            "-of",
-            "json",
-            input,
-          ],
-          { timeout: 30000 },
-        );
-        job.meta = core.metadata(JSON.parse(r.stdout));
-        // Stream rates often both say 30/1 even when individual timestamps vary.
-        // A bounded sample of the first frames' times establishes positive VFR
-        // evidence without scanning an entire multi-hour source during import.
-        try {
-          const ts = await sampleTimes(input);
-          const gaps = ts
-            .slice(1)
-            .map((v, i) => v - ts[i])
-            .filter((v) => v > 0)
-            .sort((a, b) => a - b);
-          if (gaps.length > 2) {
-            const median = gaps[Math.floor(gaps.length / 2)];
-            job.meta.vfr ||= gaps.some(
-              (g) => Math.abs(g - median) > Math.max(0.002, median * 0.1),
-            );
-          }
-        } catch (e) {
-          job.log = "帧时间戳抽样未完成：" + e.message;
-        }
-        job.meta.size = stat.size;
-        job.status = "ready";
-      } catch (e) {
-        job.status = "invalid";
-        job.error = "素材探测失败：" + e.message;
-      }
-      emit();
+      added.push({ job, input, seq });
     }
-    return clone(state);
+    // All files are in the queue (in order) before any is read; then a few
+    // are read at a time. A file removed meanwhile is not read. Finished
+    // reads reach the window at most every 200 ms (emitProgress), not once
+    // per file; the response carries the final state.
+    emit();
+    await Promise.all(
+      added.map((a) =>
+        ctx.probeLimit(() =>
+          state.jobs.includes(a.job) ? probeJob(a) : undefined,
+        ),
+      ),
+    );
+    return uiState(state);
+  }
+  async function probeJob({ job, input, seq }) {
+    const resolved = job.path;
+    try {
+      if (!state.engineInfo.ffprobe)
+        throw Error("未找到 ffprobe，无法读取素材");
+      if (/\.png$/i.test(resolved) && !seq)
+        throw Error(
+          "只有一张 PNG，不是图片序列（需要 name_0001.png 这样带连续编号的文件）",
+        );
+      if (seq?.missing !== null && seq?.missing !== undefined)
+        throw Error(
+          `PNG 序列不连续：缺少第 ${seq.missing} 帧（从 ${seq.start} 开始找到 ${seq.total} 张）`,
+        );
+      if (seq) {
+        job.meta = await sequenceMeta(job);
+        job.status = "ready";
+        emitProgress();
+        // Usable now; the total size (one stat per frame) follows, outside
+        // the import limit so other files are not held up.
+        void sequence
+          .size(seq, () => state.jobs.includes(job))
+          .then((total) => {
+            if (total === undefined || !job.sequence || !job.meta) return;
+            job.sequence.size = total;
+            job.meta = withSequenceRate(job.meta, job.sequence);
+            emitProgress();
+          });
+        return;
+      }
+      const stat = fs.statSync(input);
+      if (!stat.isFile()) throw Error("输入不是文件");
+      const r = await run(
+        state.engineInfo.ffprobe,
+        ["-v", "error", "-show_streams", "-show_format", "-of", "json", input],
+        { timeout: 30000 },
+      );
+      job.meta = core.metadata(JSON.parse(r.stdout));
+      // Stream rates often both say 30/1 even when individual timestamps vary.
+      // A bounded sample of the first frames' times establishes positive VFR
+      // evidence without scanning an entire multi-hour source during import.
+      try {
+        const ts = await sampleTimes(input);
+        const gaps = ts
+          .slice(1)
+          .map((v, i) => v - ts[i])
+          .filter((v) => v > 0)
+          .sort((a, b) => a - b);
+        if (gaps.length > 2) {
+          const median = gaps[Math.floor(gaps.length / 2)];
+          job.meta.vfr ||= gaps.some(
+            (g) => Math.abs(g - median) > Math.max(0.002, median * 0.1),
+          );
+        }
+      } catch (e) {
+        job.log = "帧时间戳抽样未完成：" + e.message;
+      }
+      job.meta.size = stat.size;
+      job.status = "ready";
+    } catch (e) {
+      job.status = "invalid";
+      job.error = "素材探测失败：" + e.message;
+    }
+    emitProgress();
   }
   // A PNG sequence has no frame rate of its own: the user sets it (default
   // SEQUENCE_FPS), and length and timing follow from it.
@@ -200,9 +219,14 @@ function createEncodeQueue(ctx) {
       fps: q.fps,
       fpsText: q.fpsText,
       duration: q.count / q.fps,
+      // Unknown (undefined) while the frames are still being added up.
       size: q.size,
+      sizing: q.size === undefined,
       // Bits per second over the whole sequence, as for a video file.
-      videoBitRate: Math.round((q.size * 8 * q.fps) / q.count),
+      videoBitRate:
+        q.size === undefined
+          ? undefined
+          : Math.round((q.size * 8 * q.fps) / q.count),
       vfr: false,
       sequence: { count: q.count, start: q.start },
     };
@@ -292,7 +316,10 @@ function createEncodeQueue(ctx) {
     };
   }
   function append(job, text) {
-    job.log = ((job.log || "") + text).slice(-200000);
+    // The last 200 KB in memory (the whole log goes to disk): cut back only
+    // past 256 KB, so a long encode does not copy 200 KB on every line.
+    job.log = (job.log || "") + text;
+    if (job.log.length > 256000) job.log = job.log.slice(-200000);
     const pieces = ctx.pendingLogs.get(job.id) || [];
     pieces.push(text);
     ctx.pendingLogs.set(job.id, pieces);
@@ -411,7 +438,7 @@ function createEncodeQueue(ctx) {
         });
         if (c.output === temps.output) {
           try {
-            ctx.commit(temps.output, paths.output);
+            await ctx.commit(temps.output, paths.output);
           } catch (e) {
             if (e.code !== "EEXIST") throw e;
             paths = core.outputPaths(
@@ -420,13 +447,13 @@ function createEncodeQueue(ctx) {
               state.jobs.indexOf(job) + 1,
               fs.existsSync,
             );
-            ctx.commit(temps.output, paths.output);
+            await ctx.commit(temps.output, paths.output);
             job.maskOutput = paths.maskOutput;
           }
           job.output = paths.output;
         }
         if (c.mask) {
-          ctx.commit(temps.maskOutput, paths.maskOutput);
+          await ctx.commit(temps.maskOutput, paths.maskOutput);
           job.maskOutput = paths.maskOutput;
         }
       }
@@ -467,7 +494,7 @@ function createEncodeQueue(ctx) {
     if (ctx.tools.state.busy || state.enhancements.busy)
       throw Error("工具管理或 RTX 验证中，请稍后处理队列");
     if (state.running) throw Error("队列正在运行");
-    if (state.trim.running) throw Error("无损剪辑正在导出，请等它结束");
+    if (ctx.trimExporting()) throw Error("无损剪辑正在导出，请等它结束");
     // Validate the frozen per-job settings first; a bad alpha source must not
     // prevent valid items from continuing, or be mislabeled as an engine fault.
     jobs = jobs.filter((j) => {

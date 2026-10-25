@@ -42,8 +42,8 @@ test("an update that changes an edited built-in asks before dropping the edit", 
     assert.deepEqual(
       state().presetConflicts.map((c) => [c.id, c.name]),
       [
-        ["builtin-alpha", "我的 ProRes"],
         ["builtin-alpha-mask", "我的分离"],
+        ["builtin-alpha", "我的 ProRes"],
       ],
     );
     const alpha = state().presets.find((p) => p.id === "builtin-alpha");

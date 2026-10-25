@@ -30,7 +30,8 @@ test(
     const config = () => JSON.parse(fs.readFileSync(mx.configPath(), "utf8"));
     try {
       await until(() => state().located && !state().detecting);
-      assert.equal(state().mmd.presetId, "");
+      // Nothing chosen yet: the editing intermediate, published for the plugin.
+      assert.equal(state().mmd.presetId, "builtin-prores422");
       assert.equal(state().mmd.followMmd, true, "follow MMD is on by default");
       // The plugin window needs the preset list even before anything is chosen.
       const c = config();
@@ -44,7 +45,7 @@ test(
         "",
         "split alpha works in the live export",
       );
-      assert.throws(() => mx.readConfig(), /还没有选择导出预设/);
+      assert.equal(mx.readConfig().presetId, "builtin-prores422");
 
       await svc.invoke("mmdExportSet", { presetId: "builtin-1080-sw" });
       assert.equal(mx.readSelection().presetId, "builtin-1080-sw");
@@ -105,11 +106,6 @@ test(
       await svc.invoke("mmdExportSet", { maskMode: "with" });
       assert.equal(mx.readSelection().maskMode, "with");
       assert.equal(mx.readSelection().alphaMask, undefined);
-      assert.equal(
-        JSON.parse(fs.readFileSync(mx.selectionPath(), "utf8")).alphaMask,
-        true,
-        "1.4.1 plugins still read the old switch",
-      );
       assert.equal(mx.readConfig().maskMode, "with");
       assert.ok(mx.plan(runtime).maskOutput.endsWith("x_alpha.mp4"));
       await svc.invoke("mmdTest");

@@ -58,12 +58,8 @@ function readSelection() {
       followMmd: s.followMmd !== false,
       // Seconds of audio fade-in and fade-out (0 = off).
       audioFade: FADES.includes(s.audioFade) ? s.audioFade : 0,
-      // "" = saved before 1.4.2: the preset decides, plus the old switch.
-      maskMode: MASK_MODES.includes(s.maskMode)
-        ? s.maskMode
-        : s.alphaMask === true
-          ? "with"
-          : "",
+      // "" = the preset decides.
+      maskMode: MASK_MODES.includes(s.maskMode) ? s.maskMode : "",
       // Add the MMD frame range to the file name (_0400-0600f).
       rangeSuffix: s.rangeSuffix !== false,
       savedAt: typeof s.savedAt === "string" ? s.savedAt : "",
@@ -87,8 +83,6 @@ function writeSelection({
     audioFade,
     rangeSuffix: rangeSuffix !== false,
     maskMode: MASK_MODES.includes(maskMode) ? maskMode : "off",
-    // For MMDEncoder 1.4.1 and its plugin, which only know this switch.
-    alphaMask: maskMode === "with",
     savedAt: savedAt || new Date().toISOString(),
   };
   writeAtomic(selectionPath(), selection);
@@ -96,7 +90,7 @@ function writeSelection({
 }
 
 // mmd-export.json: tools, the helper to run, and every preset the settings
-// window may offer. Legacy single-preset form ({settings, presetName, …}) also
+// window may offer. The single-preset form ({settings, presetName, …}) also
 // writes the selection, for scripts and tests.
 function writeConfig({
   presets,
@@ -133,6 +127,8 @@ function writeConfig({
     engines: {
       ffmpeg: engines.ffmpeg,
       ffprobe: engines.ffprobe,
+      // NVEncC presets (mmd-pipe.cjs).
+      nvencc: engines.nvencc || "",
       soxr: !!engines.soxr,
     },
     appExe,
@@ -144,11 +140,10 @@ function writeConfig({
 }
 
 // The effective export settings: config + current selection.
-function readConfig() {
+function readConfig(selection = readSelection()) {
   const config = JSON.parse(fs.readFileSync(configPath(), "utf8"));
   if (config.version !== 2)
     throw Error("导出设置版本不支持，请打开 MMDEncoder 重新选择导出预设");
-  const selection = readSelection();
   if (!selection?.presetId)
     throw Error(
       "还没有选择导出预设：请在 MMDEncoder 的“预设管理”或 MMD 的“詳細設定”里选择",
@@ -174,10 +169,9 @@ function readConfig() {
 }
 
 // Why a preset cannot be used for a live MMD export (empty string = usable).
-function unsupported(s, maskMode = "") {
-  if (maskMode === "only") return "";
-  if (s.alphaMode !== "mask" && s.encoder.startsWith("nvencc:"))
-    return "NVEncC（含 RTX 超分 / 补帧）需要两段处理，MMD 直接导出暂不支持";
+// Every preset can be now (NVEncC since 1.6.1, see mmd-pipe.cjs); this stays
+// the one place for such rules, which the app and the plugin both show.
+function unsupported() {
   return "";
 }
 
@@ -332,6 +326,45 @@ function plan(runtime, config = readConfig()) {
   );
   // DirectShow frames are usually stored bottom-up.
   const flip = runtime.bottomUp ? "vflip," : "";
+  // NVEncC: FFmpeg (MMD's frames, the mask) piped to NVEncC, then FFmpeg
+  // puts the video in its container; mmd-pipe.cjs runs them (see there).
+  if (commands.some((c) => c.pipeFrom)) {
+    const steps = core.singlePass(commands).map((c) => {
+      if (!c.pipeFrom) {
+        // Container step: video only (finish adds the sound), so not the
+        // source's second input, which here would be MMD's pipe again.
+        const args = [...c.args];
+        const i = args.indexOf("pipe:0");
+        if (i > 0 && args[i - 1] === "-i") args.splice(i - 1, 2);
+        for (let p; (p = args.indexOf("-progress")) >= 0;) args.splice(p, 2);
+        return { exe: c.exe, args };
+      }
+      const from = fromPipe(c.pipeFrom.args, runtime, rate, alpha);
+      if (flip) {
+        const vf = from.indexOf("-vf");
+        const fc = from.indexOf("-filter_complex");
+        if (vf >= 0) from[vf + 1] = flip + from[vf + 1];
+        else if (fc >= 0)
+          from[fc + 1] = from[fc + 1].replace("[0:v]", "[0:v]" + flip);
+      }
+      return {
+        exe: c.exe,
+        args: c.args,
+        pipeFrom: { exe: c.pipeFrom.exe, args: from },
+      };
+    });
+    return finishPlan({
+      exe: config.appExe || process.execPath,
+      args: [path.join(__dirname, "mmd-pipe.cjs")],
+      env: {
+        ELECTRON_RUN_AS_NODE: "1",
+        MMD_PIPE_JOB: JSON.stringify({
+          steps,
+          temporary: commands.map((c) => c.temporary).filter(Boolean),
+        }),
+      },
+    });
+  }
   let args;
   if (commands.length === 1) {
     args = fromPipe(commands[0].args, runtime, rate, alpha);
@@ -345,38 +378,43 @@ function plan(runtime, config = readConfig()) {
     );
     args = core.joinMask(video, matte, flip);
   }
-  const command = commands[0];
-  const result = {
-    exe: command.exe,
-    args,
-    temp,
-    output: paths.output,
-    ...(mask
-      ? { maskTemp: maskTemp(temp), maskOutput: maskOutput(paths.output) }
-      : {}),
-    notes,
-    fps: rate,
-    presetName: config.presetName,
-  };
-  writeAtomic(snapshotPath(temp), {
-    version: 1,
-    at: new Date().toISOString(),
-    // The MMD process that renders (this helper's parent): when it is gone and
-    // the snapshot is still here, the export was cut off.
-    mmdPid: process.ppid,
-    avi: runtime.avi,
-    pmm: runtime.pmm || "",
-    startFrame: Number.isInteger(runtime.startFrame) ? runtime.startFrame : -1,
-    avgTimePerFrame: runtime.avgTimePerFrame,
-    temp,
-    output: paths.output,
-    presetName: config.presetName,
-    settings: { ...s, alphaMask: mask },
-    engines: config.engines,
-    audioFade: config.audioFade,
-    rangeSuffix: config.rangeSuffix !== false,
-  });
-  return result;
+  return finishPlan({ exe: commands[0].exe, args });
+  // The launch (exe, args, optional env for the plugin) with the paths, and
+  // a snapshot of the settings for finish.
+  function finishPlan(launch) {
+    const result = {
+      ...launch,
+      temp,
+      output: paths.output,
+      ...(mask
+        ? { maskTemp: maskTemp(temp), maskOutput: maskOutput(paths.output) }
+        : {}),
+      notes,
+      fps: rate,
+      presetName: config.presetName,
+    };
+    writeAtomic(snapshotPath(temp), {
+      version: 1,
+      at: new Date().toISOString(),
+      // The MMD process that renders (this helper's parent): when it is gone and
+      // the snapshot is still here, the export was cut off.
+      mmdPid: process.ppid,
+      avi: runtime.avi,
+      pmm: runtime.pmm || "",
+      startFrame: Number.isInteger(runtime.startFrame)
+        ? runtime.startFrame
+        : -1,
+      avgTimePerFrame: runtime.avgTimePerFrame,
+      temp,
+      output: paths.output,
+      presetName: config.presetName,
+      settings: { ...s, alphaMask: mask },
+      engines: config.engines,
+      audioFade: config.audioFade,
+      rangeSuffix: config.rangeSuffix !== false,
+    });
+    return result;
+  }
 }
 
 // ------------------------------------------------------------------ finish ---
@@ -786,57 +824,8 @@ function remember(entry) {
   } catch {}
 }
 
-// CLI used by the plugin: MMD_EXPORT_MODE=plan|finish, MMD_EXPORT_JOB=<json>.
-async function main() {
-  const mode = process.env.MMD_EXPORT_MODE;
-  const job = JSON.parse(process.env.MMD_EXPORT_JOB || "{}");
-  if (mode === "plan") {
-    try {
-      process.stdout.write(JSON.stringify({ ok: true, ...plan(job) }));
-    } catch (e) {
-      process.stdout.write(JSON.stringify({ ok: false, error: e.message }));
-    }
-    return;
-  }
-  if (mode === "finish") {
-    const lines = [];
-    const log = (m) => lines.push(m);
-    const started = Date.now();
-    try {
-      const r = await finish(job, undefined, log);
-      remember({
-        ok: true,
-        ...r,
-        frames: job.frames,
-        startFrame: job.startFrame,
-        // Seconds, measured by the plugin in MMD (setup, render, time MMD
-        // waited for the encoder, FFmpeg's finish after the last frame) and
-        // here (adding audio, moving files).
-        ...(job.timing && typeof job.timing === "object"
-          ? {
-              timing: {
-                ...job.timing,
-                finish: (Date.now() - started) / 1000,
-              },
-            }
-          : {}),
-        notes: lines,
-      });
-    } catch (e) {
-      remember({
-        ok: false,
-        error: e.message,
-        output: job.output,
-        avi: job.avi,
-        notes: lines,
-      });
-      process.exitCode = 1;
-    }
-  }
-}
-if (require.main === module) main();
-
 module.exports = {
+  remember,
   FADES,
   MASK_MODES,
   presetMask,
@@ -858,3 +847,5 @@ module.exports = {
   finish,
   projectWav,
 };
+
+if (require.main === module) require("./mmd-cli.cjs").main(module.exports);

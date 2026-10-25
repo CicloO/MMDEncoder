@@ -82,7 +82,8 @@ else {
             win.webContents.send("encoder:state", s);
         },
       });
-      ipcMain.handle("encoder:action", async (event, action, payload) => {
+      const { registerAction } = require("./actions.cjs");
+      registerAction(ipcMain, async (event, action, payload) => {
         if (
           event.sender !== win.webContents ||
           event.senderFrame !== win.webContents.mainFrame
@@ -93,7 +94,7 @@ else {
           await service.invoke("trimCancel");
           const deadline = Date.now() + 5000;
           const busy = () => {
-            const s = service.getState();
+            const s = service.uiState();
             return s.running || s.trim?.running;
           };
           while (busy() && Date.now() < deadline)
@@ -126,12 +127,15 @@ else {
                   "png",
                 ],
               },
-              { name: "PNG 图片序列（选其中任意一张）", extensions: ["png"] },
+              {
+                name: "PNG 图片序列（选其中任意一张）",
+                extensions: ["png"],
+              },
               { name: "所有文件", extensions: ["*"] },
             ],
           });
           return result.canceled
-            ? service.getState()
+            ? service.uiState()
             : service.invoke("add", { paths: result.filePaths });
         }
         if (action === "pickMedia") {
@@ -238,7 +242,7 @@ else {
               ),
               "utf8",
             );
-          return service.getState();
+          return service.uiState();
         }
         if (action === "mmdOpenLog") {
           const logs = path.join(
@@ -393,6 +397,7 @@ else {
           "setAudioOffset",
           "alignPreview",
           "alignRun",
+          "alignCancel",
           "mmdStatus",
           "mmdInstall",
           "mmdUninstall",

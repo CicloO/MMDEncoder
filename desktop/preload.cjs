@@ -34,6 +34,7 @@ const allowed = new Set([
   "setAudioOffset",
   "alignPreview",
   "alignRun",
+  "alignCancel",
   "mmdStatus",
   "mmdInstall",
   "mmdUninstall",
@@ -84,17 +85,29 @@ const allowed = new Set([
   "mmdOpenLatest",
 ]);
 contextBridge.exposeInMainWorld("encoder", {
+  // Structured replies cross contextBridge as plain data. Custom properties
+  // on a rejected Error do not reliably survive that second Electron boundary.
+  invokeResult(action, payload) {
+    if (!allowed.has(action)) return Promise.reject(new Error("不支持的操作"));
+    return ipcRenderer.invoke("encoder:action", action, payload);
+  },
   invoke(action, payload) {
     if (!allowed.has(action)) return Promise.reject(new Error("不支持的操作"));
     return ipcRenderer
       .invoke("encoder:action", action, payload)
+      .then((result) => {
+        if (result?.__mmdError) {
+          const { message, code, params } = result.__mmdError;
+          throw Object.assign(new Error(message), { code, params });
+        }
+        return result;
+      })
       .catch((error) => {
-        throw new Error(
-          String(error.message).replace(
-            /^Error invoking remote method '[^']+': Error: /,
-            "",
-          ),
+        error.message = String(error.message).replace(
+          /^Error invoking remote method '[^']+': Error: /,
+          "",
         );
+        throw error;
       });
   },
   onCloseRequest(fn) {

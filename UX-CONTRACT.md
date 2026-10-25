@@ -2,6 +2,8 @@
 
 Locale zh-CN, local Windows desktop, offline by default. No accounts or uploads.
 
+已迁移文案由 `locales/zh-CN.json` 和 `src/i18n.ts` 管理。业务错误用稳定 code 与参数跨 IPC 传递；迁移后的调用方使用 `src/ipc.ts`，未知 code 回退消息。当前只提供简体中文，迁移规则见 `docs/i18n.md`。
+
 | Capability      | Canonical owner                               | Source of truth     | Allowed variants                       | Verification           |
 | --------------- | --------------------------------------------- | ------------------- | -------------------------------------- | ---------------------- |
 | Select/Listbox  | src/components.tsx Select                     | DESIGN.md           | native Windows popup                   | desktop keyboard tests |

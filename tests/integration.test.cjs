@@ -63,7 +63,7 @@ test(
       assert.equal(svc.getState().jobs.length, 1);
       assert.equal(svc.getState().jobs[0].meta.hasAlpha, true);
       await svc.invoke("settings", {
-        patch: { fps: "30", alphaMask: true, alphaMode: "green" },
+        patch: { fps: "30", alphaMask: true, alphaMode: "color" },
       });
       const pre = await svc.invoke("preview", {
         id: svc.getState().jobs[0].id,
@@ -73,8 +73,8 @@ test(
       assert.equal(fs.existsSync(path.dirname(pre.output)), false);
       // exFAT removable drives cannot create hard links. Exercise the exclusive
       // copy fallback using the real output files while simulating that FS limit.
-      const originalLink = fs.linkSync;
-      fs.linkSync = () => {
+      const originalLink = fs.promises.link;
+      fs.promises.link = async () => {
         throw Object.assign(new Error("hard links unsupported"), {
           code: "ENOTSUP",
         });
@@ -83,7 +83,7 @@ test(
         await svc.invoke("start");
         await until(() => !svc.getState().running);
       } finally {
-        fs.linkSync = originalLink;
+        fs.promises.link = originalLink;
       }
       const job = svc.getState().jobs[0];
       assert.equal(job.status, "done", job.log);
@@ -549,14 +549,15 @@ test("built-in presets can be edited, hidden, deleted, reordered and restored ac
   const ids = () => svc.getState().presets.map((p) => p.id);
   const find = (id) => svc.getState().presets.find((p) => p.id === id);
   try {
-    // Recommended presets first, then Alpha; software variants have no explicit hidden flag.
+    // Recommended presets first, then Alpha (split before kept); software
+    // variants have no explicit hidden flag.
     assert.deepEqual(ids(), [
       "builtin-4k",
       "builtin-4k-sw",
       "builtin-1080",
       "builtin-1080-sw",
-      "builtin-alpha",
       "builtin-alpha-mask",
+      "builtin-alpha",
       "builtin-prores422",
     ]);
     assert.equal(find("builtin-4k-sw").hidden, undefined);

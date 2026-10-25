@@ -16,6 +16,12 @@ const mmdExport = require("./mmd-export.cjs");
 const mmdPlugin = require("./mmd-plugin.cjs");
 const { createMediaQueue } = require("./media-queue.cjs");
 const { createEncodeQueue } = require("./encode-queue.cjs");
+const { createLimit } = require("./limit.cjs");
+const { uiState } = require("./ui-state.cjs");
+const { createDetector } = require("./detect.cjs");
+const { createAlignService } = require("./align-service.cjs");
+const { createTrimQueue } = require("./trim-queue.cjs");
+const { commit } = require("./commit.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
   engineDir,
@@ -71,7 +77,9 @@ function createService({
     },
     // MMD export plugin: chosen preset, plugin install state, last test / export.
     mmd: {
-      presetId: "",
+      // Until the user picks one: the editing intermediate (ProRes 422 HQ),
+      // which every editor reads and needs no hardware encoder.
+      presetId: "builtin-prores422",
       followMmd: true,
       audioFade: 0,
       // "off" | "with" | "only"; "" until a preset decides (settings from 1.4.1).
@@ -135,17 +143,7 @@ function createService({
     pushTimer = null;
     lastPush = Date.now();
     if (disposed) return;
-    // The window reads a video job's log through the "logs" action; leaving
-    // the up-to-200 KB logs out keeps each push small however long the queue.
-    const s = clone({
-      ...state,
-      jobs: state.jobs.map(({ log, ...j }) => j),
-      // Media logs: only the tail; the window asks for the whole one.
-      mediaJobs: state.mediaJobs.map((j) =>
-        j.log?.length > 8000 ? { ...j, log: "…" + j.log.slice(-8000) } : j,
-      ),
-    });
-    onUpdate(s);
+    onUpdate(uiState(state));
   }
   // Batch writes rather than synchronously touching disk for every encoder line.
   // The renderer receives a bounded tail; the on-disk task log retains every line.
@@ -397,73 +395,11 @@ function createService({
     syncMmdExport();
     if (state.mmd.error) throw Error(state.mmd.error);
     if (!state.mmd.presetId) throw Error("请先选择导出预设");
-    const dir = fs.mkdtempSync(
-      path.join(os.tmpdir(), "mmdencoder-export-test-"),
-    );
-    const started = Date.now();
-    let snapshot = "";
     try {
-      const width = 640,
-        height = 360,
-        frames = 30;
-      const plan = mmdExport.plan({
-        avi: path.join(dir, "test.avi"),
-        width,
-        height,
-        bits: 32,
-        bottomUp: true,
-        avgTimePerFrame: 333333,
-      });
-      snapshot = mmdExport.snapshotPath(plan.temp);
-      const child = spawn(plan.exe, plan.args, {
-        windowsHide: true,
-        stdio: ["pipe", "ignore", "pipe"],
-      });
-      children.add(child);
-      let stderr = "";
-      child.stderr.on("data", (d) => (stderr = (stderr + d).slice(-4000)));
-      child.stdin.on("error", () => {});
-      // Settles once, whether FFmpeg fails to start, exits early or hangs.
-      const exited = new Promise((resolve) => {
-        child.once("error", (e) => {
-          stderr += "\n" + e.message;
-          resolve(-1);
-        });
-        child.once("close", (code) => resolve(code ?? -1));
-      });
-      const timer = setTimeout(() => {
-        stderr += "\n测试编码超过 60 秒未结束，已停止";
-        child.kill();
-      }, 60000);
-      let gone = false;
-      exited.then(() => (gone = true));
-      const frame = Buffer.alloc(width * height * 4, 0x80);
-      for (let i = 0; i < frames && !gone; i++)
-        if (!child.stdin.write(frame))
-          // Wait for room in the pipe, or for FFmpeg to be gone.
-          await Promise.race([
-            new Promise((r) => child.stdin.once("drain", r)),
-            exited,
-          ]);
-      if (!gone) child.stdin.end();
-      const code = await exited;
-      clearTimeout(timer);
-      children.delete(child);
-      if (code !== 0)
-        throw Error(
-          "编码失败（退出码 " +
-            code +
-            "）：" +
-            stderr.trim().split("\n").slice(-3).join(" "),
-        );
-      if (!fs.existsSync(plan.temp)) throw Error("没有生成测试文件");
-      if (plan.maskTemp && !fs.existsSync(plan.maskTemp))
-        throw Error("没有生成 Alpha 遮罩测试文件");
-      state.mmd.test = {
-        ok: true,
-        at: new Date().toISOString(),
-        message: `测试编码通过${plan.maskTemp ? "（含 Alpha 遮罩）" : ""}（${((Date.now() - started) / 1000).toFixed(1)} 秒）`,
-      };
+      state.mmd.test = await require("./mmd-test.cjs").testExport(
+        undefined,
+        children,
+      );
     } catch (e) {
       state.mmd.test = {
         ok: false,
@@ -471,9 +407,6 @@ function createService({
         message: e.message,
       };
       throw e;
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-      if (snapshot) fs.rmSync(snapshot, { force: true });
     }
   }
   function schema(p, full = false) {
@@ -779,6 +712,8 @@ function createService({
               { timeout: 10000 },
             );
             state.engineInfo[key] = exe;
+            // Its configure flags are in there too (hasSoxr).
+            if (key === "ffmpeg") versionText = { exe, text: r.stdout || "" };
             state.detectionLog +=
               (r.stdout || r.stderr).split("\n")[0] + "\n" + exe + "\n";
             break;
@@ -822,7 +757,10 @@ function createService({
   }
   // Whether the installed FFmpeg has the soxr resampler; checked again when
   // FFmpeg changes (path, size or date).
+  // The flags are on the "configuration:" line of `ffmpeg -version`, which
+  // locate() has already run, so no extra FFmpeg start is needed.
   let soxrCache = { key: "", value: false };
+  let versionText = { exe: "", text: "" };
   async function hasSoxr() {
     const ff = state.engineInfo.ffmpeg;
     let key = ff;
@@ -833,179 +771,38 @@ function createService({
     if (soxrCache.key === key) return soxrCache.value;
     let value = false;
     try {
-      const r = await run(ff, ["-hide_banner", "-buildconf"], {
-        timeout: 15000,
-      });
-      value = /--enable-libsoxr/.test(r.stdout + (r.stderr || ""));
+      const text =
+        versionText.exe === ff
+          ? versionText.text
+          : (await run(ff, ["-version"], { timeout: 15000 })).stdout;
+      value = /--enable-libsoxr/.test(text);
     } catch {}
     soxrCache = { key, value };
     return value;
   }
-  // Whether FFmpeg can run libplacebo on a Vulkan GPU (ArtCNN upscaling):
-  // a tiny real run. Kept with the encoder detection (same FFmpeg, GPU and
-  // driver); "重新检测" (force) always runs it again.
-  let placeboCache = { key: "", value: false };
-  async function hasLibplacebo(force = false) {
-    const ff = state.engineInfo.ffmpeg;
-    let key = ff;
-    try {
-      const st = fs.statSync(ff);
-      key += "|" + st.size + "|" + st.mtimeMs;
-    } catch {}
-    if (!force && placeboCache.key === key) return placeboCache.value;
-    let value = false;
-    try {
-      await run(
-        ff,
-        [
-          "-hide_banner",
-          "-v",
-          "error",
-          "-init_hw_device",
-          "vulkan",
-          "-f",
-          "lavfi",
-          "-i",
-          "color=black:s=64x64:d=0.1",
-          "-vf",
-          "format=yuv444p16le,hwupload,libplacebo=w=128:h=128:format=yuv444p16le,hwdownload,format=yuv444p16le",
-          "-f",
-          "null",
-          "-",
-        ],
-        { timeout: 20000 },
-      );
-      value = true;
-    } catch {}
-    placeboCache = { key, value };
-    return value;
-  }
-  // Whether this machine's NVENC encodes lossless H.264 (the GPU Alpha
-  // mask): a tiny real run, kept with the encoder detection like Vulkan.
-  let nvencLosslessCache = { key: "", value: false };
-  async function hasNvencLossless(force = false) {
-    const ff = state.engineInfo.ffmpeg;
-    let key = ff;
-    try {
-      const st = fs.statSync(ff);
-      key += "|" + st.size + "|" + st.mtimeMs;
-    } catch {}
-    if (!force && nvencLosslessCache.key === key)
-      return nvencLosslessCache.value;
-    let value = false;
-    try {
-      await run(
-        ff,
-        [
-          "-hide_banner",
-          "-v",
-          "error",
-          "-f",
-          "lavfi",
-          "-i",
-          "color=white:s=256x256:d=0.2",
-          "-c:v",
-          "h264_nvenc",
-          "-preset",
-          "p1",
-          "-tune",
-          "lossless",
-          "-pix_fmt",
-          "yuv420p",
-          "-f",
-          "null",
-          "-",
-        ],
-        { timeout: 20000 },
-      );
-      value = true;
-    } catch {}
-    nvencLosslessCache = { key, value };
-    return value;
-  }
-  // Detection runs real trial encodes, so its result is cached in dataDir and
-  // reused until the tools, the display adapters/drivers or the engine list change.
-  const cacheFile = () => path.join(dataDir, "engine-cache.json");
-  async function displayAdapters() {
-    const key =
-      "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}";
-    const lines = [];
-    for (const value of ["DriverDesc", "DriverVersion"]) {
-      const { stdout } = await run("reg", ["query", key, "/s", "/v", value], {
-        timeout: 10000,
-      });
-      lines.push(
-        ...stdout
-          .split(/\r?\n/)
-          .filter((l) => /^\s+Driver(?:Desc|Version)\s/.test(l))
-          .map((l) => l.trim().replace(/\s+/g, " ")),
-      );
-    }
-    return lines.join("|");
-  }
-  async function detectionKey() {
-    let gpu = "";
-    try {
-      gpu = await displayAdapters();
-    } catch (e) {
-      state.detectionLog +=
-        "无法读取显卡信息，本次不使用检测缓存：" + e.message + "\n";
-    }
-    if (!gpu) return "";
-    const files = {};
-    for (const k of ["ffmpeg", "nvencc"]) {
-      const exe = state.engineInfo[k];
-      if (!exe) continue;
-      const st = fs.statSync(exe);
-      files[k] = [exe, st.size, st.mtimeMs];
-    }
-    return crypto
-      .createHash("sha256")
-      .update(
-        JSON.stringify({
-          version: 1,
-          gpu,
-          files,
-          engines: core.ENGINES.map((e) => [e.id, e.depths]),
-        }),
-      )
-      .digest("hex");
-  }
-  function readDetectionCache(key) {
-    try {
-      const c = JSON.parse(fs.readFileSync(cacheFile(), "utf8"));
-      if (c.key !== key || !Array.isArray(c.engines) || !c.engines.length)
-        return null;
-      const ids = new Set(core.ENGINES.map((e) => e.id));
-      return c.engines.every((e) => ids.has(e.id)) ? c : null;
-    } catch {
-      return null;
-    }
-  }
-  function writeDetectionCache(key, log) {
-    try {
-      fs.mkdirSync(dataDir, { recursive: true });
-      const tmp = cacheFile() + "." + crypto.randomUUID() + ".tmp";
-      fs.writeFileSync(
-        tmp,
-        JSON.stringify(
-          {
-            key,
-            detectedAt: new Date().toISOString(),
-            engines: state.engines,
-            libplacebo: !!state.engineInfo.libplacebo,
-            nvencLossless: !!state.engineInfo.nvencLossless,
-            log,
-          },
-          null,
-          2,
-        ),
-      );
-      fs.renameSync(tmp, cacheFile());
-    } catch (e) {
-      state.detectionLog += "检测缓存保存失败：" + e.message + "\n";
-    }
-  }
+  // Encoder detection (detect.cjs): reads the tool paths, writes only the
+  // detection log; detect() below puts its results into the state.
+  const detector = createDetector({
+    run,
+    dataDir,
+    info: () => state.engineInfo,
+    engines: () => state.engines,
+    logs: {
+      get text() {
+        return state.detectionLog;
+      },
+      set text(v) {
+        state.detectionLog = v;
+      },
+    },
+  });
+  const {
+    hasLibplacebo,
+    hasNvencLossless,
+    detectionKey,
+    readDetectionCache,
+    writeDetectionCache,
+  } = detector;
   async function detect({ force = false } = {}) {
     if (detectPromise) return detectPromise;
     state.detecting = true;
@@ -1022,23 +819,15 @@ function createService({
       const key = await detectionKey();
       const cached = !force && key && readDetectionCache(key);
       // ArtCNN upscaling runs in FFmpeg through libplacebo on Vulkan.
-      state.engineInfo.libplacebo =
-        typeof cached?.libplacebo === "boolean"
-          ? cached.libplacebo
-          : await hasLibplacebo(force);
+      state.engineInfo.libplacebo = cached
+        ? cached.libplacebo
+        : await hasLibplacebo(force);
       // The Alpha mask goes to NVENC when it encodes lossless.
-      state.engineInfo.nvencLossless =
-        typeof cached?.nvencLossless === "boolean"
-          ? cached.nvencLossless
-          : await hasNvencLossless(force);
+      state.engineInfo.nvencLossless = cached
+        ? cached.nvencLossless
+        : await hasNvencLossless(force);
       if (cached) {
         state.engines = cached.engines;
-        // A cache from before the Vulkan / NVENC lossless checks: add them.
-        if (
-          typeof cached.libplacebo !== "boolean" ||
-          typeof cached.nvencLossless !== "boolean"
-        )
-          writeDetectionCache(key, cached.log || "");
         state.detectionLog +=
           (cached.log || "") +
           "\n使用 " +
@@ -1058,168 +847,17 @@ function createService({
         state.notice = e.message;
         return;
       }
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-detect-"));
-      try {
-        const fixture = path.join(dir, "probe.mkv");
-        if (state.engineInfo.nvencc)
-          await run(
-            state.engineInfo.ffmpeg,
-            [
-              "-v",
-              "error",
-              "-f",
-              "lavfi",
-              "-i",
-              "color=black:s=640x360:r=30:d=0.2",
-              "-c:v",
-              "ffv1",
-              fixture,
-            ],
-            { timeout: 15000 },
-          );
-        for (const e of core.ENGINES) {
-          if (disposed) break;
-          if (
-            e.backend === "nvencc"
-              ? !state.engineInfo.nvencc
-              : !new RegExp("\\b" + e.id + "\\b").test(listing)
-          )
-            continue;
-          const depths = [];
-          for (const depth of e.depths) {
-            try {
-              if (e.backend === "nvencc") {
-                await run(
-                  state.engineInfo.nvencc,
-                  [
-                    "--avsw",
-                    "-i",
-                    fixture,
-                    "-o",
-                    path.join(dir, e.codec + "-" + depth + ".mkv"),
-                    "--codec",
-                    e.codec,
-                    "--output-depth",
-                    String(depth),
-                    "--output-csp",
-                    "yuv420",
-                    "--cqp",
-                    "24",
-                  ],
-                  { timeout: 20000 },
-                );
-              } else {
-                await run(
-                  state.engineInfo.ffmpeg,
-                  [
-                    "-v",
-                    "error",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "color=black:s=640x360:r=30:d=0.2",
-                    "-frames:v",
-                    "3",
-                    "-an",
-                    "-c:v",
-                    e.id,
-                    "-pix_fmt",
-                    e.codec === "prores"
-                      ? "yuv422p10le"
-                      : "yuv420p" + (depth === 10 ? "10le" : ""),
-                    ...(e.id === "libsvtav1" ? ["-preset", "12"] : []),
-                    "-f",
-                    "null",
-                    "-",
-                  ],
-                  { timeout: 20000 },
-                );
-              }
-              depths.push(depth);
-            } catch (err) {
-              state.detectionLog +=
-                e.label +
-                " " +
-                depth +
-                "-bit：" +
-                err.message.slice(-800) +
-                "\n";
-            }
-          }
-          if (depths.length) {
-            let alpha = false;
-            if (e.id === "nvencc:hevc") {
-              try {
-                const source = path.join(dir, "alpha.mkv");
-                await run(
-                  state.engineInfo.ffmpeg,
-                  [
-                    "-v",
-                    "error",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "color=red:s=640x360:r=30:d=0.1,format=yuva444p,geq=a=128:lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)'",
-                    "-c:v",
-                    "ffv1",
-                    source,
-                  ],
-                  { timeout: 15000 },
-                );
-                const output = path.join(dir, "alpha-hevc.mov");
-                await run(
-                  state.engineInfo.nvencc,
-                  [
-                    "--avsw",
-                    "-i",
-                    source,
-                    "-o",
-                    output,
-                    "--codec",
-                    "hevc",
-                    "--output-depth",
-                    "8",
-                    "--output-csp",
-                    "yuva420",
-                    "--alpha-channel-mode",
-                    "straight",
-                    "--cqp",
-                    "24",
-                  ],
-                  { timeout: 20000 },
-                );
-                const traced = await run(
-                  state.engineInfo.ffmpeg,
-                  [
-                    "-i",
-                    output,
-                    "-map",
-                    "0:v:0",
-                    "-c",
-                    "copy",
-                    "-bsf:v",
-                    "trace_headers",
-                    "-f",
-                    "null",
-                    "-",
-                  ],
-                  { timeout: 15000 },
-                );
-                alpha =
-                  /Alpha Channel Information/.test(traced.stderr) &&
-                  /alpha_channel_bit_depth_minus8[^\n]*= 0/.test(traced.stderr);
-              } catch (err) {
-                state.detectionLog +=
-                  "HEVC Alpha：" + err.message.slice(-1000) + "\n";
-              }
-            }
-            state.engines.push({ ...e, depths, alpha });
-          }
-          emit();
-        }
-      } finally {
-        fs.rmSync(dir, { recursive: true, force: true });
-      }
+      await detector.trialEncoders({
+        listing,
+        stopped: () => disposed,
+        // Trials finish out of order: keep the list in ENGINES order.
+        found: (e) => {
+          state.engines.push(e);
+          const at = (x) => core.ENGINES.findIndex((y) => y.id === x.id);
+          state.engines.sort((a, b) => at(a) - at(b));
+        },
+        progress: emit,
+      });
       if (key && !disposed && state.engines.length)
         writeDetectionCache(key, state.detectionLog.slice(logStart));
     })()
@@ -1246,292 +884,20 @@ function createService({
     if (ids.some((id) => !byId.has(id))) throw Error("排序数据无效，请重试");
     return ids.map((id) => byId.get(id));
   }
-  function commit(tmp, dest) {
-    try {
-      fs.linkSync(tmp, dest);
-    } catch (e) {
-      if (!["ENOTSUP", "ENOSYS", "EPERM", "EXDEV", "EINVAL"].includes(e.code))
-        throw e;
-      // Removable exFAT/FAT volumes have no hard links. COPYFILE_EXCL still
-      // refuses existing destinations; Node removes incomplete copies on error.
-      fs.copyFileSync(tmp, dest, fs.constants.COPYFILE_EXCL);
-    }
-    fs.unlinkSync(tmp);
-  }
-  // ---- lossless trim ----
-  // Indexes stay here (they can be large); the window gets what it shows.
-  const trimIndexes = new Map(); // clip id -> index
-  const indexAborts = new Map(); // clip id -> AbortController while indexing
-  let trimAbort = null,
-    previewAbort = null;
-  // A file's cached copy (non-MP4 H.264 / HEVC) goes once no clip uses it.
-  function releaseUnused(file) {
-    if (state.trim.clips.some((c) => c.path === file)) return;
-    trim.release(file);
-    for (const [key, url] of previews)
-      if (key.startsWith(file + "|")) {
-        previews.delete(key);
-        previewBytes -= url.length;
-      }
-  }
-  // Recent preview frames (data URLs), so stepping back to a frame just seen
-  // needs no FFmpeg run. Bounded by total size; oldest go first.
-  const previews = new Map(); // "path|frame" -> data URL
-  const PREVIEW_BYTES = 32 * 1024 * 1024;
-  let previewBytes = 0;
-  function rememberPreview(key, url) {
-    previews.set(key, url);
-    previewBytes += url.length;
-    for (const [k, v] of previews) {
-      if (previewBytes <= PREVIEW_BYTES) break;
-      previews.delete(k);
-      previewBytes -= v.length;
-    }
-  }
-  function dropClips(clips) {
-    for (const c of clips) {
-      indexAborts.get(c.id)?.abort();
-      indexAborts.delete(c.id);
-      trimIndexes.delete(c.id); // other clips of the file keep their own
-    }
-    state.trim.clips = state.trim.clips.filter((c) => !clips.includes(c));
-    for (const file of new Set(clips.map((c) => c.path))) releaseUnused(file);
-  }
-  const TRIM_KEYS = {
-    codec_name: "编码",
-    profile: "档次",
-    level: "级别",
-    width: "宽度",
-    height: "高度",
-    pix_fmt: "像素格式",
-    sample_aspect_ratio: "像素宽高比",
-    field_order: "场序",
-    color_range: "色彩范围",
-    color_space: "色彩矩阵",
-    color_primaries: "色域",
-    color_transfer: "传输特性",
-    time_base: "时间基",
-    r_frame_rate: "帧率",
-    extradata: "编码参数集",
-    rotation: "旋转",
-  };
-  function requireClip(id) {
-    const c = state.trim.clips.find((c) => c.id === id);
-    if (!c) throw Error("未找到这个片段");
-    return c;
-  }
-  // Why a clip cannot be smart-cut ("" = it can, or needs no re-encoding).
-  function smartBlocker(idx) {
-    if (idx.frames.every((f) => f.safe)) return "";
-    if (!idx.encoding)
-      return "没有记录编码参数（不是 MMDEncoder 1.5.0 起导出的）";
-    if (String(idx.encoding.encoder).startsWith("nvencc:"))
-      return "NVEncC 编码的文件暂不支持";
-    return "";
-  }
-  // The clip's requested range, snapped to safe cut points (out may be the
-  // end) — or, with smart cut on a clip that allows it, exactly as asked.
-  function setClipRange(clip, from, to) {
-    const idx = trimIndexes.get(clip.id);
-    if (!idx) throw Error("片段还没有读取完成");
-    const n = idx.frames.length;
-    const exact = state.trim.smart && !smartBlocker(idx);
-    const clamp = (v) => Math.max(0, Math.min(n, Math.round(Number(v) || 0)));
-    const a = exact
-      ? Math.min(clamp(from), n - 1)
-      : trim.snap(idx, Number(from) || 0);
-    const b = exact
-      ? to === "end"
-        ? n
-        : clamp(to)
-      : trim.snap(idx, to === "end" ? n : Number(to), { end: true });
-    Object.assign(clip, {
-      requested: { from: Number(from) || 0, to: to === "end" ? n : Number(to) },
-      from: a,
-      to: b,
-      empty: a >= b,
-    });
-  }
-  async function trimAdd(paths) {
-    await locate();
-    if (!state.engineInfo.ffmpeg || !state.engineInfo.ffprobe)
-      throw Error("请先安装 FFmpeg / ffprobe");
-    for (const raw of paths || []) {
-      if (typeof raw !== "string" || !path.isAbsolute(raw)) continue;
-      const file = path.resolve(raw);
-      try {
-        if (!fs.statSync(file).isFile()) continue;
-      } catch {
-        continue;
-      }
-      const clip = {
-        id: crypto.randomUUID(),
-        path: file,
-        name: path.basename(file),
-        status: "indexing",
-      };
-      state.trim.clips.push(clip);
-      emit();
-      const ctl = new AbortController();
-      indexAborts.set(clip.id, ctl);
-      try {
-        const idx = await trim.index(state.engineInfo, file, {
-          signal: ctl.signal,
-        });
-        if (!state.trim.clips.includes(clip)) continue; // removed meanwhile
-        if (!idx.supported) throw Error(idx.reason);
-        trimIndexes.set(clip.id, idx);
-        const safe = idx.frames.filter((f) => f.safe).map((f) => f.frame);
-        Object.assign(clip, {
-          status: "ready",
-          codec: idx.codec,
-          width: idx.width,
-          height: idx.height,
-          fps: idx.fps,
-          frames: idx.frames.length,
-          // Every frame, or the list of frames a cut may start at.
-          cuts: safe.length === idx.frames.length ? "all" : safe,
-          // MMD frame of the video's first frame (from MMDEncoder's tag or
-          // the _0400-0600f name), and whether the encode settings are known.
-          mmdStart: idx.mmdStart?.frame ?? null,
-          mmdStartFrom: idx.mmdStart?.from || "",
-          encoding: idx.encoding,
-          smartBlocker: smartBlocker(idx),
-          refused:
-            safe.length < idx.frames.filter((f) => f.key).length
-              ? [
-                  ...new Set(
-                    idx.frames
-                      .filter((f) => f.key && !f.safe)
-                      .map((f) => f.why),
-                  ),
-                ]
-              : [],
-        });
-        setClipRange(clip, 0, "end");
-      } catch (e) {
-        if (!state.trim.clips.includes(clip)) continue;
-        Object.assign(clip, { status: "invalid", error: e.message });
-      } finally {
-        indexAborts.delete(clip.id);
-      }
-      emit();
-    }
-  }
-  function trimOutputPath(o) {
-    const first = state.trim.clips.find((c) => c.status === "ready");
-    let dir = path.dirname(first.path);
-    if (o.location === "encoded") dir = path.join(dir, "Encoded");
-    if (o.location === "custom") {
-      if (typeof o.outputDir !== "string" || !path.isAbsolute(o.outputDir))
-        throw Error("请选择有效的自定义输出目录");
-      dir = o.outputDir;
-    }
-    let ext = trim.containerFor(first.codec);
-    if (o.audio?.mode !== "none" && o.audio?.codec === "pcm" && ext === "mp4")
-      ext = "mkv";
-    const base = path.parse(first.path).name + "_剪辑";
-    for (let n = 1; n < 100000; n++) {
-      const out = path.join(dir, base + (n === 1 ? "" : ` (${n})`) + "." + ext);
-      if (!fs.existsSync(out)) return out;
-    }
-    throw Error("无法分配不重名的输出文件");
-  }
-  async function trimExport(o) {
-    if (state.trim.running) throw Error("正在导出");
-    if (state.running) throw Error("请等待当前压制结束后再导出");
-    if (state.detecting || tools.state.busy || state.enhancements.busy)
-      throw Error("请等待编码器检测或工具管理结束后再导出");
-    const clips = state.trim.clips.filter(
-      (c) => c.status === "ready" && !c.empty,
+  // Whether anything is using the encoders, the tools or the GPU: encoding
+  // or media processing, a trim export, detection, a tool install, the RTX
+  // check or another child process. { tools: false } leaves out a tool
+  // install (for the tool actions themselves).
+  function isBusy({ tools: withTools = true } = {}) {
+    return !!(
+      state.running ||
+      state.trim.running ||
+      state.detecting ||
+      (withTools && tools.state.busy) ||
+      state.enhancements.busy ||
+      children.size
     );
-    if (!clips.length) throw Error("没有可导出的片段");
-    if (state.trim.clips.some((c) => c.status === "indexing"))
-      throw Error("请等待片段读取完成");
-    const files = [...new Set(clips.map((c) => c.path))];
-    if (files.length > 1) {
-      const diffs = await trim.compatibility(state.engineInfo, files);
-      if (diffs.length) {
-        const name = (i) => path.basename(files[i]);
-        throw Error(
-          "这些片段不能无损拼接：" +
-            diffs
-              .slice(0, 4)
-              .map(
-                (d) =>
-                  `${name(d.part - 1)} 的${TRIM_KEYS[d.key] || d.key}与 ${name(0)} 不同${d.key === "extradata" ? "" : `（${d.value} / ${d.expected}）`}`,
-              )
-              .join("；"),
-        );
-      }
-    }
-    const audio = {
-      mode: ["reencode", "replace", "none"].includes(o.audio?.mode)
-        ? o.audio.mode
-        : "reencode",
-      codec: ["aac", "flac", "pcm"].includes(o.audio?.codec)
-        ? o.audio.codec
-        : "aac",
-      kbps: Number(o.audio?.kbps) || 320,
-      file: o.audio?.file,
-      offset: Number(o.audio?.offset) || 0,
-      fade: media.FADES.includes(Number(o.audio?.fade))
-        ? Number(o.audio.fade)
-        : 0,
-    };
-    const output = trimOutputPath({ ...o, audio });
-    fs.mkdirSync(path.dirname(output), { recursive: true });
-    trimAbort = new AbortController();
-    Object.assign(state.trim, {
-      running: true,
-      progress: 0,
-      stage: "准备",
-      output,
-      error: "",
-    });
-    emit();
-    (async () => {
-      try {
-        await trim.cut(
-          state.engineInfo,
-          clips.map((c) => ({
-            file: c.path,
-            idx: trimIndexes.get(c.id),
-            from: c.from,
-            to: c.to,
-          })),
-          output,
-          {
-            audio,
-            smart: state.trim.smart,
-            signal: trimAbort.signal,
-            onPart: (i, n) => {
-              Object.assign(state.trim, {
-                progress: Math.round(
-                  (i / (n + (audio.mode === "none" ? 0 : 1))) * 100,
-                ),
-                stage: `复制第 ${i} / ${n} 段`,
-              });
-              emitProgress();
-            },
-          },
-        );
-        Object.assign(state.trim, { progress: 100, stage: "完成" });
-      } catch (e) {
-        fs.rmSync(output, { force: true });
-        Object.assign(state.trim, {
-          stage: e.cancelled ? "已取消" : "失败",
-          error: e.cancelled ? "" : e.message,
-          output: "",
-        });
-      } finally {
-        state.trim.running = false;
-        trimAbort = null;
-        emit();
-      }
-    })();
   }
-
   // Shared with the queue modules. `stopped`, `detectPromise` and the running
   // encoder change in several places, so the modules read them through ctx.
   const ctx = {
@@ -1550,6 +916,11 @@ function createService({
     children,
     pendingLogs,
     dataDir,
+    // Reading files on import, shared by both queues: 4 at a time.
+    probeLimit: createLimit(4),
+    // The queues ask these instead of reading other parts' state.
+    isBusy,
+    trimExporting: () => state.trim.running,
     get stopped() {
       return stopped;
     },
@@ -1563,7 +934,12 @@ function createService({
   };
   const mediaQueue = createMediaQueue(ctx);
   const encodeQueue = createEncodeQueue(ctx);
-  const modules = [mediaQueue, encodeQueue];
+  const alignService = createAlignService({
+    engineInfo: () => state.engineInfo,
+    locate,
+  });
+  const trimQueue = createTrimQueue(ctx);
+  const modules = [mediaQueue, encodeQueue, alignService, trimQueue];
 
   async function invoke(action, payload = {}) {
     // Queries return their own answer; actions change state, which is then
@@ -1573,12 +949,12 @@ function createService({
       if (Object.hasOwn(m.actions, action)) {
         await m.actions[action](payload);
         emit();
-        return clone(state);
+        return uiState(state);
       }
     }
     switch (action) {
       case "state":
-        return clone(state);
+        return uiState(state);
       case "details": {
         if (tools.state.busy) throw Error("工具安装中，请稍后查看详情");
         // payload.media: a job from the audio / video tools queue
@@ -1635,111 +1011,8 @@ function createService({
         }
         return result;
       }
-      case "trimAdd":
-        await trimAdd(payload?.paths);
-        break;
-      case "trimRemove": {
-        const clip = requireClip(payload?.id);
-        if (state.trim.running) throw Error("导出时不能移除片段");
-        dropClips([clip]);
-        break;
-      }
-      case "trimDuplicate": {
-        // Another range of the same file.
-        const clip = requireClip(payload?.id);
-        if (clip.status !== "ready") throw Error("片段还没有读取完成");
-        const copy = { ...clip, id: crypto.randomUUID() };
-        trimIndexes.set(copy.id, trimIndexes.get(clip.id));
-        state.trim.clips.splice(state.trim.clips.indexOf(clip) + 1, 0, copy);
-        break;
-      }
-      case "trimReorder":
-        state.trim.clips = reorder(state.trim.clips, payload.ids);
-        break;
-      case "trimSet": {
-        const clip = requireClip(payload?.id);
-        if (payload.mmdStart !== undefined) {
-          const n = Number(payload.mmdStart);
-          if (!Number.isInteger(n) || n < 0)
-            throw Error("MMD 起始帧须为 0 或正整数");
-          Object.assign(clip, { mmdStart: n, mmdStartFrom: "manual" });
-        }
-        if (payload.from !== undefined)
-          setClipRange(clip, payload.from, payload.to);
-        break;
-      }
-      case "trimFrame": {
-        // One preview at a time: a newer request stops the older one.
-        const clip = requireClip(payload?.id);
-        const idx = trimIndexes.get(clip.id);
-        if (!idx) throw Error("片段还没有读取完成");
-        const frame = Number(payload.frame) || 0;
-        const key = clip.path + "|" + frame;
-        previewAbort?.abort();
-        if (previews.has(key)) {
-          const url = previews.get(key);
-          previews.delete(key); // most recently used goes last
-          previews.set(key, url);
-          return url;
-        }
-        const ctl = (previewAbort = new AbortController());
-        try {
-          const jpeg = await trim.frameJpeg(
-            state.engineInfo,
-            idx,
-            clip.path,
-            frame,
-            {
-              signal: ctl.signal,
-            },
-          );
-          const url = "data:image/jpeg;base64," + jpeg.toString("base64");
-          rememberPreview(key, url);
-          return url;
-        } catch (e) {
-          if (e.cancelled) return null;
-          throw e;
-        }
-      }
-      case "trimExport":
-        await trimExport(payload || {});
-        break;
-      case "trimSmart": {
-        if (state.trim.running) throw Error("导出时不能切换");
-        state.trim.smart = !!payload?.smart;
-        // Re-apply every clip's requested range under the new rule.
-        for (const c of state.trim.clips)
-          if (c.status === "ready" && c.requested)
-            setClipRange(
-              c,
-              c.requested.from,
-              c.requested.to >= c.frames ? "end" : c.requested.to,
-            );
-        break;
-      }
-      case "trimCancel":
-        trimAbort?.abort();
-        break;
-      case "trimClear":
-        if (state.trim.running) throw Error("导出时不能清空");
-        dropClips([...state.trim.clips]);
-        Object.assign(state.trim, {
-          output: "",
-          error: "",
-          stage: "",
-          progress: 0,
-        });
-        break;
       case "testEnhancements": {
-        if (
-          state.running ||
-          state.trim.running ||
-          state.detecting ||
-          tools.state.busy ||
-          state.enhancements.busy ||
-          children.size
-        )
-          throw Error("请等待当前任务结束");
+        if (isBusy()) throw Error("请等待当前任务结束");
         const s = { ...state.settings, ...schema(payload.settings || {}) };
         await locate();
         state.enhancements = {
@@ -1774,13 +1047,7 @@ function createService({
         );
       case "checkTools":
       case "installTools":
-        if (
-          state.running ||
-          state.trim.running ||
-          state.detecting ||
-          state.enhancements.busy ||
-          children.size
-        )
+        if (isBusy({ tools: false }))
           throw Error("请等待编码、探测和硬件检测结束后管理工具");
         try {
           await tools.run(action === "installTools");
@@ -1796,13 +1063,7 @@ function createService({
         break;
       case "setToolsRoot": {
         if (toolsRoot) throw Error("安装位置由环境变量指定，不能在软件中更改");
-        if (
-          state.running ||
-          state.trim.running ||
-          state.detecting ||
-          state.enhancements.busy ||
-          children.size
-        )
+        if (isBusy({ tools: false }))
           throw Error("请等待编码、探测和硬件检测结束后更改安装位置");
         const target = payload?.root || DEFAULT_ROOT;
         tools.relocate(target);
@@ -2046,7 +1307,7 @@ function createService({
         throw Error("不支持的操作：" + action);
     }
     emit();
-    return clone(state);
+    return uiState(state);
   }
   setImmediate(() => {
     if (disposed) return;
@@ -2078,6 +1339,9 @@ function createService({
   return {
     invoke,
     getState: () => clone(state),
+    // What the window may see (no video logs, media log tails only).
+    uiState: () => uiState(state),
+    isBusy: () => isBusy(),
     dispose() {
       flushEvidence();
       disposed = true;
@@ -2086,9 +1350,8 @@ function createService({
       clearTimeout(pushTimer);
       clearInterval(interruptTimer);
       for (const child of children) child.kill();
-      trimAbort?.abort();
-      previewAbort?.abort();
-      for (const ctl of indexAborts.values()) ctl.abort();
+      alignService.stopAll();
+      trimQueue.stop();
       trim.clearCache();
     },
   };

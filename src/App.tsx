@@ -43,6 +43,7 @@ import { autoAlign } from "./autoAlign";
 import { MediaDetails } from "./MediaDetails";
 import { RtxSettings } from "./RtxSettings";
 import { AboutDialog } from "./AboutDialog";
+import { BackgroundColor } from "./BackgroundColor";
 import {
   formatFPS,
   formatSize,
@@ -386,9 +387,13 @@ export default function App() {
     const file = await call("pickMedia", { multiple: false }).catch(() => null);
     if (typeof file === "string") await replaceAudio(j, file);
   }
-  async function replaceAudio(j: Job, file: string) {
+  async function replaceAudio(row: Job, file: string) {
+    let j = row;
     try {
-      await call("setAudio", { id: j.id, path: file }, "已替换音频");
+      const r = await call("setAudio", { id: j.id, path: file }, "已替换音频");
+      // The response is the current state: the row may be older (pushes
+      // during an import come at most every 200 ms).
+      j = r?.jobs?.find((x: Job) => x.id === j.id) || j;
     } catch {
       return;
     }
@@ -1467,13 +1472,7 @@ export default function App() {
                             label: "分离 Alpha · 彩色视频 + 黑白遮罩",
                           },
                           { value: "mask", label: "分离 Alpha · 仅黑白遮罩" },
-                          { value: "green", label: "合成到绿幕（#00FF00）" },
-                          // Older presets may still use black / white.
-                          ...(s.alphaMode === "black"
-                            ? [{ value: "black", label: "合成到黑色背景" }]
-                            : s.alphaMode === "white"
-                              ? [{ value: "white", label: "合成到白色背景" }]
-                              : []),
+                          { value: "color", label: "合成到纯色" },
                         ]}
                         onChange={(v) =>
                           changed({
@@ -1489,19 +1488,25 @@ export default function App() {
                           })
                         }
                       />
-                      {s.alphaMask && (
+                      {s.alphaMode === "color" && (
+                        <BackgroundColor
+                          value={s.alphaBackground}
+                          onChange={(hex) =>
+                            changed({ ...s, alphaBackground: hex })
+                          }
+                        />
+                      )}
+                      {s.alphaMask && s.alphaMode === "discard" && (
                         <>
                           <div className="alpha-diagram">
-                            <div className="alpha-swatch color">
-                              {s.alphaMode === "preserve" ? "RGBA" : "RGB"}
-                            </div>
+                            <div className="alpha-swatch color">RGB</div>
                             <Plus size={16} />
                             <div className="alpha-swatch mask">A</div>
                           </div>
                           <p className="hint">
-                            {s.alphaMode === "discard"
-                              ? "彩色视频不含 Alpha，可用任意编码器和封装；另外导出同尺寸、同帧率的黑白遮罩（_alpha 后缀，无损）。"
-                              : "这个旧预设除了上面的处理，还会额外导出黑白遮罩（_alpha 后缀）。"}
+                            {
+                              "彩色视频不含 Alpha，可用任意编码器和封装；另外导出同尺寸、同帧率的黑白遮罩（_alpha 后缀，无损）。"
+                            }
                             白色表示不透明，黑色表示透明，灰色保留半透明信息。
                           </p>
                         </>

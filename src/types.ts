@@ -22,6 +22,8 @@ export type Settings = {
   // A keyframe every second (automatic GOP only), for lossless cutting.
   editFriendly: boolean;
   alphaMode: string;
+  // alphaMode "color": #RRGGBB under the picture.
+  alphaBackground: string;
   outputMode: string;
   outputDir: string;
   nameTemplate: string;
@@ -50,6 +52,8 @@ export type Meta = {
   fpsText: string;
   duration: number;
   size: number;
+  // PNG sequence: size still being added up.
+  sizing?: boolean;
   codec: string;
   pixFmt: string;
   bitDepth: number;
@@ -275,6 +279,7 @@ declare global {
   const __APP_VERSION__: string;
   interface Window {
     encoder: {
+      invokeResult: (action: string, payload?: unknown) => Promise<any>;
       invoke: (action: string, payload?: unknown) => Promise<any>;
       onCloseRequest: (fn: () => void) => () => void;
       onUpdate: (fn: (state: State) => void) => () => void;
