@@ -13,6 +13,7 @@ function load(file, dependencies = {}) {
       resolveJsonModule: true,
       esModuleInterop: true,
       target: ts.ScriptTarget.ES2022,
+      jsx: ts.JsxEmit.ReactJSX,
     },
   }).outputText;
   const loaded = new Module(filename, module);

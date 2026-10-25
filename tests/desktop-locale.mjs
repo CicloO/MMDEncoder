@@ -60,6 +60,44 @@ try {
   await page
     .getByRole("heading", { name: "视频队列" })
     .waitFor({ timeout: 30000 });
+  const footerMeasurements = [];
+  const measureFooter = () =>
+    page.evaluate(() => {
+      const footer = document.querySelector(
+        ".page:not([hidden]) > .output-strip",
+      );
+      return {
+        viewportHeight: innerHeight,
+        bottom: footer.getBoundingClientRect().bottom,
+        parent: footer.parentElement.className,
+      };
+    });
+  for (const viewport of [
+    { width: 1360, height: 920 },
+    { width: 680, height: 760 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const initial = await measureFooter();
+    assert.ok(
+      Math.abs(initial.viewportHeight - initial.bottom) <= 1,
+      JSON.stringify(initial),
+    );
+    await page
+      .locator(".page:not([hidden]) .page-scroll")
+      .evaluate((node) => (node.scrollTop = node.scrollHeight));
+    const scrolled = await measureFooter();
+    assert.ok(
+      Math.abs(scrolled.viewportHeight - scrolled.bottom) <= 1,
+      JSON.stringify(scrolled),
+    );
+    footerMeasurements.push({ viewport, initial, scrolled });
+    await screenshot(path.join(dir, `production-footer-${viewport.width}.png`));
+  }
+  fs.writeFileSync(
+    path.join(dir, "production-footer.json"),
+    JSON.stringify(footerMeasurements, null, 2),
+  );
+  await page.setViewportSize({ width: 1360, height: 920 });
   // Real preload and IPC, with an unsupported value falling back to Chinese.
   const chosen = await page.evaluate(() =>
     window.encoder.invokeResult("setLocale", { locale: "not-supported" }),
@@ -314,6 +352,32 @@ try {
     }),
   ).toBeVisible();
   await page.setViewportSize({ width: 680, height: 760 });
+  const completedFiles = page
+    .locator(".job-row")
+    .filter({ hasText: "User completed.mov" })
+    .locator(".output-file-name");
+  await expect(completedFiles).toHaveCount(2);
+  const fileDetails = await completedFiles.evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      title: node.title,
+      text: node.textContent,
+      lead:
+        node.querySelector(".output-file-lead").scrollWidth >
+        node.querySelector(".output-file-lead").clientWidth,
+      tail: node.querySelector(".output-file-tail").textContent,
+    })),
+  );
+  await completedFiles.first().scrollIntoViewIfNeeded();
+  await screenshot(path.join(dir, "output-files-narrow.png"));
+  assert.ok(
+    fileDetails.every(
+      (file) =>
+        file.title.endsWith(file.text) &&
+        file.lead &&
+        file.tail.endsWith(".mp4"),
+    ),
+    JSON.stringify(fileDetails),
+  );
   await page
     .getByRole("button", { name: labels["video.tab.output"], exact: true })
     .click();
@@ -323,6 +387,17 @@ try {
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
     true,
+  );
+  assert.equal(
+    await page
+      .locator(".page-scroll")
+      .evaluate((node) => node.scrollWidth <= node.clientWidth),
+    true,
+  );
+  const fixtureFooter = await measureFooter();
+  assert.ok(
+    Math.abs(fixtureFooter.viewportHeight - fixtureFooter.bottom) <= 1,
+    JSON.stringify(fixtureFooter),
   );
   await page.locator("#nameTemplate").scrollIntoViewIfNeeded();
   await screenshot(path.join(dir, "pseudo-video-narrow.png"));

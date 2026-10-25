@@ -26,6 +26,7 @@ import {
 import { useState } from "react";
 import { Button, Select, useDragSort, PAGE_SIZE } from "./components";
 import { AlignDialog } from "./AlignDialog";
+import { OutputFiles } from "./OutputFiles";
 import { offsetText } from "./autoAlign";
 import { FileMeta, metaSummary } from "./FileMeta";
 import {
@@ -257,6 +258,14 @@ export function EncodeQueue({
                                     : formatDuration(j.elapsed),
                               })
                             : ""}
+                        {!["encoding", "ready", "probing", "invalid"].includes(
+                          j.status,
+                        ) && (
+                          <OutputFiles
+                            output={j.output}
+                            maskOutput={j.maskOutput}
+                          />
+                        )}
                       </span>
                     </span>
                   </button>

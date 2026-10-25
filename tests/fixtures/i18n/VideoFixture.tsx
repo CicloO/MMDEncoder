@@ -76,6 +76,19 @@ export function VideoFixture({ state }: { state: State }) {
           },
         ],
       },
+      output: "C:/output/User partial (2).mp4",
+    },
+    {
+      id: "complete-fixture",
+      name: "User completed.mov",
+      path: "C:/source/User completed.mov",
+      status: "done",
+      progress: 100,
+      elapsed: 2,
+      output:
+        "C:/output/用户保留很长的成品名称用于检查省略位置保留扩展名和完整路径提示 (2).mp4",
+      maskOutput:
+        "C:/output/用户保留很长的成品名称用于检查省略位置保留扩展名和完整路径提示 (2)_alpha.mp4",
     },
   ];
   const job = jobs.find((j) => j.id === selected)!;
@@ -117,92 +130,102 @@ export function VideoFixture({ state }: { state: State }) {
   return (
     <div className="app-shell">
       <div className="page">
-        <main className="workspace">
-          <EncodeQueue
-            engines={state.engines}
-            running={false}
-            toolsBusy={false}
-            jobs={jobs}
-            job={job}
-            s={settings}
-            page={0}
-            setPage={() => {}}
-            pageCount={1}
-            setSelected={setSelected}
-            drag={false}
-            busy={false}
-            doneCount={1}
-            sortJob={sort}
-            add={() => {}}
-            call={async () => null}
-            action={(_name, _payload, message) => message && setNotice(message)}
-            pickAudio={() => {}}
-            persist={async () => {}}
-            openLog={() => {}}
-            setDetails={() => {}}
-            setModal={() => {}}
-            setError={() => {}}
-            setTab={setTab}
-            setFallback={() => {}}
-          />
-          <VideoSettingsPanel
-            own={true}
-            ownDisabled={false}
-            jobName={job.name}
-            onOwn={() => {}}
-            presets={state.presets}
-            presetId={state.presets[0].id}
-            modified={true}
-            presetHidden={() => false}
-            onSelectPreset={() => {}}
-            hasActivePreset={true}
-            activePresetLabel="User preset 预设"
-            busy={false}
-            onOverwrite={() => {}}
-            onSaveAs={() => {}}
-            tab={tab}
-            setTab={setTab}
-          >
-            <VideoSettings
-              s={settings}
-              tab={tab}
-              engine={engine}
-              backend="cpu"
+        <div className="page-scroll">
+          <main className="workspace">
+            <EncodeQueue
               engines={state.engines}
-              detecting={false}
-              verification={verification}
-              placebo={true}
-              canTest={true}
+              running={false}
+              toolsBusy={false}
+              jobs={jobs}
               job={job}
-              preview={preview}
-              customFPS={customFPS}
-              setCustomFPS={setCustomFPS}
-              autoAlignAudio={true}
-              setAutoAlignAudio={() => {}}
-              set={set}
-              changed={setSettings}
+              s={settings}
+              page={0}
+              setPage={() => {}}
+              pageCount={1}
+              setSelected={setSelected}
+              drag={false}
+              busy={false}
+              doneCount={1}
+              sortJob={sort}
+              add={() => {}}
               call={async () => null}
-              copy={() => {}}
-              pickDirectory={() => {}}
+              action={(_name, _payload, message) =>
+                message && setNotice(message)
+              }
+              pickAudio={() => {}}
+              persist={async () => {}}
+              openLog={() => {}}
+              setDetails={() => {}}
+              setModal={() => {}}
+              setError={() => {}}
+              setTab={setTab}
+              setFallback={() => {}}
             />
-          </VideoSettingsPanel>
-        </main>
+            <VideoSettingsPanel
+              own={true}
+              ownDisabled={false}
+              jobName={job.name}
+              onOwn={() => {}}
+              presets={state.presets}
+              presetId={state.presets[0].id}
+              modified={true}
+              presetHidden={() => false}
+              onSelectPreset={() => {}}
+              hasActivePreset={true}
+              activePresetLabel="User preset 预设"
+              busy={false}
+              onOverwrite={() => {}}
+              onSaveAs={() => {}}
+              tab={tab}
+              setTab={setTab}
+            >
+              <VideoSettings
+                s={settings}
+                tab={tab}
+                engine={engine}
+                backend="cpu"
+                engines={state.engines}
+                detecting={false}
+                verification={verification}
+                placebo={true}
+                canTest={true}
+                job={job}
+                preview={preview}
+                customFPS={customFPS}
+                setCustomFPS={setCustomFPS}
+                autoAlignAudio={true}
+                setAutoAlignAudio={() => {}}
+                set={set}
+                changed={setSettings}
+                call={async () => null}
+                copy={() => {}}
+                pickDirectory={() => {}}
+              />
+            </VideoSettingsPanel>
+          </main>
+        </div>
+        <EncodeFooter
+          s={settings}
+          job={jobs[0]}
+          preview={preview}
+          engine={engine}
+          backend="cpu"
+          running={false}
+          readyCount={1}
+          doneCount={2}
+          busy={false}
+          errorCount={1}
+          onCancel={() => {}}
+          onStart={() => {}}
+        />
       </div>
-      <EncodeFooter
-        s={settings}
-        job={jobs[0]}
-        preview={preview}
-        engine={engine}
-        backend="cpu"
-        running={false}
-        readyCount={1}
-        doneCount={2}
-        busy={false}
-        errorCount={1}
-        onCancel={() => {}}
-        onStart={() => {}}
-      />
-      <output aria-label="video notification">{summaryMessage(notice)}</output>
+      <output
+        className={`toast ${notice ? "visible" : ""}`}
+        role="status"
+        aria-label="video notification"
+      >
+        {summaryMessage(notice)}
+      </output>
       {selected === "partial-fixture" && (
         <VideoFeedback
           message={errorMessage(job.errorData)}

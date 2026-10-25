@@ -383,7 +383,11 @@ test(
         );
         if (j && blockMask) {
           blockMask = false;
-          blockedPath = j.maskOutput;
+          // The window receives only committed outputs. The full service
+          // keeps this planned path to support a mask-only retry.
+          blockedPath = svc
+            .getState()
+            .jobs.find((full) => full.id === j.id).maskOutput;
           fs.writeFileSync(blockedPath, "KEEP EXTERNAL FILE");
         }
       },
@@ -421,6 +425,8 @@ test(
       let [a, p] = svc.getState().jobs;
       assert.equal(a.status, "partial", a.log);
       assert.ok(fs.existsSync(a.output));
+      assert.equal(svc.uiState().jobs[0].output, a.output);
+      assert.equal(svc.uiState().jobs[0].maskOutput, undefined);
       assert.equal(fs.readFileSync(blockedPath, "utf8"), "KEEP EXTERNAL FILE");
       assert.equal(p.status, "invalid", p.error);
       const stat = fs.statSync(a.output);

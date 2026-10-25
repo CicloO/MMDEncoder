@@ -501,6 +501,7 @@ function createEncodeQueue({
         "settings",
         "output",
         "maskOutput",
+        "_maskReady",
         "error",
         "errorData",
         "softwareRetry",

@@ -7,7 +7,12 @@ function uiState(state) {
   return JSON.parse(
     JSON.stringify({
       ...state,
-      jobs: state.jobs.map(({ log, ...j }) => j),
+      jobs: state.jobs.map(({ log, _maskReady, ...j }) => {
+        // The encoder retains the planned path for a mask-only retry, but
+        // only a successful commit makes it an output the window may show.
+        if (!_maskReady) delete j.maskOutput;
+        return j;
+      }),
       mediaJobs: state.mediaJobs.map((j) =>
         j.log?.length > 8000 ? { ...j, log: "…" + j.log.slice(-8000) } : j,
       ),

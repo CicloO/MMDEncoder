@@ -42,6 +42,7 @@ function createEncoder({
     job.error = undefined;
     job.errorData = undefined;
     job.softwareRetry = undefined;
+    job._maskReady = false;
     job.progress = 0;
     job.startedAt = Date.now();
     job.stage = stage(maskOnly ? "retry_mask" : "preparing");
@@ -160,6 +161,7 @@ function createEncoder({
         if (c.mask) {
           await commit(temps.maskOutput, paths.maskOutput);
           job.maskOutput = paths.maskOutput;
+          job._maskReady = true;
         }
       }
       job.status = "done";

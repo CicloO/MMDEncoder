@@ -502,6 +502,9 @@ svg {
   flex-direction: column;
   gap: 3px;
 }
+.queue-column {
+  min-width: 0;
+}
 .job-copy strong {
   white-space: nowrap;
   overflow: hidden;
@@ -516,9 +519,31 @@ svg {
 .job-status {
   font-size: 11px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 5px;
   color: var(--color-muted);
+}
+.output-files,
+.output-file,
+.output-file-name {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+.output-file-name {
+  flex: 1;
+}
+.output-file-lead {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.output-file-tail,
+.output-file-separator {
+  flex: none;
+  white-space: pre;
 }
 .job-status.done {
   color: var(--color-success);
