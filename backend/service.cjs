@@ -621,7 +621,27 @@ function createService({
     },
     killActive: () => active?.kill(),
   };
-  const mediaQueue = createMediaQueue(ctx);
+  const mediaQueue = createMediaQueue({
+    getJobs: () => state.mediaJobs,
+    setJobs: (jobs) => (state.mediaJobs = jobs),
+    engineInfo: () => state.engineInfo,
+    isRunning: () => state.running,
+    setRunning: (value) => (state.running = value),
+    isStopped: () => stopped,
+    setStopped: (value) => (stopped = value),
+    onNotice: (message) => (state.notice = message),
+    emit,
+    emitProgress,
+    run,
+    locate,
+    probeMedia,
+    hasSoxr,
+    commit,
+    dataDir,
+    isBusy,
+    probeLimit: ctx.probeLimit,
+    reorder,
+  });
   const encodeQueue = createEncodeQueue({
     getJobs: () => state.jobs,
     setJobs: (jobs) => (state.jobs = jobs),
