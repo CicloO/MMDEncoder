@@ -1,5 +1,17 @@
 [
   {
+    "file": "backend/media.cjs",
+    "text": "_无音频",
+    "category": "technical",
+    "reason": "Frozen output filename suffix for video extraction; the plan requires output naming to remain byte-for-byte unchanged."
+  },
+  {
+    "file": "backend/media.cjs",
+    "text": "_合并",
+    "category": "technical",
+    "reason": "Frozen output filename suffix for audio/video merge; the plan requires output naming to remain byte-for-byte unchanged."
+  },
+  {
     "file": "mmd-plugin/src/json.cpp",
     "text": "json.h",
     "category": "technical",
