@@ -24,8 +24,6 @@ import {
   Save,
   FilePlus2,
   Clapperboard,
-  Eye,
-  EyeOff,
   GripVertical,
 } from "lucide-react";
 import {
@@ -44,6 +42,8 @@ import { MediaDetails } from "./MediaDetails";
 import { RtxSettings } from "./RtxSettings";
 import { AboutDialog } from "./AboutDialog";
 import { BackgroundColor } from "./BackgroundColor";
+import { PresetChoice } from "./PresetChoice";
+import { PresetList } from "./PresetList";
 import { MmdExportDialog } from "./MmdExportDialog";
 import { createActions } from "./actions";
 import { useMmdExport } from "./useMmdExport";
@@ -893,19 +893,11 @@ export default function App() {
                   </div>
                 )}
                 <div className="preset-bar">
-                  <Select
-                    id="preset-select"
-                    label={`编码预设${modified ? " · 已修改" : ""}`}
+                  <PresetChoice
+                    presets={presets}
                     value={presetId}
-                    options={[
-                      { value: "", label: "自定义设置" },
-                      ...presets
-                        .filter((p) => !presetHidden(p) || p.id === presetId)
-                        .map((p) => ({
-                          value: p.id,
-                          label: p.name,
-                        })),
-                    ]}
+                    modified={modified}
+                    hidden={presetHidden}
                     onChange={(id) => {
                       const p = state.presets.find((p) => p.id === id);
                       if (p) {
@@ -1916,66 +1908,28 @@ export default function App() {
         title="预设管理"
         description="拖动排序；隐藏的预设不出现在预设下拉框里。内置预设也可以改名、更新或删除，随时可以恢复。导入导出只包含个人预设。"
       >
-        <div className="preset-list">
-          {presets.map((p) => (
-            <div
-              key={p.id}
-              className={`preset-item ${presetHidden(p) ? "is-hidden" : ""}`}
-              {...sortPreset(p.id)}
-            >
-              <span {...sortPreset.handle(p.id)}>
-                <GripVertical size={16} aria-hidden />
-              </span>
-              <Bookmark size={20} />
-              <div>
-                <strong>{p.name}</strong>
-                <small>
-                  {p.builtin ? (p.edited ? "内置 · 已修改" : "内置") : "个人"} ·{" "}
-                  {p.settings.container.toUpperCase()} · {p.settings.encoder}
-                  {presetHidden(p) ? " · 已隐藏" : ""}
-                </small>
-              </div>
-              <Button
-                onClick={() => {
-                  setModal("");
-                  if (modified) setPendingPreset(p);
-                  else void applyPreset(p);
-                }}
-              >
-                调用
-              </Button>
-              <Button
-                onClick={() => {
-                  setRenameTarget(p);
-                  setPresetName(p.name);
-                  setError("");
-                }}
-              >
-                编辑名称
-              </Button>
-              <Button
-                variant="ghost"
-                title={presetHidden(p) ? "显示" : "隐藏"}
-                aria-label={`${presetHidden(p) ? "显示" : "隐藏"}预设 ${p.name}`}
-                onClick={() =>
-                  void call("hidePreset", {
-                    id: p.id,
-                    hidden: !presetHidden(p),
-                  }).catch(() => {})
-                }
-              >
-                {presetHidden(p) ? <EyeOff size={16} /> : <Eye size={16} />}
-              </Button>
-              <Button
-                variant="ghost"
-                aria-label={`删除预设 ${p.name}`}
-                onClick={() => setPendingDelete(p)}
-              >
-                <Trash2 size={16} />
-              </Button>
-            </div>
-          ))}
-        </div>
+        <PresetList
+          presets={presets}
+          sort={sortPreset}
+          hidden={presetHidden}
+          onApply={(p) => {
+            setModal("");
+            if (modified) setPendingPreset(p);
+            else void applyPreset(p);
+          }}
+          onRename={(p) => {
+            setRenameTarget(p);
+            setPresetName(p.name);
+            setError("");
+          }}
+          onHide={(p) => {
+            void call("hidePreset", {
+              id: p.id,
+              hidden: !presetHidden(p),
+            }).catch(() => {});
+          }}
+          onDelete={setPendingDelete}
+        />
         <div className="modal-actions">
           <Button
             onClick={() => action("importPresetsFile", undefined, "预设已导入")}
