@@ -47,6 +47,7 @@ import { BackgroundColor } from "./BackgroundColor";
 import { MmdExportDialog } from "./MmdExportDialog";
 import { createActions } from "./actions";
 import { useMmdExport } from "./useMmdExport";
+import { invoke } from "./ipc";
 import {
   formatFPS,
   formatSize,
@@ -340,7 +341,19 @@ export default function App() {
     onError: setError,
     onNotice: notify,
   });
-  const { busy: mmdBusy, call: mmdCall } = useMmdExport(modal, call);
+  const {
+    busy: mmdBusy,
+    call: mmdCall,
+    error: mmdError,
+  } = useMmdExport(
+    modal,
+    createActions({
+      request: invoke,
+      onState: receive,
+      onError: setError,
+      onNotice: notify,
+    }).call,
+  );
   // Replace one video's audio, as the media page's merge does, and line it
   // up with the video's own sound when "自动对齐" is on and there is one.
   async function pickAudio(j: Job) {
@@ -2008,7 +2021,7 @@ export default function App() {
         </div>
       </Modal>
       <MmdExportDialog
-        error={error}
+        error={mmdError || error}
         open={modal === "mmd"}
         onClose={() => setModal("")}
         mmd={state.mmd}

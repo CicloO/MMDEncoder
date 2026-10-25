@@ -96,6 +96,7 @@ function createService({
       rangeSuffix: true,
       savedAt: "",
       error: "",
+      errorData: null,
       plugin: { available: false, installed: false, upToDate: false, path: "" },
       test: null,
       lastExport: null,
@@ -342,17 +343,19 @@ function createService({
   // every preset change goes through persist(), tool changes through detect().
   function syncMmdExport() {
     state.mmd.error = "";
-    state.mmd.error = syncConfig({
+    state.mmd.errorData = syncConfig({
       presets: state.presets,
       engines: state.engineInfo,
       appExe: mmdAppExe,
       helper: path.join(__dirname, "mmd-export.cjs"),
+      locale: state.locale,
       adoptSelection: adoptMmdSelection,
       getSelection: () => ({
         presetId: state.mmd.presetId,
         maskMode: state.mmd.maskMode,
       }),
     });
+    state.mmd.error = state.mmd.errorData?.message || "";
   }
   function lastMmdExport() {
     try {
@@ -376,6 +379,7 @@ function createService({
     syncMmdExport();
     await testSelection({
       error: state.mmd.error,
+      errorData: state.mmd.errorData,
       presetId: state.mmd.presetId,
       children,
       onResult: (result) => {

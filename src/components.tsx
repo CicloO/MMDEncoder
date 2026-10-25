@@ -1,6 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { t } from "./i18n";
 import type { ReactNode, ButtonHTMLAttributes, DragEvent } from "react";
 export function Button({
   children,
@@ -118,7 +119,11 @@ export function Modal({
                 <Dialog.Description>{description}</Dialog.Description>
               </div>
               <Dialog.Close asChild>
-                <Button onClick={onClose} aria-label="关闭" title="关闭">
+                <Button
+                  onClick={onClose}
+                  aria-label={t("common.close")}
+                  title={t("common.close")}
+                >
                   <X size={18} />
                 </Button>
               </Dialog.Close>

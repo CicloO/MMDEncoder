@@ -42,6 +42,15 @@ const app = await electron.launch({
 });
 try {
   const page = await app.firstWindow();
+  const screenshot = async (file) => {
+    const bytes = await app.evaluate(async ({ BrowserWindow }) =>
+      (await BrowserWindow.getAllWindows()[0].webContents.capturePage())
+        .toPNG()
+        .toString("base64"),
+    );
+    assert.ok(bytes.length > 100, "Electron returned an empty screenshot");
+    fs.writeFileSync(file, Buffer.from(bytes, "base64"));
+  };
   await page
     .getByRole("heading", { name: "视频队列" })
     .waitFor({ timeout: 30000 });
@@ -61,6 +70,24 @@ try {
       { timeout: 30000 },
     )
     .toBe(true);
+  // The ordinary app uses the structured MMD action path and real encoder.
+  await page.getByRole("button", { name: "MMD 导出", exact: true }).click();
+  const mmdDialog = page.getByRole("dialog", { name: "MMD 导出", exact: true });
+  await expect(
+    mmdDialog.getByRole("button", { name: "测试编码", exact: true }),
+  ).toBeEnabled();
+  await mmdDialog
+    .getByRole("button", { name: "测试编码", exact: true })
+    .click();
+  await expect(mmdDialog.getByText(/测试编码通过/)).toBeVisible({
+    timeout: 60000,
+  });
+  const result = await page.evaluate(
+    async () => (await window.encoder.invoke("state")).mmd.test,
+  );
+  assert.equal(result.code, "MMD_TEST_PASSED");
+  assert.equal(typeof result.params.seconds, "number");
+  await page.keyboard.press("Escape");
   await app.evaluate(
     async ({ BrowserWindow }, file) => {
       await BrowserWindow.getAllWindows()[0].loadFile(file);
@@ -120,7 +147,30 @@ try {
     page.getByRole("radio", { name: labels["background.black"], exact: true }),
   ).toBeChecked();
   await expect(page.locator("html")).toHaveAttribute("lang", "en-XA");
-  await page.screenshot({ path: path.join(dir, "pseudo-background.png") });
+  await screenshot(path.join(dir, "pseudo-background.png"));
+  await page.evaluate(() => window.localeFixture.openMmd());
+  const longDialog = page.getByRole("dialog", {
+    name: labels["mmd.title"],
+    exact: true,
+  });
+  await expect(longDialog).toBeVisible();
+  await expect(
+    longDialog.getByLabel(labels["mmd.follow"], { exact: false }),
+  ).toBeChecked();
+  await expect(
+    longDialog.getByLabel(labels["mmd.mask"], { exact: true }),
+  ).toBeVisible();
+  const box = await longDialog.boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 681);
+  await screenshot(path.join(dir, "pseudo-mmd-dialog.png"));
+  await longDialog
+    .getByRole("button", { name: labels["mmd.test"], exact: true })
+    .scrollIntoViewIfNeeded();
+  await expect(
+    longDialog.getByRole("button", { name: labels["mmd.test"], exact: true }),
+  ).toBeVisible();
+  await screenshot(path.join(dir, "pseudo-mmd-actions.png"));
+  await page.keyboard.press("Escape");
   await page.evaluate(() => window.localeFixture.choose("unknown"));
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
   await expect(page).toHaveTitle("MMDEncoder · 视频压制");

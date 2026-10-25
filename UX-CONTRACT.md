@@ -4,7 +4,9 @@ Locale zh-CN, local Windows desktop, offline by default. No accounts or uploads.
 
 已迁移文案由 `locales/zh-CN.json` 和 `src/i18n.ts` 管理。业务错误用稳定 code 与参数跨 IPC 传递；迁移后的调用方使用 `src/ipc.ts`，未知 code 回退消息。当前只提供简体中文，迁移规则见 `docs/i18n.md`。
 
-程序级语言偏好由 `backend/preferences.cjs` 解析，通过原有 `settings.json` 持久化。`null` 为将来的跟随系统模式保留，准备阶段与未知值均显示中文。`src/LocaleRoot.tsx` 订阅已保存的语言状态，更新页面语言、标题并刷新已迁移文案，不重新挂载页面或修改编码设置 / 预设 / 正在执行的任务；正式选择器在第二种语言交付时开放。文件框和插件窗口的语言通路仍待 A4 / B5 迁移，不能把 React 样板的通过视为这些路径已完成。
+程序级语言偏好由 `backend/preferences.cjs` 解析，通过原有 `settings.json` 持久化。`null` 为将来的跟随系统模式保留，准备阶段与未知值均显示中文。`src/LocaleRoot.tsx` 订阅已保存的语言状态，更新页面语言、标题并刷新已迁移文案，不重新挂载页面或修改编码设置 / 预设 / 正在执行的任务；正式选择器在第二种语言交付时开放。
+
+MMD 导出弹窗由 `src/MmdExportDialog.tsx` 管理，使用共享 Field / Select / Button / Modal，文案与原生插件设置框共用中文基准表。插件读取 `mmd-export.json` 的有限文案快照；窗口保留打开时的语言，下次打开读取最新快照，主程序关闭后仍可使用。缺失文案使用从同一中文表生成的 DLL 回退。固定窗口遇到长文字按实际字体测量并扩展空间，不缩字号。测试当前选项不保存，确定才保存，取消保留原选择；结果只简写在测试按钮，完整失败原因保留日志。文件框、其他页面及插件剩余路径仍按 B 批迁移，不能把 A4 样板当作全量支持。
 
 | Capability      | Canonical owner                               | Source of truth     | Allowed variants                       | Verification           |
 | --------------- | --------------------------------------------- | ------------------- | -------------------------------------- | ---------------------- |

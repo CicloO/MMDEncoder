@@ -1,3 +1,4 @@
+import type { ErrorData } from "../locales/messages.mjs";
 export type Settings = {
   container: string;
   encoder: string;
@@ -213,6 +214,7 @@ export type State = {
     maskMode: "off" | "with" | "only";
     rangeSuffix?: boolean;
     error: string;
+    errorData?: ErrorData | null;
     interrupted: {
       id: string;
       output: string;
@@ -228,7 +230,9 @@ export type State = {
       upToDate: boolean;
       path: string;
     };
-    test: { ok: boolean; at: string; message: string } | null;
+    test:
+      | (Partial<ErrorData> & { ok: boolean; at: string; message: string })
+      | null;
     lastExport: {
       ok: boolean;
       at: string;

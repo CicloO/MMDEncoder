@@ -1,6 +1,8 @@
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
+const { appError, serializeError } = require("./errors.cjs");
+const { pluginMessages } = require("./plugin-messages.cjs");
 
 const baseDir = () =>
   path.join(
@@ -85,6 +87,8 @@ function writeConfig({
   engines,
   appExe,
   helper,
+  locale,
+  catalogs,
 }) {
   if (!presets) {
     const id = presetId || "export";
@@ -99,6 +103,7 @@ function writeConfig({
   }
   const config = {
     version: 2,
+    ...pluginMessages(locale, catalogs),
     presets: presets.map((p) => ({
       id: p.id,
       name: p.name,
@@ -123,20 +128,16 @@ function writeConfig({
 // The effective export settings: config + current selection.
 function readConfig(selection = readSelection()) {
   const config = JSON.parse(fs.readFileSync(configPath(), "utf8"));
-  if (config.version !== 2)
-    throw Error("导出设置版本不支持，请打开 MMDEncoder 重新选择导出预设");
-  if (!selection?.presetId)
-    throw Error(
-      "还没有选择导出预设：请在 MMDEncoder 的“预设管理”或 MMD 的“詳細設定”里选择",
-    );
+  if (config.version !== 2) throw appError("MMD_CONFIG_VERSION");
+  if (!selection?.presetId) throw appError("MMD_SELECTION_REQUIRED");
   const preset = config.presets.find((p) => p.id === selection.presetId);
-  if (!preset) throw Error("所选导出预设已不存在，请重新选择");
+  if (!preset) throw appError("MMD_PRESET_MISSING");
   const maskMode = selection.maskMode || presetMask(preset.settings);
   // The mask alone does not use the preset's encoder.
   if (maskMode !== "only" && preset.unsupported)
     throw Error(preset.unsupported);
   if (!config.engines?.ffmpeg || !config.engines?.ffprobe)
-    throw Error("请先在 MMDEncoder 的“设置与引擎”里安装编码工具");
+    throw appError("MMD_TOOLS_REQUIRED");
   return {
     ...config,
     presetId: preset.id,
@@ -163,6 +164,7 @@ function syncConfig({
   helper,
   adoptSelection,
   getSelection,
+  locale,
 }) {
   try {
     adoptSelection();
@@ -175,20 +177,21 @@ function syncConfig({
       engines: engines,
       appExe,
       helper,
+      locale,
     });
   } catch (e) {
-    return "无法写入导出设置：" + e.message;
+    return serializeError(appError("MMD_CONFIG_WRITE", { detail: e.message }));
   }
   const m = getSelection();
   const preset = presets.find((p) => p.id === m.presetId);
   return !m.presetId
-    ? ""
+    ? null
     : !preset
-      ? "导出预设已被删除，请重新选择"
+      ? serializeError(appError("MMD_PRESET_REMOVED"))
       : unsupported(preset.settings, m.maskMode) ||
         (!engines.ffmpeg || !engines.ffprobe
-          ? "请先在“设置与引擎”里安装编码工具"
-          : "");
+          ? serializeError(appError("MMD_SYNC_TOOLS_REQUIRED"))
+          : null);
 }
 
 module.exports = {

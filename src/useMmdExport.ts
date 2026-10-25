@@ -1,18 +1,22 @@
 import { useEffect, useState } from "react";
 import type { RequestCall } from "./actions";
+import { serializeError } from "../locales/messages.mjs";
+import type { ErrorData } from "../locales/messages.mjs";
 export function useMmdExport(modal: string, call: RequestCall) {
   // MMD export plugin actions run one at a time (install, test encode, …).
   const [mmdBusy, setMmdBusy] = useState(false);
+  const [error, setError] = useState<ErrorData | null>(null);
   async function mmdCall(
     actionName: string,
     payload?: unknown,
     message?: string,
   ) {
     setMmdBusy(true);
+    setError(null);
     try {
       await call(actionName, payload, message);
-    } catch {
-      /* the error is shown in the dialog */
+    } catch (error) {
+      setError(serializeError(error));
     } finally {
       setMmdBusy(false);
     }
@@ -22,5 +26,5 @@ export function useMmdExport(modal: string, call: RequestCall) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modal]);
 
-  return { busy: mmdBusy, call: mmdCall };
+  return { busy: mmdBusy, call: mmdCall, error };
 }

@@ -26,6 +26,7 @@
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "uuid.lib")
 #pragma comment(lib, "user32.lib")
+#pragma comment(lib, "gdi32.lib")
 
 static const GUID CLSID_MMDEncoderPlugin = {
     0xdc3f6bd1, 0x923f, 0x467a, {0xbf, 0x73, 0xf1, 0x15, 0xaf, 0x70, 0x50, 0x33}};
@@ -82,6 +83,44 @@ static HWND makeWindow(const wchar_t* cls, const std::wstring& title, bool visib
   return h;
 }
 
+static void inspectSettings(HWND dialog) {
+  wchar_t title[1024]{}; GetWindowTextW(dialog, title, 1024);
+  char bytes[4096]{}; WideCharToMultiByte(CP_UTF8, 0, title, -1, bytes, 4096, nullptr, nullptr);
+  std::printf("dialogTitle=%s\n", bytes);
+  bool fits = true;
+  RECT client{}; GetClientRect(dialog, &client);
+  for (int id : {102, 106, 108, 109, 110, 105, 107, IDOK, IDCANCEL}) {
+    HWND child = GetDlgItem(dialog, id); RECT r{}; GetClientRect(child, &r);
+    wchar_t text[8192]{}; GetWindowTextW(child, text, 8192);
+    HDC dc = GetDC(child); auto old = SelectObject(dc, (HFONT)SendMessageW(child, WM_GETFONT, 0, 0));
+    RECT measured{0,0,r.right,0};
+    if (id == 108) DrawTextW(dc, text, -1, &measured, DT_CALCRECT | DT_WORDBREAK);
+    else { SIZE size{}; GetTextExtentPoint32W(dc, text, (int)wcslen(text), &size); measured.right = size.cx + ((id == 102 || id == 106) ? 24 : (id == 109 || id == 110) ? 0 : 16); measured.bottom=size.cy; }
+    SelectObject(dc, old); ReleaseDC(child, dc);
+    RECT position{}; GetWindowRect(child,&position); MapWindowPoints(nullptr,dialog,(POINT*)&position,2);
+    if (measured.right > r.right || measured.bottom > r.bottom || position.right > client.right || position.bottom > client.bottom) fits = false;
+  }
+  for (int id : {101, 103, 104}) {
+    RECT r{}; if (!SendDlgItemMessageW(dialog,id,CB_GETDROPPEDCONTROLRECT,0,(LPARAM)&r) || r.bottom-r.top < 50) fits=false;
+  }
+  std::printf("layoutFits=%d\n", fits ? 1 : 0);
+  wchar_t file[32768]{};
+  if (GetEnvironmentVariableW(L"MMD_SIM_SCREENSHOT", file, 32768)) {
+    RECT r{}; GetWindowRect(dialog,&r); int w=r.right-r.left,h=r.bottom-r.top;
+    HDC dc=GetWindowDC(dialog), memory=CreateCompatibleDC(dc); HBITMAP bitmap=CreateCompatibleBitmap(dc,w,h);
+    auto old=SelectObject(memory,bitmap); BOOL printed=PrintWindow(dialog,memory,0);
+    SendMessageW(dialog, WM_PRINT, (WPARAM)memory, PRF_CLIENT | PRF_CHILDREN | PRF_ERASEBKGND | PRF_NONCLIENT);
+    BITMAPINFO info{}; info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER); info.bmiHeader.biWidth=w; info.bmiHeader.biHeight=-h; info.bmiHeader.biPlanes=1; info.bmiHeader.biBitCount=32; info.bmiHeader.biCompression=BI_RGB;
+    SelectObject(memory,old);
+    std::vector<BYTE> data((size_t)w*h*4); int rows=GetDIBits(dc,bitmap,0,h,data.data(),&info,DIB_RGB_COLORS);
+    std::printf("screenshotPrinted=%d rows=%d\n", printed ? 1 : 0, rows);
+    BITMAPFILEHEADER header{}; header.bfType=0x4D42; header.bfOffBits=sizeof(header)+sizeof(info.bmiHeader); header.bfSize=header.bfOffBits+(DWORD)data.size();
+    HANDLE output=CreateFileW(file,GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,0,nullptr); DWORD written=0;
+    if(output!=INVALID_HANDLE_VALUE){WriteFile(output,&header,sizeof(header),&written,nullptr);WriteFile(output,&info.bmiHeader,sizeof(info.bmiHeader),&written,nullptr);WriteFile(output,data.data(),(DWORD)data.size(),&written,nullptr);CloseHandle(output);}
+    DeleteObject(bitmap); DeleteDC(memory); ReleaseDC(dialog,dc);
+  }
+}
+
 int wmain(int argc, wchar_t** argv) {
   setvbuf(stdout, nullptr, _IONBF, 0);
   // --dialog <plugin.dll>: open the codec settings window, as MMD's 詳細設定 does.
@@ -118,6 +157,8 @@ int wmain(int argc, wchar_t** argv) {
         HWND settings = nullptr;
         for (int i = 0; i < 500 && !settings; i++) { settings = find(true); Sleep(10); }
         if (!settings) { std::printf("settings window not found\n"); return; }
+        Sleep(100); // WM_INITDIALOG finishes its font-based layout before inspection.
+        inspectSettings(settings);
         std::printf("settings window found\n");
         std::printf("initialMask=%lld\n", (long long)SendDlgItemMessageW(settings, 104, CB_GETCURSEL, 0, 0));
         SendDlgItemMessageW(settings, 104, CB_SETCURSEL, mask, 0);
@@ -128,7 +169,7 @@ int wmain(int argc, wchar_t** argv) {
         for (int i = 0; i < 8500; i++) {
           wchar_t part[4096] = {0};
           GetDlgItemTextW(settings, 107, part, 4096);
-          if (part[0] == L'\x2713' || part[0] == L'\x2717') { text = part; break; }
+          if (wcschr(part,L'\x2713') || wcschr(part,L'\x2717')) { text = part; break; }
           Sleep(10);
         }
         if (text.empty()) { std::printf("test result not shown\n"); PostMessageW(settings, WM_CLOSE, 0, 0); return; }
