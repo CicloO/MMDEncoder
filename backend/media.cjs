@@ -192,14 +192,13 @@ function command(p, tools, output) {
   if (fade && p.audioFormat === "copy") throw appError("MEDIA_COPY_FADE");
   const plan = hiRes && hiResPlan(p.audioFormat, p.sourceAudio);
   let codecArgs = hiRes
-    ? // A fade means re-encoding even when Hi-Res would copy.
-      fade && plan.action === "copy"
+    ? // Padding/trimming a merge also needs decoded samples.
+      (fade || p.operation === "merge") && plan.action === "copy"
       ? hiResCodec(plan)
       : hiResArgs(plan, p.soxr)
     : ["-c:a", audio[0]];
-  // A merge lasts as long as the video: the audio is read no further than
-  // the video's length, and (unless copied) a shorter one is padded with
-  // silence, stopped by -shortest at the video's end.
+  // Output duration belongs to the video. Copied audio may end earlier;
+  // re-encoded audio is padded and trimmed to the video's duration.
   const merge = p.operation === "merge";
   const pad = merge && p.audioFormat !== "copy";
   // Extracting: p.align (with a reference length); merging: p.audioOffset
@@ -207,8 +206,11 @@ function command(p, tools, output) {
   const aligned =
     p.operation === "audio"
       ? p.align
-      : merge && p.audioOffset
-        ? { offset: Number(p.audioOffset) }
+      : merge && (p.audioOffset || pad)
+        ? {
+            offset: Number(p.audioOffset) || 0,
+            length: Number(p.videoDuration) || 0,
+          }
         : null;
   if (aligned && p.audioFormat === "copy") throw appError("MEDIA_COPY_ALIGN");
   codecArgs = withAudioFilter(
@@ -216,25 +218,13 @@ function command(p, tools, output) {
     [
       aligned ? alignFilter(aligned, p.sourceAudio?.sampleRate) : "",
       fadeFilter(fade, p.fadeLength),
-      pad ? "apad" : "",
+      pad && !(Number(p.videoDuration) > 0) ? "apad" : "",
     ]
       .filter(Boolean)
       .join(","),
   );
   const args = ["-hide_banner", "-nostdin", "-n", "-i", p.input];
-  if (merge)
-    args.push(
-      ...(Number(p.videoDuration) > 0
-        ? [
-            "-t",
-            (
-              Number(p.videoDuration) + Math.max(0, Number(p.audioOffset) || 0)
-            ).toFixed(6),
-          ]
-        : []),
-      "-i",
-      p.audioInput,
-    );
+  if (merge) args.push("-i", p.audioInput);
   if (p.operation === "audio") args.push("-map", "0:a:0", "-vn", ...codecArgs);
   else
     args.push(
@@ -252,7 +242,9 @@ function command(p, tools, output) {
       "-b:a",
       audioBitrate(p.audioBitrate, audio[0], p.sourceAudio) + "k",
     );
-  if (pad) args.push("-shortest");
+  if (merge && Number(p.videoDuration) > 0)
+    args.push("-t", Number(p.videoDuration).toFixed(6));
+  else if (pad) args.push("-shortest");
   if (ext === ".mp4") args.push("-movflags", "+faststart");
   args.push("-progress", "pipe:1", output);
   return { exe: tools.ffmpeg, args };

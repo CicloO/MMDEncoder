@@ -106,6 +106,7 @@ export type Job = {
   audioDuration?: number;
   // 音频对齐 of the replacement with the video's own sound (seconds).
   audioOffset?: number;
+  audioShiftFrames?: number;
   // PNG sequence source: FFmpeg pattern and the frame rate the user gave it.
   sequence?: {
     pattern: string;
@@ -161,9 +162,16 @@ export type MediaJob = {
   audioPath?: string;
   // 音频对齐 of the added audio with the video's own sound (merge).
   audioOffset?: number;
+  audioShiftFrames?: number;
   // 音频对齐: line the extracted audio up with a reference (offset seconds,
   // > 0 cut, < 0 padded; length: end with the reference).
-  align?: { reference: string; offset: number; length?: number };
+  align?: {
+    reference: string;
+    offset: number;
+    length?: number;
+    shiftFrames?: number;
+    fpsText?: string;
+  };
   // The replacement audio's parameters, read when it is chosen.
   audioMeta?: Meta["audio"];
   output?: string;

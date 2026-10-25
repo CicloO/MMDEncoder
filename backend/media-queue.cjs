@@ -15,6 +15,7 @@ const core = require("./core.cjs");
 const media = require("./media.cjs");
 const { mediaLocation } = require("./media-location.cjs");
 const { createMediaJob } = require("./media-job.cjs");
+const { frameOffset } = require("./audio-alignment.cjs");
 
 // The service owns shared resources and stop/busy state. The queue owns its
 // list and batch scheduling through explicit capabilities.
@@ -153,6 +154,7 @@ function createMediaQueue({
       else delete job.audioPath;
       delete job.audioMeta;
       delete job.audioOffset; // another audio: its alignment no longer holds
+      delete job.audioShiftFrames;
       // The replacement audio's own parameters (Hi-Res preview, checks).
       if (file) {
         await locate();
@@ -247,15 +249,28 @@ function createMediaQueue({
     mediaSetAudioOffset(payload) {
       const job = requireMediaJob(payload?.id);
       if (job.status === "running") throw appError("MEDIA_ALIGN_BUSY");
+      if (
+        payload?.expectedAudioPath !== undefined &&
+        payload.expectedAudioPath !== job.audioPath
+      )
+        throw appError("ALIGN_CANCELLED");
       const offset = payload?.offset;
       if (offset === null || offset === undefined) {
         delete job.audioOffset;
+        delete job.audioShiftFrames;
         return;
       }
       if (!job.audioPath) throw appError("MEDIA_AUDIO_REQUIRED");
       if (!Number.isFinite(offset) || Math.abs(offset) > 24 * 3600)
         throw appError("MEDIA_ALIGN_INVALID");
+      const frames =
+        payload.shiftFrames === undefined
+          ? job.audioShiftFrames || 0
+          : payload.shiftFrames;
+      frameOffset(offset, frames, job.meta?.fpsText || job.meta?.fps);
       job.audioOffset = offset;
+      if (frames) job.audioShiftFrames = frames;
+      else delete job.audioShiftFrames;
     },
     // The 音频对齐 dialog's result for one file: extracting its audio then
     // cuts (offset > 0) or pads (offset < 0) its start to line up with the
@@ -275,15 +290,32 @@ function createMediaQueue({
         Math.abs(a.offset) > 24 * 3600
       )
         throw appError("MEDIA_ALIGN_INVALID");
-      let length = 0;
-      if (a.trim) {
+      const frames =
+        a.shiftFrames === undefined
+          ? job.align?.reference === a.reference
+            ? job.align.shiftFrames || 0
+            : 0
+          : a.shiftFrames;
+      let length = 0,
+        fpsText;
+      if (a.trim || frames) {
         await locate();
-        length = (await probeMedia(a.reference)).audioDuration || 0;
-        if (!length) throw appError("MEDIA_REFERENCE_LENGTH");
+        const reference = await probeMedia(a.reference);
+        if (a.trim) {
+          length = reference.videoDuration || reference.audioDuration || 0;
+          if (!length) throw appError("MEDIA_REFERENCE_LENGTH");
+        }
+        if (frames && typeof reference.hasVideo !== "boolean")
+          throw appError("ALIGN_REFERENCE_READ_FAILED", {
+            detail: a.reference,
+          });
+        fpsText = reference.fpsText;
       }
+      frameOffset(a.offset, frames, fpsText);
       job.align = {
         reference: a.reference,
         offset: a.offset,
+        ...(frames ? { shiftFrames: frames, fpsText } : {}),
         ...(length ? { length } : {}),
       };
     },

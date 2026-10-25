@@ -90,6 +90,23 @@ function createAlignService({ engineInfo, locate }) {
     });
   }
   const queries = {
+    async alignReferenceInfo(payload) {
+      if (typeof payload?.path !== "string" || !path.isAbsolute(payload.path))
+        throw appError("ALIGN_INPUT_INVALID");
+      await locate();
+      const ffprobe = engineInfo().ffprobe;
+      if (!ffprobe) throw appError("FFPROBE_REQUIRED");
+      const out = await start(
+        payload.slot,
+        {
+          mode: "reference",
+          ffprobe,
+          file: payload.path,
+        },
+        30000,
+      );
+      return JSON.parse(out.toString());
+    },
     // The sound of a file for the dialog's waveform and playback.
     async alignPreview(payload) {
       const file = payload?.path;

@@ -5,6 +5,7 @@ const path = require("node:path");
 const core = require("./core.cjs");
 const media = require("./media.cjs");
 const { mediaLocation } = require("./media-location.cjs");
+const { frameOffset } = require("./audio-alignment.cjs");
 // One job owns its output transaction and log; the service owns processes,
 // shared stop state and resource detection. No queue/application State.
 function createMediaJob({
@@ -64,7 +65,11 @@ function createMediaJob({
       if (o.operation === "merge") {
         p.videoDuration = source.videoDuration;
         // The added audio lined up with the video's own (音频对齐).
-        p.audioOffset = Number(job.audioOffset) || 0;
+        p.audioOffset = frameOffset(
+          Number(job.audioOffset) || 0,
+          job.audioShiftFrames || 0,
+          source.fpsText,
+        );
       }
       const shift = p.audioOffset || 0;
       p.fadeLength =
@@ -74,9 +79,16 @@ function createMediaJob({
       // Extracting audio lined up with a reference (音频对齐): cut or pad
       // its start; the result ends where the reference does when trimmed.
       if (o.operation === "audio" && job.align) {
-        p.align = job.align;
+        p.align = {
+          ...job.align,
+          offset: frameOffset(
+            job.align.offset,
+            job.align.shiftFrames || 0,
+            job.align.fpsText,
+          ),
+        };
         p.fadeLength =
-          job.align.length || audioSource.audioDuration - job.align.offset;
+          job.align.length || audioSource.audioDuration - p.align.offset;
       }
       let hiResNote = "";
       if (p.hiRes) {

@@ -10,6 +10,7 @@
 // A "cancel" line on stdin, or stdin closing (the app quit or was killed),
 // stops the work and its FFmpeg.
 const { align, decodeS16 } = require("./align.cjs");
+const { probeReference } = require("./align-reference.cjs");
 const { appError } = require("./errors.cjs");
 const { workerErrorRecord } = require("./worker-protocol.cjs");
 
@@ -26,8 +27,15 @@ Promise.resolve()
     } catch (error) {
       throw appError("ALIGN_REQUEST_INVALID", { detail: error.message });
     }
-    if (!job || !["preview", "align"].includes(job.mode))
+    if (!job || !["preview", "align", "reference"].includes(job.mode))
       throw appError("ALIGN_REQUEST_INVALID", { detail: "mode" });
+    if (job.mode === "reference")
+      return probeReference(job.ffprobe, job.file, stop.signal).then(
+        (result) =>
+          new Promise((resolve) =>
+            process.stdout.write(JSON.stringify(result), resolve),
+          ),
+      );
     return job.mode === "preview"
       ? decodeS16(job.ffmpeg, job.file, job.rate, {
           length: job.length,

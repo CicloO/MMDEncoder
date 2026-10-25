@@ -8,6 +8,13 @@ const { ENGINES } = require("./definitions.cjs");
 const { parseFps, pix, usesArtcnn, filter } = require("./filter.cjs");
 const { validateIssues } = require("./settings-validation.cjs");
 const { maskChoice } = require("./mask-settings.cjs");
+const { frameOffset } = require("./audio-alignment.cjs");
+const replacementOffset = (job) =>
+  frameOffset(
+    Number(job.audioOffset) || 0,
+    job.audioShiftFrames ?? 0,
+    job.sequence?.fps || job.meta?.fpsText || job.meta?.fps,
+  );
 function videoOptions(s) {
   const e = ENGINES.find((x) => x.id === s.encoder);
   const a = ["-c:v", s.encoder, "-pix_fmt", pix(s)];
@@ -119,10 +126,9 @@ function inputArgs(job) {
 // as long as the video so the output keeps the video's length.
 function audioInputArgs(job) {
   if (!job.audioPath) return [];
-  // Aligned later in the file (job.audioOffset > 0): read that much more.
+  // A positive effective waveform/frame offset needs that much extra input.
   const d =
-    (Number(job.meta?.duration) || 0) +
-    Math.max(0, Number(job.audioOffset) || 0);
+    (Number(job.meta?.duration) || 0) + Math.max(0, replacementOffset(job));
   return [...(d > 0 ? ["-t", d.toFixed(6)] : []), "-i", job.audioPath];
 }
 // Written into each output's "comment" tag: how it was encoded, so the
@@ -258,10 +264,9 @@ function buildCommands(job, s, engines, paths) {
   // The audio's parameters and its stream: the source's, or a replacement
   // file (job.audioMeta, read when it was chosen) given as the next input.
   const sourceAudio = job.audioPath ? job.audioMeta : job.meta?.audio;
-  // 音频对齐 of a replacement (job.audioOffset, seconds: > 0 its start is
-  // cut, < 0 silence goes first); the audio then ends at the video's end or
-  // its own, whichever is first.
-  const audioOffset = job.audioPath ? Number(job.audioOffset) || 0 : 0;
+  // The effective waveform/frame offset cuts the start (> 0) or adds silence
+  // (< 0). A replacement is padded and trimmed to the video's duration.
+  const audioOffset = job.audioPath ? replacementOffset(job) : 0;
   const audioLength = job.audioPath
     ? Math.min(
         (Number(job.audioDuration) || Infinity) - audioOffset,
@@ -291,9 +296,9 @@ function buildCommands(job, s, engines, paths) {
           ...media.withAudioFilter(
             s.hiRes
               ? // PCM becomes 24-bit PCM; see media.hiResPlan for the rules.
-                // A fade or an alignment means re-encoding even where
-                // Hi-Res would copy.
-                (s.audioFade || audioOffset) && hiResPlan.action === "copy"
+                // Fading or padding/trimming a replacement needs decoded
+                // samples even where Hi-Res alone would copy.
+                (s.audioFade || job.audioPath) && hiResPlan.action === "copy"
                 ? media.hiResCodec(hiResPlan)
                 : media.hiResArgs(hiResPlan, engines?.soxr)
               : [
@@ -304,7 +309,7 @@ function buildCommands(job, s, engines, paths) {
                     : []),
                 ],
             [
-              audioOffset
+              job.audioPath
                 ? media.alignFilter(
                     // Ends with the video (silence padded in front must not
                     // make it longer).
