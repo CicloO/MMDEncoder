@@ -96,7 +96,19 @@ export function VideoFixture({ state }: { state: State }) {
     jobs.map((j) => j.id),
     () => {},
   );
-  const engine = state.engines.find((e) => e.id === settings.encoder);
+  const engines = state.engines.some((e) => e.backend === "nvencc")
+    ? state.engines
+    : [
+        ...state.engines,
+        {
+          id: "nvencc:hevc",
+          label: "HEVC · NVEncC",
+          backend: "nvencc",
+          codec: "hevc",
+          depths: [8, 10],
+        },
+      ];
+  const engine = engines.find((e) => e.id === settings.encoder);
   const verification = {
     ...state.enhancements,
     message: source["message.RTX_SETTINGS_CHANGED"],
@@ -133,7 +145,7 @@ export function VideoFixture({ state }: { state: State }) {
         <div className="page-scroll">
           <main className="workspace">
             <EncodeQueue
-              engines={state.engines}
+              engines={engines}
               running={false}
               toolsBusy={false}
               jobs={jobs}
@@ -183,8 +195,8 @@ export function VideoFixture({ state }: { state: State }) {
                 s={settings}
                 tab={tab}
                 engine={engine}
-                backend="cpu"
-                engines={state.engines}
+                backend={engine?.backend || "cpu"}
+                engines={engines}
                 detecting={false}
                 verification={verification}
                 placebo={true}
@@ -209,7 +221,7 @@ export function VideoFixture({ state }: { state: State }) {
           job={jobs[0]}
           preview={preview}
           engine={engine}
-          backend="cpu"
+          backend={engine?.backend || "cpu"}
           running={false}
           readyCount={1}
           doneCount={2}

@@ -291,6 +291,24 @@ try {
   // root. Keep edits, selected task and stage/progress while text refreshes.
   await page.setViewportSize({ width: 1360, height: 920 });
   await page.evaluate(() => window.localeFixture.openVideo());
+  const nvenccChoice = await page
+    .locator('#encoder option[value^="nvencc:"]')
+    .first()
+    .getAttribute("value");
+  await page.locator("#encoder").selectOption(nvenccChoice);
+  await expect(
+    page.getByText(
+      "NVEncC 会先输出一个临时视频文件，再与音频封装成最终文件，期间约需成品两倍的磁盘空间；完成后自动删除。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.locator("#encoder").selectOption("libx264");
+  await expect(
+    page.getByText(
+      "NVEncC 会先输出一个临时视频文件，再与音频封装成最终文件，期间约需成品两倍的磁盘空间；完成后自动删除。",
+      { exact: true },
+    ),
+  ).toHaveCount(0);
   await page.locator("#fps").selectOption("custom");
   await page.locator("#custom-fps").fill("30000/1001");
   const videoBefore = await page.evaluate(() =>
