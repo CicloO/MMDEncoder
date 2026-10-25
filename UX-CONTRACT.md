@@ -47,4 +47,6 @@ Compatibility is owned by core.compatibility and the shared IPC result. Suggesti
 
 Media extraction/merge uses a separate function page and the same form/button/status primitives. First streams are explicit. Video copying defaults to MP4 and falls back to MKV (logged) when the copied video or chosen audio does not fit MP4; WAV is audio-only or PCM within MKV. A waiting item removed during a run is withdrawn and not processed. Existing destinations and input overwrite are rejected. Cancel cleans temporary files; logs and errors persist. File details read ffprobe on actual files and show “尚未生成文件” before output exists.
 
+媒体页的状态、选项、Hi-Res 和反馈在原位随语言刷新；autoAlign 提示保留原始错误参数，显示时格式化，外部日志原样保留。完成行复用 OutputFiles，在用时后显示已提交的实际文件名，路径在 title 中、长名中部省略，重排队清除旧显示。新无声视频与合并输出使用固定英文后缀 _no_audio / _merged，不随 locale 改名；这是用户对原命名不变约束的明确更新，目录和重名编号规则保持原样。
+
 RTX filters are opt-in and NVEncC-only. Selected modes must pass a real test including output dimensions/FPS. VFG requires Windows, NVEncC 9.36+, Ada/Blackwell and installed NVIDIA model/runtime support. Changing relevant parameters invalidates the previous signature. A failed probe never falls back to ordinary resize/frame duplication.
