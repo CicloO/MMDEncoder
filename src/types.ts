@@ -57,6 +57,7 @@ export type Meta = {
   fps: number | string;
   fpsText: string;
   duration: number;
+  videoDuration?: number;
   size: number;
   // PNG sequence: size still being added up.
   sizing?: boolean;

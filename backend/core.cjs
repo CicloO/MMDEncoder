@@ -1,5 +1,6 @@
 "use strict";
 const path = require("node:path");
+const { streamDuration } = require("./audio-timing.mjs");
 const {
   parseFps,
   dimensions,
@@ -121,12 +122,17 @@ function metadata(data) {
     (/^(?:x2rgb10|x2bgr10|y210)/.test(pixFmt) ? 10 : 0) ||
     Number(pixFmt.match(/(?:p|gray)(\d{2})(?:le|be)?$/)?.[1]) ||
     (/(?:rgba64|bgra64|rgb48|bgr48|gbrap16)/.test(pixFmt) ? 16 : 8);
+  const duration = Number(data.format?.duration || v.duration) || 0;
+  const videoDuration = streamDuration(v, duration);
   return {
     width: v.width,
     height: v.height,
     fps: frac(fpsText),
     fpsText,
-    duration: Number(data.format?.duration || v.duration) || 0,
+    duration,
+    // Preserve the existing file duration; only differing video lengths
+    // need an additional value for replacement audio bounds.
+    ...(Math.abs(videoDuration - duration) > 0.000001 ? { videoDuration } : {}),
     size: Number(data.format?.size) || 0,
     codec: v.codec_name || "未知",
     pixFmt,

@@ -14,7 +14,7 @@ const { syncConfig } = require("./mmd-config.cjs");
 const { testSelection } = require("./mmd-test-action.cjs");
 const mmdPlugin = require("./mmd-plugin.cjs");
 const { createFileDetails } = require("./file-details.cjs");
-const { referenceTiming } = require("./audio-timing.mjs");
+const { referenceTiming, streamDuration } = require("./audio-timing.mjs");
 const { createMediaQueue } = require("./media-queue.cjs");
 const { createEncodeQueue } = require("./encode-queue.cjs");
 const { createLimit } = require("./limit.cjs");
@@ -430,7 +430,6 @@ function createService({
       const data = JSON.parse(r.stdout);
       const v = data.streams?.find((s) => s.codec_type === "video");
       const a = data.streams?.find((s) => s.codec_type === "audio");
-      const seconds = (x) => Number(x) || Number(data.format?.duration) || 0;
       const timing = referenceTiming(data);
       return {
         hasVideo: timing.hasVideo,
@@ -438,8 +437,8 @@ function createService({
         videoCodec: v?.codec_name,
         audioCodec: a?.codec_name,
         // Stream lengths (for fades), falling back to the file's.
-        videoDuration: v ? seconds(v.duration) : 0,
-        audioDuration: a ? seconds(a.duration) : 0,
+        videoDuration: timing.hasVideo ? timing.duration : 0,
+        audioDuration: a ? streamDuration(a, data.format?.duration) : 0,
         audio: a ? core.audioInfo(a) : undefined,
         // Some containers only report the overall rate; use it for audio-only files.
         audioBitRate:

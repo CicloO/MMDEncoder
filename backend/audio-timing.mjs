@@ -30,6 +30,22 @@ export function effectiveAudioOffset(offset = 0, shiftFrames = 0, fpsText) {
     : NaN;
 }
 
+// Matroska commonly stores each stream's length in a DURATION tag rather
+// than duration. The container can be longer because of another stream.
+export function streamDuration(stream, fallback = 0) {
+  const own = Number(stream?.duration);
+  if (Number.isFinite(own) && own > 0) return own;
+  const tag = stream?.tags?.DURATION || stream?.tags?.["DURATION-eng"];
+  const match = /^(\d+):([0-5]\d):([0-5]\d(?:\.\d+)?)$/.exec(tag || "");
+  if (match) {
+    const seconds =
+      Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+    if (seconds > 0) return seconds;
+  }
+  const seconds = Number(fallback);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+}
+
 export function referenceTiming(data) {
   const video = data.streams?.find(
     (stream) =>
@@ -46,7 +62,6 @@ export function referenceTiming(data) {
     fallback: !video,
     hasVideo: !!video,
     hasAudio: !!audio,
-    duration:
-      Number((video || audio)?.duration) || Number(data.format?.duration) || 0,
+    duration: streamDuration(video || audio, data.format?.duration),
   };
 }

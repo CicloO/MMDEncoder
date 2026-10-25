@@ -15,6 +15,8 @@ const replacementOffset = (job) =>
     job.audioShiftFrames ?? 0,
     job.sequence?.fps || job.meta?.fpsText || job.meta?.fps,
   );
+const replacementDuration = (job) =>
+  Number(job.meta?.videoDuration ?? job.meta?.duration) || 0;
 function videoOptions(s) {
   const e = ENGINES.find((x) => x.id === s.encoder);
   const a = ["-c:v", s.encoder, "-pix_fmt", pix(s)];
@@ -127,8 +129,7 @@ function inputArgs(job) {
 function audioInputArgs(job) {
   if (!job.audioPath) return [];
   // A positive effective waveform/frame offset needs that much extra input.
-  const d =
-    (Number(job.meta?.duration) || 0) + Math.max(0, replacementOffset(job));
+  const d = replacementDuration(job) + Math.max(0, replacementOffset(job));
   return [...(d > 0 ? ["-t", d.toFixed(6)] : []), "-i", job.audioPath];
 }
 // Written into each output's "comment" tag: how it was encoded, so the
@@ -270,7 +271,7 @@ function buildCommands(job, s, engines, paths) {
   const audioLength = job.audioPath
     ? Math.min(
         (Number(job.audioDuration) || Infinity) - audioOffset,
-        Number(job.meta?.duration) || Infinity,
+        replacementDuration(job) || Infinity,
       )
     : job.meta?.duration;
   const colors = [
@@ -315,7 +316,7 @@ function buildCommands(job, s, engines, paths) {
                     // make it longer).
                     {
                       offset: audioOffset,
-                      length: Number(job.meta?.duration) || 0,
+                      length: replacementDuration(job),
                     },
                     sourceAudio.sampleRate,
                   )
