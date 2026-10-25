@@ -1,0 +1,998 @@
+[
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "json.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "platform.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "true",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "false",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "null",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "+-0123456789.eE",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "\\\\u",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "\\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "\\\\u%04x",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/platform.cpp",
+    "text": "platform.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/platform.cpp",
+    "text": "\\\\MMDEncoder\\\\mmd-plugin",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "json.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "platform.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "processes.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "settings.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "msdmo.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "dmoguids.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "strmiids.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "ole32.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "uuid.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "shell32.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "advapi32.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "user32.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "{DC3F6BD1-923F-467A-BF73-F115AF705033}",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "DC3F6BD1-923F-467A-BF73-F115AF705033",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "MMDEncoder",
+    "category": "technical",
+    "reason": "Product and codec name; the name is identical in every language."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "33d9a760-90c8-11d0-bd43-00a0c911ce86",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "[%02d:%02d:%02d.%03d] ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\r\\n",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\logs",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\plugin-%04d%02d%02d-%02d%02d%02d-%lu.log",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\xEF\\xBB\\xBF",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": " ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "ELECTRON_RUN_AS_NODE",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "1",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "MMD_EXPORT_MODE",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "finish",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "MMD_EXPORT_JOB",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "cannot start finish step (error %lu)",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "ntdll.dll",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "NtQuerySystemInformation",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ".avi",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\\\\\?\\\\UNC\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\\\\\?\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "RecWindow",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ".pmm",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "MMDE",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "FAILED: %s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "render start in %s: %ldx%ld %d-bit %s, AvgTimePerFrame=%lld, frames %ld-%ld, avi=%s, pmm=%s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "bottom-up",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "top-down",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\mmd-export.json",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "appExe",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "helper",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"width\\\":%ld,\\\"height\\\":%ld,\\\"bits\\\":%d,\\\"bottomUp\\\":%s,\\\"avgTimePerFrame\\\":%lld,\\\"startFrame\\\":%ld}",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "true",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "false",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "{\\\"avi\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"pmm\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plan",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "ok",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "error",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "temp",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "output",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "exe",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "args",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "output %s (preset %s)",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "presetName",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "maskOutput",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "alpha mask %s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "notes",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "note: %s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "ffmpeg: %s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "-ffmpeg.log",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "NUL",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "env",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "render end: %llu frames, ffmpeg exit %lu",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "timing: setup %.2f s, render %.2f s (%.1f fps), waiting for FFmpeg %.2f s (%.1f%%, longest %.0f ms), ",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "FFmpeg finished %.2f s after the last frame",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"frames\\\":%llu,\\\"avgTimePerFrame\\\":%lld,\\\"startFrame\\\":%ld,\\\"timing\\\":{\\\"setup\\\":%.3f,",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\"render\\\":%.3f,\\\"waited\\\":%.3f,\\\"longestWait\\\":%.3f,\\\"encoderTail\\\":%.3f}}",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"temp\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"output\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "finish step started for %s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "Software\\\\Classes\\\\CLSID\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "Software\\\\Classes\\\\DirectShow\\\\MediaObjects\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "Software\\\\Classes\\\\DirectShow\\\\MediaObjects\\\\Categories\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "{\\\"at\\\":\\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\",\\\"event\\\":\\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\",\\\"dll\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"host\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"parent\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"pid\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "}\\n",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\install.log",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "dll-register",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\InprocServer32",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "ThreadingModel",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "Both",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "InputTypes",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "OutputTypes",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "dll-unregister",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "processes.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "platform.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": " \\t\\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "\\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "=",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": " ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "ELECTRON_RUN_AS_NODE",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "1",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "MMD_EXPORT_MODE",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "MMD_EXPORT_JOB",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "cannot start helper %s (error %lu)",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "helper %s gave no answer within %lu ms; stopped",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "settings.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "json.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "platform.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "off",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "with",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "only",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "MMDEncoder",
+    "category": "technical",
+    "reason": "Product and codec name; the name is identical in every language."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "Microsoft YaHei UI",
+    "category": "technical",
+    "reason": "Windows font family identifier; choose fonts by locale later instead of translating this identifier."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "builtin-prores422",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "%g",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "{\\\"selection\\\":{\\\"presetId\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\\"followMmd\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "true",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "false",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\\"maskMode\\\":\\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "\\\",\\\"audioFade\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "}}",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "test",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "ok",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "message",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "error",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "encoding test: %s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "\\\\/",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "open",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "\\\\mmd-export.json",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "version",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "presets",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "unsupported",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "id",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "name",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "\\\\mmd-selection.json",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "presetId",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "followMmd",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "rangeSuffix",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "audioFade",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "maskMode",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "appExe",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "helper",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "{\\n  \\\"presetId\\\": ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\n  \\\"followMmd\\\": ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\n  \\\"maskMode\\\": \\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "\\\",\\n  \\\"rangeSuffix\\\": ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\n  \\\"audioFade\\\": ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\n  \\\"savedAt\\\": \\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "\\\"\\n}\\n",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ".tmp",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/settings.h",
+    "text": "processes.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "backend/core.cjs",
+    "text": "名称",
+    "category": "technical",
+    "reason": "Internal replacement sentinel for validating output templates; it is never displayed or used as an output filename."
+  }
+]
