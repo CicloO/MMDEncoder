@@ -135,8 +135,6 @@
   "preset.editing": "剪辑素材 · ProRes 422 HQ",
   "preset.builtinSuffix": "{name}（内置）",
   "preset.displayCollision": "{name}（{id}）",
-  "preset.mine": "{name}（我的修改）",
-  "preset.mineNumbered": "{name}（我的修改 {number}）",
   "preset.choice": "编码预设",
   "preset.choiceModified": "编码预设 · 已修改",
   "preset.custom": "自定义设置",

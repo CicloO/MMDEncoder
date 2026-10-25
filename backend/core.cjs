@@ -44,7 +44,7 @@ function outputPaths(
       (_, k) =>
         ({
           name: p.parse(input).name,
-          preset: s.presetName || "自定义设置",
+          preset: s.presetName || "Custom",
           date: [
             date.getFullYear(),
             String(date.getMonth() + 1).padStart(2, "0"),
@@ -114,7 +114,7 @@ function metadata(data) {
     v.avg_frame_rate && frac(v.avg_frame_rate)
       ? v.avg_frame_rate
       : v.r_frame_rate;
-  const pixFmt = v.pix_fmt || "未知";
+  const pixFmt = v.pix_fmt || "unknown";
   const depth =
     Number(v.bits_per_raw_sample) ||
     Number(pixFmt.match(/^p[024](10|12|16)(?:le|be)$/)?.[1]) ||
@@ -134,7 +134,7 @@ function metadata(data) {
     // need an additional value for replacement audio bounds.
     ...(Math.abs(videoDuration - duration) > 0.000001 ? { videoDuration } : {}),
     size: Number(data.format?.size) || 0,
-    codec: v.codec_name || "未知",
+    codec: v.codec_name || "unknown",
     pixFmt,
     bitDepth: depth,
     hasAlpha:

@@ -988,11 +988,5 @@
     "text": "processes.h",
     "category": "technical",
     "reason": "C++ build dependency name, not displayed application copy."
-  },
-  {
-    "file": "backend/settings-validation.cjs",
-    "text": "名称",
-    "category": "technical",
-    "reason": "Internal replacement sentinel for validating output templates; it is never displayed or used as an output filename."
   }
 ]

@@ -15,7 +15,7 @@ function trimOutputPath(first, o, exists) {
   let ext = containerFor(first.codec);
   if (o.audio?.mode !== "none" && o.audio?.codec === "pcm" && ext === "mp4")
     ext = "mkv";
-  const base = path.parse(first.path).name + "_剪辑";
+  const base = path.parse(first.path).name + "_trimmed";
   for (let n = 1; n < 100000; n++) {
     const out = path.join(dir, base + (n === 1 ? "" : ` (${n})`) + "." + ext);
     if (!exists(out)) return out;

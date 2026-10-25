@@ -656,7 +656,7 @@ test("an update overwrites changed built-ins but keeps every personal preset", a
     assert.ok(!names.includes("旧内置"), "dropped built-in is not kept");
     assert.ok(names.includes("我的 MMD"));
     assert.equal(find("p2").name, "默认 1080p · 硬件");
-    assert.equal(find("builtin-1080").name, "默认 1080p · 硬件（内置）");
+    assert.equal(find("builtin-1080").name, "默认 1080p · 硬件 (Built-in)");
     assert.match(svc.getState().notice, /坏预设/);
     await svc.invoke("hidePreset", { id: "p2", hidden: true });
     const after = JSON.parse(fs.readFileSync(file, "utf8"));

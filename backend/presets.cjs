@@ -178,7 +178,7 @@ function createPresetOperations({ schema, reorder }) {
           (p) => !p.builtin && p.id !== b.id && sameName(p.name, b.name),
         )
       ) {
-        b.name = sourceText("preset.builtinSuffix", { name: b.name });
+        b.name = `${b.name} (Built-in)`;
         b.nameDisambiguation = true;
         b.settings = { ...b.settings, presetName: b.name };
       }
@@ -348,16 +348,13 @@ function createPresetOperations({ schema, reorder }) {
         const c = model.presetConflicts.find((x) => x.id === payload.id);
         if (!c) throw appError("PRESET_CONFLICT_MISSING");
         if (payload.keep) {
-          let name = sourceText("preset.mine", { name: c.name });
+          let name = `${c.name} (Modified)`;
           for (
             let n = 2;
             model.presets.some((p) => sameName(p.name, name));
             n++
           )
-            name = sourceText("preset.mineNumbered", {
-              name: c.name,
-              number: n,
-            });
+            name = `${c.name} (Modified ${n})`;
           const copy = presetValid({ name, settings: c.settings });
           const at = model.presets.findIndex((p) => p.id === c.id);
           model.presets.splice(at < 0 ? model.presets.length : at + 1, 0, copy);

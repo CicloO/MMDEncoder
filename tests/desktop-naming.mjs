@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 require("./isolate.cjs");
 const root = path.resolve(import.meta.dirname, "..");
 const dir = fs.mkdtempSync(path.join(root, "verification/i18n/naming-ui-"));
-const english = process.argv.includes("english");
+const english = !process.argv.includes("original");
 const app = await electron.launch({
   executablePath: require("electron"),
   args: [root],

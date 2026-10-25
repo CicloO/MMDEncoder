@@ -14,7 +14,7 @@ function mediaOutputDialogOptions(payload) {
       : "mkv";
   return {
     title: "选择新的输出文件",
-    defaultPath: "输出." + ext,
+    defaultPath: "output." + ext,
     filters: [{ name: "输出文件", extensions: [ext] }],
   };
 }

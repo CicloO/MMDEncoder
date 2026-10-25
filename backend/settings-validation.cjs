@@ -113,7 +113,7 @@ function validateIssues(s, meta) {
   }
   try {
     filename(
-      String(s.nameTemplate).replace(/\{(?:name|preset|date|index)\}/g, "名称"),
+      String(s.nameTemplate).replace(/\{(?:name|preset|date|index)\}/g, "name"),
     );
     check(
       !/[{}]/.test(

@@ -66,7 +66,7 @@ export function TrimFooter({
               ? `已保存：${output}`
               : stage === "已取消"
                 ? "已取消"
-                : "保存为“第一个片段名_剪辑”，不覆盖已有文件"}
+                : "保存为“第一个片段名_trimmed”，不覆盖已有文件"}
         </span>
       </div>
       <div className="run-actions">

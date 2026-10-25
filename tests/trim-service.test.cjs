@@ -111,7 +111,7 @@ test(
       await until(() => !st().running);
       assert.equal(st().error, "");
       const out = st().output;
-      assert.equal(out, path.join(dir, "Encoded", "舞台 A_剪辑.mp4"));
+      assert.equal(out, path.join(dir, "Encoded", "舞台 A_trimmed.mp4"));
       assert.equal(await frames(out), 60 + 30);
 
       // A second export never overwrites.
@@ -122,7 +122,7 @@ test(
       await until(() => !st().running);
       assert.equal(
         st().output,
-        path.join(dir, "Encoded", "舞台 A_剪辑 (2).mp4"),
+        path.join(dir, "Encoded", "舞台 A_trimmed (2).mp4"),
       );
 
       // ProRes joined to H.264: refused with a reason, nothing written.
@@ -159,7 +159,7 @@ test(
       await until(() => !st().running);
       assert.equal(st().stage, "已取消");
       assert.equal(st().output, "");
-      assert.equal(fs.existsSync(path.join(dir, "long_剪辑.mov")), false);
+      assert.equal(fs.existsSync(path.join(dir, "long_trimmed.mov")), false);
       assert.deepEqual(
         fs.readdirSync(dir).filter((n) => n.startsWith(".mmd-trim-")),
         [],
@@ -349,7 +349,7 @@ test(
       disposed = true;
       await until(() => !st().running);
       assert.equal(st().stage, "已取消");
-      assert.equal(fs.existsSync(path.join(dir, "long_剪辑.mov")), false);
+      assert.equal(fs.existsSync(path.join(dir, "long_trimmed.mov")), false);
     } finally {
       if (!disposed) svc.dispose();
       await new Promise((r) => setTimeout(r, 300));
