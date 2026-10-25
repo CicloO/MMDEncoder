@@ -58,7 +58,7 @@ let passed = false;
 try {
   const page = await app.firstWindow();
   page.setDefaultTimeout(30000);
-  await page.getByRole("heading", { name: "视频队列", exact: true }).waitFor();
+  await page.getByRole("heading", { name: /^视频队列/ }).waitFor();
   await page.evaluate(() => {
     localStorage.setItem("mmd-auto-align", "off");
     localStorage.setItem(
@@ -67,7 +67,7 @@ try {
     );
   });
   await page.reload();
-  await page.getByRole("heading", { name: "视频队列", exact: true }).waitFor();
+  await page.getByRole("heading", { name: /^视频队列/ }).waitFor();
   assert.equal(
     await page.evaluate(() => localStorage.getItem("mmd-auto-align")),
     null,
