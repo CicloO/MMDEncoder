@@ -30,11 +30,14 @@ import { MmdExportDialog } from "./MmdExportDialog";
 import { createActions } from "./actions";
 import { useMmdExport } from "./useMmdExport";
 import { invoke } from "./ipc";
-import { errorMessage, summaryMessage } from "./i18n";
+import { errorMessage, summaryMessage, t, notification } from "./i18n";
+import { serializeError } from "../locales/messages.mjs";
+import type { VideoFix } from "./VideoFeedback";
 import type { ErrorData, MessageDescriptor } from "./i18n";
 import {
   engineLabel,
   presetLabel,
+  videoName,
   formatSize,
   compatibilityErrors,
 } from "./presentation";
@@ -91,7 +94,8 @@ export default function App() {
   const [state, setState] = useState<State | null>(null),
     [compatibility, setCompatibility] = useState<{
       errors: string[];
-      suggestions: { id: string; label: string; patch: Partial<Settings> }[];
+      issues?: ErrorData[];
+      suggestions: VideoFix[];
     }>({ errors: [], suggestions: [] }),
     [draft, setDraft] = useState<Settings | null>(null),
     [workspace, setWorkspace] = useState("encode"),
@@ -151,18 +155,17 @@ export default function App() {
   async function downloadUpdate() {
     setAppUpdate((s) => ({ ...s, phase: "downloading", error: "" }));
     const timer = setInterval(() => {
-      window.encoder
-        .invoke("appUpdateStatus")
+      invoke("appUpdateStatus")
         .then(setAppUpdate)
         .catch(() => {});
     }, 400);
     try {
-      await window.encoder.invoke("downloadAppUpdate");
+      await invoke("downloadAppUpdate");
     } catch {
       /* The status below carries the error. */
     } finally {
       clearInterval(timer);
-      setAppUpdate(await window.encoder.invoke("appUpdateStatus"));
+      setAppUpdate(await invoke("appUpdateStatus"));
     }
   }
   async function installUpdate() {
@@ -170,16 +173,16 @@ export default function App() {
     try {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       if (draftRef.current) await persist(draftRef.current);
-      await window.encoder.invoke("installAppUpdate");
+      await invoke("installAppUpdate");
     } catch (e) {
-      setError((e as Error).message);
+      setError(serializeError(e));
       setBusy(false);
     }
   }
   async function checkUpdate(quiet = false) {
     setUpdate((u) => ({ ...u, checking: true, error: "" }));
     try {
-      const r = await window.encoder.invoke("checkAppUpdate");
+      const r = await invoke("checkAppUpdate");
       setUpdate({ checking: false, ...r });
       if (r.newer) notify(`发现新版本 ${r.latest}，可在右上角“关于”中更新`);
     } catch (e) {
@@ -245,7 +248,7 @@ export default function App() {
     window.encoder
       .invoke("state")
       .then(receive)
-      .catch((e) => setError(String(e.message)));
+      .catch((e) => setError(serializeError(e)));
     return () => {
       off();
       offClose();
@@ -293,8 +296,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     if (s && window.encoder)
-      window.encoder
-        .invoke("compatibility", { settings: s })
+      invoke("compatibility", { settings: s })
         .then((result) => {
           if (!cancelled) setCompatibility(result);
         })
@@ -331,7 +333,11 @@ export default function App() {
   async function replaceAudio(row: Job, file: string) {
     let j = row;
     try {
-      const r = await call("setAudio", { id: j.id, path: file }, "已替换音频");
+      const r = await call(
+        "setAudio",
+        { id: j.id, path: file },
+        notification("VIDEO_AUDIO_REPLACED"),
+      );
       // The response is the current state: the row may be older (pushes
       // during an import come at most every 200 ms).
       j = r?.jobs?.find((x: Job) => x.id === j.id) || j;
@@ -342,7 +348,7 @@ export default function App() {
     const note = await autoAlign(j.path, file, (offset) =>
       call("setAudioOffset", { id: j.id, offset }),
     );
-    notify(note || "已替换音频，并按视频自带的声音自动对齐");
+    notify(note || notification("VIDEO_AUDIO_ALIGNED"));
   }
   // Dropped on the video page: videos join the queue; audio files replace
   // the audio of the selected video, or of the first one still without a
@@ -364,7 +370,11 @@ export default function App() {
       const chosen = current.find((j) => j.id === job?.id);
       const target = open(chosen) ? chosen : current.find((j) => open(j));
       if (!target) {
-        setError("没有等待替换音频的视频，请先加入视频");
+        setError({
+          code: "VIDEO_AUDIO_TARGET_REQUIRED",
+          params: {},
+          message: t("error.VIDEO_AUDIO_TARGET_REQUIRED"),
+        });
         break;
       }
       await replaceAudio(target, file);
@@ -376,8 +386,8 @@ export default function App() {
       .catch(() => {})
       .then(() =>
         to
-          ? window.encoder.invoke("setJobSettings", { id: to, patch: settings })
-          : window.encoder.invoke("settings", { patch: settings }),
+          ? invoke("setJobSettings", { id: to, patch: settings })
+          : invoke("settings", { patch: settings }),
       )
       .then((r: State) => {
         receive(r);
@@ -390,9 +400,9 @@ export default function App() {
     try {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       if (draftRef.current) await persist(draftRef.current);
-      await window.encoder.invoke("quit");
+      await invoke("quit");
     } catch (e) {
-      setError((e as Error).message);
+      setError(serializeError(e));
       setModal("closeSaveError");
       setBusy(false);
     }
@@ -402,9 +412,7 @@ export default function App() {
     const seq = ++previewSequence.current;
     const timer = setTimeout(() => {
       persist(draft)
-        .then(() =>
-          job ? window.encoder.invoke("preview", { id: job.id }) : null,
-        )
+        .then(() => (job ? invoke("preview", { id: job.id }) : null))
         .then((p) => {
           if (seq === previewSequence.current) {
             setPreview(p);
@@ -414,7 +422,7 @@ export default function App() {
         .catch((e) => {
           if (seq === previewSequence.current) {
             setPreview(null);
-            setError(e.message);
+            setError(serializeError(e));
           }
         });
     }, 400);
@@ -467,7 +475,7 @@ export default function App() {
       await call(
         "setJobSettings",
         { id: job.id, own: on },
-        on ? "已为这个视频开启单独设置" : "已关闭单独设置，改回跟随压制设置",
+        on ? notification("VIDEO_OWN_ON") : notification("VIDEO_OWN_OFF"),
       );
     } catch {}
   }
@@ -481,7 +489,10 @@ export default function App() {
     )
   );
   const errors = [
-    ...new Set([...(s ? compatibilityErrors(s) : []), ...compatibility.errors]),
+    ...new Set([
+      ...(s ? compatibilityErrors(s) : []),
+      ...(compatibility.issues?.map(errorMessage) || compatibility.errors),
+    ]),
   ];
   async function start() {
     if (!s) return;
@@ -490,7 +501,7 @@ export default function App() {
       await persist(s);
       await call("start");
     } catch (e) {
-      setError((e as Error).message);
+      setError(serializeError(e));
     } finally {
       setBusy(false);
     }
@@ -530,7 +541,11 @@ export default function App() {
     if (!job || !s) return;
     try {
       await persist(s);
-      await call("copyCommand", { id: job.id }, "命令已复制到剪贴板");
+      await call(
+        "copyCommand",
+        { id: job.id },
+        notification("VIDEO_COMMAND_COPIED"),
+      );
     } catch {}
   }
   async function savePreset() {
@@ -795,7 +810,7 @@ export default function App() {
                 job.status === "encoding" ||
                 (state.running && !!job.settings)
               }
-              jobName={job?.name || ""}
+              jobName={job ? videoName(job) : ""}
               onOwn={setOwn}
               presets={presets}
               presetId={presetId}
@@ -878,7 +893,17 @@ export default function App() {
         />
         {(!!error || errors.length > 0 || !!preview?.errors?.length) && (
           <VideoFeedback
-            message={error || errors[0] || preview?.errors[0]}
+            message={
+              error ||
+              [
+                ...new Set([
+                  ...errors,
+                  ...(preview?.issues?.map(errorMessage) ||
+                    preview?.errors ||
+                    []),
+                ]),
+              ].join("\n")
+            }
             suggestions={compatibility.suggestions}
             running={state.running}
             onFix={async (fix) => {
@@ -886,9 +911,9 @@ export default function App() {
               changed(next);
               try {
                 await persist(next);
-                notify("已应用兼容设置");
+                notify(notification("VIDEO_COMPAT_APPLIED"));
               } catch (e) {
-                setError((e as Error).message);
+                setError(serializeError(e));
               }
             }}
             onDismiss={() => setError("")}

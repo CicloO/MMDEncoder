@@ -1,6 +1,7 @@
 // The FFmpeg video filter graph for an encode, and the pure helpers it
 // shares with core.cjs (output size, pixel format, frame rate, ArtCNN choice).
 const path = require("node:path");
+const { appError, summary } = require("./errors.cjs");
 function parseFps(value) {
   if (value === "source") return null;
   const s = String(value).trim();
@@ -11,11 +12,11 @@ function parseFps(value) {
   };
   const text = aliases[s] || s;
   if (!/^\d+(?:\.\d+)?(?:\/\d+(?:\.\d+)?)?$/.test(text))
-    throw Error("输出帧率须为 1–240 的正数或分数");
+    throw appError("FPS_SYNTAX_INVALID");
   const [a, b = "1"] = text.split("/");
   const n = Number(a) / Number(b);
   if (!Number.isFinite(n) || n < 1 || n > 240)
-    throw Error("输出帧率须为 1–240 FPS，分母不能为零");
+    throw appError("FPS_RANGE_INVALID");
   return { text, value: n };
 }
 function dimensions(s, meta) {
@@ -81,13 +82,18 @@ function usesArtcnn(s, meta) {
 // or it is not selected at all).
 function artcnnSkipped(s, meta) {
   if (s.upscaler !== "artcnn" || s.vsr) return "";
-  if (s.alphaMode === "mask") return "只导出遮罩，遮罩用 Lanczos 放大";
-  if (s.resizeMode === "source") return "保持源分辨率，没有放大";
+  if (s.alphaMode === "mask") return summary("ARTCNN_MASK_SKIPPED").message;
+  if (s.resizeMode === "source")
+    return summary("ARTCNN_SOURCE_SKIPPED").message;
   const size = dimensions(s, meta);
   const sx = size.width / (meta.width || size.width),
     sy = size.height / (meta.height || size.height);
   if (!(sx > ARTCNN_MIN && sy > ARTCNN_MIN))
-    return `宽高都要放大超过 ${ARTCNN_MIN} 倍才会用 ArtCNN（这里是 ${sx.toFixed(2)} × ${sy.toFixed(2)} 倍），改用 Lanczos`;
+    return summary("ARTCNN_SCALE_SKIPPED", {
+      min: ARTCNN_MIN,
+      x: sx.toFixed(2),
+      y: sy.toFixed(2),
+    }).message;
   return "";
 }
 // A file path as a filter option value, escaped for both levels FFmpeg

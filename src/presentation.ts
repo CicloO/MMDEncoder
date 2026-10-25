@@ -1,7 +1,9 @@
-import type { Engine, Preset, Settings } from "./types";
-import { localeRuntime, t } from "./i18n";
+import type { Engine, Preset, Settings, Job } from "./types";
+import { localeRuntime, t, summaryMessage } from "./i18n";
 import type { MessageKey } from "./i18n";
 import { presetDisplayName } from "../locales/preset-names.mjs";
+export const videoName = (job: Pick<Job, "name" | "nameData">) =>
+  job.nameData ? summaryMessage(job.nameData) : job.name;
 export function formatFPS(value?: number | string) {
   if (value === undefined || value === null || value === "")
     return t("presentation.unknown");

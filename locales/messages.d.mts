@@ -10,7 +10,11 @@ export type ErrorData = {
   message: string;
   issues?: ErrorData[];
 };
-export type StageDescriptor = { stage: string; params: MessageParams };
+export type StageDescriptor = {
+  stage: string;
+  params: MessageParams;
+  message?: string;
+};
 export function messageDescriptor(
   code: string,
   params?: MessageParams,

@@ -1,4 +1,12 @@
 "use strict";
+const {
+  appError,
+  validationIssue,
+  validationError,
+  serializeError,
+  summary,
+  stage,
+} = require("./errors.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 const core = require("./core.cjs");
@@ -31,42 +39,46 @@ function createEncoder({
       job.status === "partial" && job.output && fs.existsSync(job.output);
     job.status = "encoding";
     job.error = undefined;
+    job.errorData = undefined;
+    job.softwareRetry = undefined;
     job.progress = 0;
     job.startedAt = Date.now();
-    job.stage = maskOnly ? "重试 Alpha 遮罩" : "准备";
+    job.stage = stage(maskOnly ? "retry_mask" : "preparing");
     emit();
     let tempDir,
       gpuMaskUsed = false,
       again = false;
     try {
-      const errors = core.validate(s, job.meta);
+      const issues = core.validateIssues(s, job.meta);
       if (
         (s.vsr || s.vfg) &&
         (!verification().verified ||
           verification().signature !== enhancementSignature(s))
       )
-        errors.push("RTX 设置未通过本机验证");
+        issues.push(validationIssue("RTX_REVALIDATION_REQUIRED"));
       // Selected but not applicable here (too small an enlargement, mask only):
       // say so instead of silently scaling another way.
       const skipped = core.artcnnSkipped(s, job.meta);
-      if (skipped) append(job, "ArtCNN：" + skipped + "\n");
-      if (core.usesArtcnn(s, job.meta) && !engineInfo().libplacebo)
-        errors.push(
-          "本机无法运行 ArtCNN 放大（FFmpeg 需要支持 Vulkan 的显卡和驱动），请改用 Lanczos",
+      if (skipped)
+        append(
+          job,
+          summary("VIDEO_ARTCNN_SKIPPED", { detail: skipped }).message + "\n",
         );
-      if (errors.length) throw Error(errors.join("；"));
+      if (core.usesArtcnn(s, job.meta) && !engineInfo().libplacebo)
+        issues.push(validationIssue("ARTCNN_UNAVAILABLE"));
+      if (issues.length) throw validationError(issues);
       const engine = engines().find((e) => e.id === s.encoder);
       if (
         s.alphaMode !== "mask" &&
         (!engine || !engine.depths.includes(s.bitDepth))
       )
-        throw Error("所选编码器或位深未通过本机试编码，请调整参数");
+        throw appError("ENCODER_TRIAL_REQUIRED");
       if (
         s.encoder === "nvencc:hevc" &&
         s.alphaMode === "preserve" &&
         !engine?.alpha
       )
-        throw Error("本机未通过 HEVC Alpha 试编码，已停止以避免丢失透明通道");
+        throw appError("HEVC_ALPHA_STOPPED");
       let paths = maskOnly
         ? { output: job.output, maskOutput: job.maskOutput }
         : core.outputPaths(nameSource(job), s, jobIndex(job), fs.existsSync);
@@ -94,7 +106,7 @@ function createEncoder({
       job.output = maskOnly ? job.output : undefined;
       job.maskOutput = paths.maskOutput;
       for (let i = 0; i < commands.length; i++) {
-        if (isStopped()) throw Error("已取消");
+        if (isStopped()) throw appError("VIDEO_CANCELLED");
         const c = commands[i];
         job.stage = c.stage;
         append(job, "\n" + core.commandText([c]) + "\n");
@@ -151,13 +163,13 @@ function createEncoder({
       }
       job.status = "done";
       job.progress = 100;
-      job.stage = "完成";
+      job.stage = stage("done");
     } catch (e) {
       append(job, "\n" + e.message + "\n");
       // The GPU mask failed (an encoder session limit, an older GPU…) before
       // anything was kept: once more with the mask on the CPU.
       if (gpuMaskUsed && !isStopped() && !job.output) {
-        append(job, "\n显卡无损遮罩未能完成，改用 CPU（x264）重新压制。\n");
+        append(job, "\n" + summary("VIDEO_GPU_MASK_RETRY").message + "\n");
         again = true;
         return;
       }
@@ -167,15 +179,27 @@ function createEncoder({
           : isStopped()
             ? "cancelled"
             : "failed";
-      job.error = isStopped() ? "任务已取消" : e.message;
-      job.stage =
-        job.status === "partial" ? "主视频已完成，遮罩未完成" : "已停止";
+      job.errorData = serializeError(
+        isStopped()
+          ? appError("TASK_CANCELLED")
+          : e.code && typeof e.code === "string"
+            ? e
+            : appError("VIDEO_ENGINE_FAILED", { detail: e.message }),
+      );
+      job.error = job.errorData.message;
+      job.softwareRetry = !["ENOSPC", "EACCES", "EPERM", "ENOENT"].includes(
+        e.systemCode || e.code,
+      );
+      job.stage = stage(job.status === "partial" ? "partial" : "stopped");
     } finally {
       if (tempDir)
         try {
           fs.rmSync(tempDir, { recursive: true, force: true });
         } catch (e) {
-          append(job, "临时文件清理失败：" + e.message);
+          append(
+            job,
+            summary("VIDEO_CLEANUP_FAILED", { detail: e.message }).message,
+          );
         }
       job.elapsed = (Date.now() - job.startedAt) / 1000;
       emit();

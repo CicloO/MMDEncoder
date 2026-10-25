@@ -1,4 +1,8 @@
-import type { ErrorData, MessageDescriptor } from "../locales/messages.mjs";
+import type {
+  ErrorData,
+  MessageDescriptor,
+  StageDescriptor,
+} from "../locales/messages.mjs";
 export type Settings = {
   container: string;
   encoder: string;
@@ -79,12 +83,15 @@ export type Job = {
   id: string;
   path: string;
   name: string;
+  nameData?: MessageDescriptor;
   status: string;
   progress: number;
-  stage?: string;
+  stage?: string | StageDescriptor;
   elapsed?: number;
   meta?: Meta;
   error?: string;
+  errorData?: ErrorData;
+  softwareRetry?: boolean;
   log?: string;
   output?: string;
   maskOutput?: string;
@@ -200,6 +207,8 @@ export type State = {
     busy: boolean;
     verified: boolean;
     message: string;
+    messageData?: MessageDescriptor;
+    errorData?: ErrorData;
     signature: string;
   };
   mediaJobs: MediaJob[];
@@ -283,10 +292,12 @@ export type State = {
 export type Preview = {
   dimensions?: { width: number; height: number } | null;
   summary: string;
+  summaryData?: MessageDescriptor;
   output: string;
   maskOutput?: string;
   command: string;
   errors: string[];
+  issues?: ErrorData[];
 };
 declare global {
   const __APP_VERSION__: string;

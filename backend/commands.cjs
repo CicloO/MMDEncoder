@@ -1,4 +1,5 @@
 "use strict";
+const { appError, validationError, stage } = require("./errors.cjs");
 // Pure encoding options, pipeline construction and recording tags. The caller
 // supplies settings, source metadata, engine paths and allocated output paths.
 const media = require("./media.cjs");
@@ -11,7 +12,7 @@ const {
   vsrPrepare,
   filter,
 } = require("./filter.cjs");
-const { validate } = require("./settings-validation.cjs");
+const { validateIssues } = require("./settings-validation.cjs");
 const {
   maskSettings,
   maskOnNvenc,
@@ -194,7 +195,7 @@ function keyframes(s, meta) {
 function joinMask(video, mask, flip = "") {
   const part = (a) => {
     const m = a.indexOf("-map");
-    if (m < 0 || a[m + 2] !== "-vf") throw Error("无法组合遮罩命令");
+    if (m < 0 || a[m + 2] !== "-vf") throw appError("MASK_COMMAND_COMBINE");
     return { head: a.slice(0, m), filter: a[m + 3], rest: a.slice(m + 4) };
   };
   const v = part(video),
@@ -232,7 +233,7 @@ function singlePass(commands) {
               ...c.pipeFrom,
               args: joinMask(c.pipeFrom.args, mask.args),
             },
-            stage: c.stage + " + Alpha 遮罩",
+            stage: stage("nvencc_encoding_with_mask"),
             mask: true,
           }
         : c,
@@ -242,7 +243,7 @@ function singlePass(commands) {
     {
       ...colour,
       args: joinMask(colour.args, mask.args),
-      stage: colour.stage + " + Alpha 遮罩",
+      stage: stage("video_encoding_with_mask"),
       mask: true,
     },
     ...rest.slice(1),
@@ -250,8 +251,8 @@ function singlePass(commands) {
 }
 function buildCommands(job, s, engines, paths) {
   s = keyframes(s, job.meta);
-  const errors = validate(s, job.meta);
-  if (errors.length) throw Error(errors.join("；"));
+  const issues = validateIssues(s, job.meta);
+  if (issues.length) throw validationError(issues);
   const base = ["-hide_banner", "-nostdin", "-n"];
   // libplacebo's Vulkan device, only where the filter runs the shader.
   const baseFor = (mask) =>
@@ -433,7 +434,7 @@ function buildCommands(job, s, engines, paths) {
         exe: engines.nvencc,
         args: a,
         pipeFrom: prepare,
-        stage: "NVEncC 编码",
+        stage: stage("nvencc_encoding"),
         temporary: encoded,
       });
       result.push({
@@ -458,7 +459,7 @@ function buildCommands(job, s, engines, paths) {
           "pipe:1",
           output,
         ],
-        stage: "封装",
+        stage: stage("muxing"),
         output,
       });
     } else {
@@ -488,7 +489,7 @@ function buildCommands(job, s, engines, paths) {
           "pipe:1",
           output,
         ],
-        stage: mask ? "Alpha 遮罩" : "视频编码",
+        stage: stage(mask ? "alpha_mask" : "video_encoding"),
         output,
         mask: mask && !maskOnly,
       });

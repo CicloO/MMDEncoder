@@ -373,7 +373,13 @@ test(
       onUpdate: (st) => {
         const j = st.jobs.find(
           // Colour and mask run in one pass ("… + Alpha 遮罩").
-          (j) => j.status === "encoding" && j.stage?.includes("Alpha 遮罩"),
+          (j) =>
+            j.status === "encoding" &&
+            [
+              "alpha_mask",
+              "nvencc_encoding_with_mask",
+              "video_encoding_with_mask",
+            ].includes(j.stage?.stage),
         );
         if (j && blockMask) {
           blockMask = false;

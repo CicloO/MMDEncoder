@@ -1,5 +1,6 @@
 import { ArrowDownToLine, ArrowRight, Play, Square } from "lucide-react";
 import { Button } from "./components";
+import { t, localeRuntime } from "./i18n";
 import { audioLabels, engineLabel, formatFPS } from "./presentation";
 import type { Settings, Job, Engine, Preview } from "./types";
 export function EncodeFooter({
@@ -29,30 +30,67 @@ export function EncodeFooter({
   onCancel: () => void;
   onStart: () => void;
 }) {
+  const n = (value: number) =>
+    localeRuntime.number(value, { useGrouping: false });
+  const dimensions = job?.meta
+    ? t("output.dimensions", {
+        width: n(job.meta.width),
+        height: n(job.meta.height),
+      })
+    : "";
+  const outputDimensions =
+    (s.resizeMode !== "source" || s.vsr) && preview?.dimensions
+      ? t("output.scaledDimensions", {
+          source: dimensions,
+          target: t("output.dimensions", {
+            width: n(preview.dimensions.width),
+            height: n(preview.dimensions.height),
+          }),
+        })
+      : dimensions;
+  const fps = job?.meta
+    ? s.vfg
+      ? t("output.vfgFPS", {
+          source: formatFPS(job.meta.fpsText || job.meta.fps),
+          target: formatFPS(Number(job.meta.fps) * s.vfgMultiplier),
+          multiplier: n(s.vfgMultiplier),
+        })
+      : s.fps === "source"
+        ? formatFPS(job.meta.fpsText || job.meta.fps)
+        : t("output.scaledFPS", {
+            source: formatFPS(job.meta.fpsText || job.meta.fps),
+            target: formatFPS(s.fps),
+          })
+    : "";
   return (
     <footer className="output-strip">
       <div className="output-icon">
         <ArrowDownToLine size={23} />
       </div>
       <div className="output-summary">
-        <span className="eyebrow">预计结果</span>
+        <span className="eyebrow">{t("output.expected")}</span>
         <strong>
           {job?.meta
-            ? `${job.meta.width}×${job.meta.height}${(s.resizeMode !== "source" || s.vsr) && preview?.dimensions ? ` → ${preview.dimensions.width}×${preview.dimensions.height}` : ""} · ${formatFPS(job.meta.fpsText || job.meta.fps)}${s.vfg ? ` → ${formatFPS(Number(job.meta.fps) * s.vfgMultiplier)}（VFG ${s.vfgMultiplier}×）` : s.fps === "source" ? "" : ` → ${formatFPS(s.fps)}`} FPS`
-            : "保持源分辨率与帧率"}{" "}
+            ? t("output.basis", { dimensions: outputDimensions, fps })
+            : t("output.sourceSizeFPS")}{" "}
           <ArrowRight size={15} />
           <span>
             {s.alphaMode === "mask"
-              ? "Alpha 黑白遮罩"
-              : `${engine ? engineLabel(engine) : s.encoder} · ${s.bitDepth}-bit`}
+              ? t("output.mask")
+              : t("output.engineFacts", {
+                  encoder: engine ? engineLabel(engine) : s.encoder,
+                  depth: n(s.bitDepth),
+                })}
           </span>
         </strong>
         <span className="output-facts">
           {s.alphaMode === "mask" ? (
             <>
-              {s.container === "webm" ? "VP9" : "H.264"} 无损
-              <i /> 无音频
-              <i /> 输出 → {s.container.toUpperCase()}
+              {t("output.maskFacts", {
+                codec: s.container === "webm" ? "VP9" : "H.264",
+              })}
+              <i /> {t("output.noAudio")}
+              <i /> {t("output.format", { format: s.container.toUpperCase() })}
             </>
           ) : (
             <>
@@ -61,49 +99,77 @@ export function EncodeFooter({
               ) : (
                 <>
                   {s.rateControl === "bitrate"
-                    ? `${s.bitrate} kbps`
-                    : `${s.rateControl === "qp" ? "QP" : backend === "cpu" ? "CRF" : "CQ"} ${s.quality}`}{" "}
+                    ? t("video.bitrateOption", {
+                        bitrate: localeRuntime.number(s.bitrate),
+                      })
+                    : t("output.quality", {
+                        mode:
+                          s.rateControl === "qp"
+                            ? "QP"
+                            : backend === "cpu"
+                              ? "CRF"
+                              : "CQ",
+                        quality: n(s.quality),
+                      })}{" "}
                   · {s.preset}
                 </>
               )}
               <i />
-              音频 →{" "}
-              {job?.meta && !job.meta.audio && !job.audioPath
-                ? "无音轨"
-                : audioLabels()[s.audio]}
+              {t("output.audio", {
+                audio:
+                  job?.meta && !job.meta.audio && !job.audioPath
+                    ? t("output.noTrack")
+                    : audioLabels()[s.audio],
+              })}
               {(!job?.meta || job.meta.audio || job.audioPath) &&
               ["aac", "libopus"].includes(s.audio) &&
               s.audioBitrate > 0
-                ? ` · ${s.audioBitrate} kbps`
+                ? ` · ${t("video.bitrateOption", { bitrate: localeRuntime.number(s.audioBitrate) })}`
                 : ""}
               {(!job?.meta || job.meta.audio || job.audioPath) && s.hiRes
                 ? " · Hi-Res 24-bit"
                 : ""}
-              {job?.audioPath && s.audio !== "none" ? " · 替换音频" : ""}{" "}
-              {s.alphaMode === "preserve" && " · 保留 Alpha"}
-              <i /> 输出 → {s.container.toUpperCase()}{" "}
+              {job?.audioPath && s.audio !== "none"
+                ? t("output.replacedAudio")
+                : ""}{" "}
+              {s.alphaMode === "preserve" && t("output.preserveAlpha")}
+              <i /> {t("output.format", {
+                format: s.container.toUpperCase(),
+              })}{" "}
               {s.alphaMask && (
                 <>
-                  <i />+ Alpha 遮罩
+                  <i />
+                  {t("output.withMask")}
                 </>
               )}
             </>
           )}
         </span>
         <span className="output-path" title={preview?.output}>
-          {preview?.output || "添加视频后预览保存路径"}
+          {preview?.output || t("output.empty")}
         </span>
       </div>
       <div className="run-actions">
         <span>
           {running
-            ? "正在处理队列"
-            : `${readyCount} 个视频待处理${doneCount ? ` · ${doneCount} 个已完成` : ""}`}
+            ? t("output.running")
+            : t("output.queueCounts", {
+                ready: t("output.readyCount", {
+                  count: readyCount,
+                  countText: localeRuntime.number(readyCount),
+                }),
+                done: doneCount
+                  ? t("output.doneCount", {
+                      count: doneCount,
+                      countText: localeRuntime.number(doneCount),
+                    })
+                  : "",
+              })}
         </span>
         {running ? (
           <Button variant="stop" onClick={onCancel}>
             <Square size={16} />
-            取消队列
+            {t("output.cancel")}
           </Button>
         ) : (
           <Button
@@ -112,7 +178,7 @@ export function EncodeFooter({
             onClick={onStart}
           >
             <Play size={17} />
-            {busy ? "准备中…" : "开始压制"}
+            {busy ? t("output.preparing") : t("output.start")}
           </Button>
         )}
       </div>

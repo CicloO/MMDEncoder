@@ -12,7 +12,11 @@ const {
   ENGINES,
   BUILTINS,
 } = require("./definitions.cjs");
-const { filename, validate } = require("./settings-validation.cjs");
+const {
+  filename,
+  validate,
+  validateIssues,
+} = require("./settings-validation.cjs");
 const { compatibility } = require("./compatibility.cjs");
 const {
   joinMask,
@@ -217,6 +221,7 @@ module.exports = {
   BUILTINS,
   parseFps,
   validate,
+  validateIssues,
   outputPaths,
   quote,
   commandText,

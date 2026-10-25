@@ -6,6 +6,8 @@ Locale zh-CN, local Windows desktop, offline by default. No accounts or uploads.
 
 程序级语言偏好由 `backend/preferences.cjs` 解析，通过原有 `settings.json` 持久化。`null` 为将来的跟随系统模式保留，准备阶段与未知值均显示中文。`src/LocaleRoot.tsx` 订阅已保存的语言状态，更新页面语言、标题并刷新已迁移文案，不重新挂载页面或修改编码设置 / 预设 / 正在执行的任务；正式选择器在第二种语言交付时开放。
 
+视频设置、队列操作、RTX 与底部概览的已迁移文字在原位刷新，保留编辑值、选中任务和进度。校验问题逐项保留错误码 / 参数，兼容修复与重试按稳定技术字段决定；阶段、通知和新预览摘要在显示时格式化。长错误和操作按钮允许换行，关闭按钮保持可见、可操作，不缩字号。用户文件名、预设保存名、路径和命令值保持原文；旧记录 / 未知外部诊断有可读回退。FileMeta、对齐、管理及插件剩余路径仍按 B3–B6 迁移。
+
 MMD 导出弹窗由 `src/MmdExportDialog.tsx` 管理，使用共享 Field / Select / Button / Modal，文案与原生插件设置框共用中文基准表。插件读取 `mmd-export.json` 的有限文案快照；窗口保留打开时的语言，下次打开读取最新快照，主程序关闭后仍可使用。缺失文案使用从同一中文表生成的 DLL 回退。固定窗口遇到长文字按实际字体测量并扩展空间，不缩字号。测试当前选项不保存，确定才保存，取消保留原选择；结果只简写在测试按钮，完整失败原因保留日志。文件框、其他页面及插件剩余路径仍按 B 批迁移，不能把 A4 样板当作全量支持。
 
 | Capability      | Canonical owner                               | Source of truth     | Allowed variants                       | Verification           |

@@ -77,7 +77,22 @@ test("all seven defaults keep pre-migration settings, commands and persisted fin
     assert.equal(source[p.nameKey], golden.name);
     assert.equal(p.nameSource, "builtin");
     assert.equal(hash(p.settings), golden.settingsHash, p.id + " settings");
-    assert.equal(hash(commands(p)), golden.commandsHash, p.id + " command");
+    const pipeline = commands(p);
+    assert.ok(
+      pipeline.every(
+        (c) =>
+          typeof c.stage?.stage === "string" &&
+          typeof c.stage.message === "string",
+      ),
+    );
+    // Only the planned stage contract changed. Compare every other byte of
+    // the command record, including all arguments, with the original fixture.
+    const diagnostic = JSON.parse(
+      JSON.stringify(pipeline, (key, value) =>
+        key === "stage" && typeof value === "object" ? value.message : value,
+      ),
+    );
+    assert.equal(hash(diagnostic), golden.commandsHash, p.id + " command");
     await f.svc.invoke("savePreset", {
       id: p.id,
       name: p.name,

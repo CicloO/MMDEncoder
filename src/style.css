@@ -962,6 +962,7 @@ input:not([type="checkbox"]):hover {
   right: 36px;
   z-index: 15;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   border: 1px solid var(--color-danger);
@@ -973,7 +974,16 @@ input:not([type="checkbox"]):hover {
   box-shadow: 0 8px 20px #0004;
 }
 .error-banner span {
-  flex: 1;
+  white-space: pre-line;
+  flex: 1 1 260px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.error-banner > .button {
+  white-space: normal;
+}
+.error-banner > .button:last-child {
+  flex: none;
 }
 .toast {
   position: fixed;

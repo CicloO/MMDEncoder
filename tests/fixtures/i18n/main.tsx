@@ -22,6 +22,7 @@ import type { ErrorData } from "../../../src/i18n";
 import { invoke } from "../../../src/ipc";
 import source from "../../../locales/zh-CN.json";
 import { pseudoCatalog } from "./pseudo.mjs";
+import { VideoFixture, videoSnapshot } from "./VideoFixture";
 import "../../../src/tokens.css";
 import "../../../src/style.css";
 
@@ -32,16 +33,19 @@ let mounts = 0;
 let openMmd = () => {};
 let failPreset = async () => {};
 let openPresets = () => {};
+let openVideo = () => {};
 function Fixture() {
   const [color, setColor] = useState("#00FF00");
   const [state, setState] = useState<State | null>(null);
   const [mmdOpen, setMmdOpen] = useState(false);
   const [presetsOpen, setPresetsOpen] = useState(false);
+  const [videoOpen, setVideoOpen] = useState(false);
   const [presetId, setPresetId] = useState("builtin-4k");
   const [presetError, setPresetError] = useState<ErrorData | null>(null);
   const sort = useDragSort(state?.presets.map((p) => p.id) || [], () => {});
   openMmd = () => setMmdOpen(true);
   openPresets = () => setPresetsOpen(true);
+  openVideo = () => setVideoOpen(true);
   failPreset = async () => {
     try {
       await invoke("renamePreset", { id: "builtin-4k", name: "" });
@@ -72,6 +76,7 @@ function Fixture() {
       });
     });
   }, []);
+  if (videoOpen && state) return <VideoFixture state={state} />;
   return (
     <main>
       <input aria-label="draft" defaultValue="" />
@@ -166,6 +171,8 @@ function Fixture() {
   openMmd: () => openMmd(),
   failPreset: () => failPreset(),
   openPresets: () => openPresets(),
+  openVideo: () => openVideo(),
+  videoSnapshot,
   choose: localeRuntime.setLocale,
   pseudo,
   mounts: () => mounts,

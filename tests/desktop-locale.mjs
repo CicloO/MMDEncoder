@@ -43,6 +43,12 @@ const app = await electron.launch({
 try {
   const page = await app.firstWindow();
   const screenshot = async (file) => {
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
     const bytes = await app.evaluate(async ({ BrowserWindow }) =>
       (await BrowserWindow.getAllWindows()[0].webContents.capturePage())
         .toPNG()
@@ -243,6 +249,107 @@ try {
     page.getByRole("radio", { name: "黑", exact: true }),
   ).toBeChecked();
   assert.equal(await page.evaluate(() => window.localeFixture.mounts()), 1);
+  // The migrated video surface uses the real components and the same locale
+  // root. Keep edits, selected task and stage/progress while text refreshes.
+  await page.setViewportSize({ width: 1360, height: 920 });
+  await page.evaluate(() => window.localeFixture.openVideo());
+  await page.locator("#fps").selectOption("custom");
+  await page.locator("#custom-fps").fill("30000/1001");
+  const videoBefore = await page.evaluate(() =>
+    window.localeFixture.videoSnapshot(),
+  );
+  await page.getByRole("button", { name: "清除已完成", exact: true }).click();
+  await expect(page.getByLabel("video notification")).toHaveText(
+    "已移除完成项，输出文件保留",
+  );
+  await page.evaluate(() => window.localeFixture.choose("en-XA"));
+  await expect(page.getByLabel("video notification")).toHaveText(
+    labels["message.VIDEO_CLEARED"],
+  );
+  await expect(page.locator('#fps option[value="source"]')).toHaveText(
+    labels["video.fpsSource"],
+  );
+  await expect(page.locator('#fps option[value="24000/1001"]')).toContainText(
+    "23.976",
+  );
+  await expect(
+    page.getByLabel(labels["video.customFPS"], { exact: true }),
+  ).toHaveValue("30000/1001");
+  await expect(page.locator(".job-status.encoding")).toContainText(
+    labels["stage.video_encoding_with_mask"],
+  );
+  await expect(
+    page.getByRole("button", { name: labels["output.start"], exact: true }),
+  ).toBeDisabled();
+  assert.deepEqual(
+    await page.evaluate(() => window.localeFixture.videoSnapshot()),
+    videoBefore,
+  );
+  await screenshot(path.join(dir, "pseudo-video-settings.png"));
+  await page
+    .getByRole("button", { name: labels["video.tab.rtx"], exact: true })
+    .click();
+  await page.locator("#vfg").check();
+  await expect(
+    page.getByText(labels["rtx.changed"], { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: labels["rtx.check"], exact: true })
+    .scrollIntoViewIfNeeded();
+  await screenshot(path.join(dir, "pseudo-video-rtx.png"));
+  await page
+    .locator(".job-select")
+    .filter({ hasText: "User partial.mov" })
+    .click();
+  await expect(page.locator(".detail-card .inline-error")).toContainText(
+    labels["error.AUDIO_BITRATE_INVALID"],
+  );
+  await expect(page.locator(".detail-card .inline-error")).toContainText(
+    "Foreign diagnostic stays exact",
+  );
+  await expect(
+    page.getByRole("button", {
+      name: labels["message.COMPAT_ENCODER_FIX"],
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.setViewportSize({ width: 680, height: 760 });
+  await page
+    .getByRole("button", { name: labels["video.tab.output"], exact: true })
+    .click();
+  await expect(page.locator("#nameTemplate")).toHaveValue("{name}_User名");
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+    true,
+  );
+  await page.locator("#nameTemplate").scrollIntoViewIfNeeded();
+  await screenshot(path.join(dir, "pseudo-video-narrow.png"));
+  const dismiss = page.getByRole("button", {
+    name: labels["video.closeHint"],
+    exact: true,
+  });
+  const dismissBox = await dismiss.boundingBox();
+  assert.ok(
+    dismissBox.width >= 30 &&
+      dismissBox.x >= 0 &&
+      dismissBox.x + dismissBox.width <= 680,
+  );
+  const videoChanged = await page.evaluate(() =>
+    window.localeFixture.videoSnapshot(),
+  );
+  await page.evaluate(() => window.localeFixture.choose("zh-CN"));
+  await expect(page.locator("#nameTemplate")).toHaveValue("{name}_User名");
+  await expect(page.locator(".detail-card .inline-error")).toContainText(
+    "音频码率无效，请选择列表中的码率",
+  );
+  assert.deepEqual(
+    await page.evaluate(() => window.localeFixture.videoSnapshot()),
+    videoChanged,
+  );
+  await page.getByRole("button", { name: "关闭提示", exact: true }).click();
+  await expect(page.locator(".error-banner")).toHaveCount(0);
   console.log("Desktop locale PASS", dir);
 } finally {
   await app.close();

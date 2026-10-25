@@ -33,12 +33,21 @@ function summary(code, params = {}) {
     source.has(key) ? source.t(key, params) : code,
   );
 }
+function stage(id, params = {}) {
+  const key = `stage.${id}`;
+  return {
+    stage: id,
+    params,
+    message: source.has(key) ? source.t(key, params) : id,
+  };
+}
 module.exports = {
   sourceText: source.t,
   appError,
   validationIssue,
   validationError,
   summary,
+  stage,
   serializeError,
   restoreError,
 };

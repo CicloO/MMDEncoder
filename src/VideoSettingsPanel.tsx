@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { SlidersHorizontal, Info, Save, FilePlus2, Check } from "lucide-react";
 import { Button } from "./components";
 import { PresetChoice } from "./PresetChoice";
@@ -41,16 +42,13 @@ export function VideoSettingsPanel({
   children: ReactNode;
 }) {
   return (
-    <aside className="settings-column" aria-label="压制设置">
+    <aside className="settings-column" aria-label={t("video.settings")}>
       <div className="section-heading">
         <div>
-          <span className="eyebrow">输出控制</span>
-          <h2>压制设置</h2>
+          <span className="eyebrow">{t("video.outputControl")}</span>
+          <h2>{t("video.settings")}</h2>
         </div>
-        <label
-          className="job-own-toggle"
-          title="开启后，下面的设置只用于当前选中的视频"
-        >
+        <label className="job-own-toggle" title={t("video.ownHint")}>
           <input
             type="checkbox"
             checked={own}
@@ -58,17 +56,14 @@ export function VideoSettingsPanel({
             onChange={(e) => onOwn(e.target.checked)}
           />
           <SlidersHorizontal size={16} />
-          单独设置
+          {t("video.own")}
         </label>
       </div>
       <div className="settings-panel">
         {own && (
           <div className="job-preset-note" role="status">
             <Info size={16} />
-            <p>
-              正在单独设置“{jobName}
-              ”：这里的修改只用于这个视频；关闭“单独设置”后这些修改会清除。
-            </p>
+            <p>{t("video.ownNote", { name: jobName })}</p>
           </div>
         )}
         <div className="preset-bar">
@@ -82,27 +77,35 @@ export function VideoSettingsPanel({
           <Button
             title={
               hasActivePreset
-                ? `保存（覆盖“${activePresetLabel}”）`
-                : "保存（先选择一个预设）"
+                ? t("video.saveOverwrite", { name: activePresetLabel })
+                : t("video.saveNeedsPreset")
             }
-            aria-label="保存到当前预设"
+            aria-label={t("video.savePreset")}
             disabled={busy || !hasActivePreset || !modified}
             onClick={onOverwrite}
           >
             <Save size={17} />
           </Button>
-          <Button title="另存为预设" aria-label="另存为预设" onClick={onSaveAs}>
+          <Button
+            title={t("video.saveAsPreset")}
+            aria-label={t("video.saveAsPreset")}
+            onClick={onSaveAs}
+          >
             <FilePlus2 size={17} />
           </Button>
         </div>
-        <div className="setting-tabs" role="group" aria-label="设置分类">
+        <div
+          className="setting-tabs"
+          role="group"
+          aria-label={t("video.categories")}
+        >
           {[
-            { id: "encoding", name: "画质" },
-            { id: "audio", name: "音频" },
-            { id: "alpha", name: "透明通道" },
-            { id: "rtx", name: "超分补帧" },
-            { id: "output", name: "输出" },
-            { id: "advanced", name: "高级" },
+            { id: "encoding", name: t("video.tab.encoding") },
+            { id: "audio", name: t("video.tab.audio") },
+            { id: "alpha", name: t("video.tab.alpha") },
+            { id: "rtx", name: t("video.tab.rtx") },
+            { id: "output", name: t("video.tab.output") },
+            { id: "advanced", name: t("video.tab.advanced") },
           ].map((t) => (
             <button
               key={t.id}
@@ -117,7 +120,7 @@ export function VideoSettingsPanel({
         {children}
         <div className="settings-foot">
           <Check size={13} />
-          <span>设置自动保存 · 全部待处理视频共用当前设置</span>
+          <span>{t("video.autoSave")}</span>
         </div>
       </div>
     </aside>

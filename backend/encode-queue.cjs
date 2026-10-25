@@ -1,4 +1,13 @@
 "use strict";
+const {
+  appError,
+  validationIssue,
+  validationError,
+  serializeError,
+  summary,
+  sourceText,
+} = require("./errors.cjs");
+const { formatVideoSummary } = require("../locales/video-summary.mjs");
 // Video page queue (视频压制): adding sources (files and PNG sequences),
 // the per-job preview, and encoding the queue with settings frozen per job.
 const fs = require("node:fs");
@@ -105,7 +114,7 @@ function createEncodeQueue({
   }
   async function add(paths) {
     if (!Array.isArray(paths) || paths.length > 1000)
-      throw Error("请选择最多 1000 个视频文件");
+      throw appError("VIDEO_FILES_LIMIT");
     await locate();
     const folders = new Map(); // picked PNGs of one folder: read it once
     // A video can be queued more than once (e.g. two different settings);
@@ -114,7 +123,7 @@ function createEncodeQueue({
     const added = [];
     for (const input of paths) {
       if (typeof input !== "string" || !path.isAbsolute(input))
-        throw Error("素材必须为绝对路径");
+        throw appError("SOURCE_PATH_REQUIRED");
       let resolved = path.resolve(input);
       // A PNG, or a folder of them, is read as an image sequence; picking
       // several frames of one sequence adds it once.
@@ -126,7 +135,7 @@ function createEncodeQueue({
           seq = await sequence.find(resolved, folders);
       } catch {}
       if (isDir && !seq) {
-        onNotice("文件夹里没有 PNG 序列：" + path.basename(input));
+        onNotice(summary("VIDEO_NO_SEQUENCE", { name: path.basename(input) }));
         continue;
       }
       if (seq) {
@@ -138,7 +147,12 @@ function createEncodeQueue({
       const job = {
         id: crypto.randomUUID(),
         path: resolved,
-        name: seq ? seq.name + "（PNG 序列）" : path.basename(input),
+        name: seq
+          ? summary("PNG_SEQUENCE_NAME", { name: seq.name }).message
+          : path.basename(input),
+        ...(seq
+          ? { nameData: summary("PNG_SEQUENCE_NAME", { name: seq.name }) }
+          : {}),
         status: "probing",
         progress: 0,
         ...(seq ? { sequence: { ...seq, ...sequenceRate(SEQUENCE_FPS) } } : {}),
@@ -161,15 +175,14 @@ function createEncodeQueue({
   async function probeJob({ job, input, seq }) {
     const resolved = job.path;
     try {
-      if (!engineInfo().ffprobe) throw Error("未找到 ffprobe，无法读取素材");
-      if (/\.png$/i.test(resolved) && !seq)
-        throw Error(
-          "只有一张 PNG，不是图片序列（需要 name_0001.png 这样带连续编号的文件）",
-        );
+      if (!engineInfo().ffprobe) throw appError("FFPROBE_REQUIRED");
+      if (/\.png$/i.test(resolved) && !seq) throw appError("PNG_SINGLE");
       if (seq?.missing !== null && seq?.missing !== undefined)
-        throw Error(
-          `PNG 序列不连续：缺少第 ${seq.missing} 帧（从 ${seq.start} 开始找到 ${seq.total} 张）`,
-        );
+        throw appError("PNG_GAP", {
+          missing: seq.missing,
+          start: seq.start,
+          total: seq.total,
+        });
       if (seq) {
         job.meta = await sequenceMeta(job);
         job.status = "ready";
@@ -187,7 +200,7 @@ function createEncodeQueue({
         return;
       }
       const stat = fs.statSync(input);
-      if (!stat.isFile()) throw Error("输入不是文件");
+      if (!stat.isFile()) throw appError("INPUT_FILE_REQUIRED");
       const r = await run(
         engineInfo().ffprobe,
         ["-v", "error", "-show_streams", "-show_format", "-of", "json", input],
@@ -211,13 +224,19 @@ function createEncodeQueue({
           );
         }
       } catch (e) {
-        job.log = "帧时间戳抽样未完成：" + e.message;
+        job.log = summary("VIDEO_TIMESTAMP_FAILED", {
+          detail: e.message,
+        }).message;
       }
       job.meta.size = stat.size;
       job.status = "ready";
     } catch (e) {
       job.status = "invalid";
-      job.error = "素材探测失败：" + e.message;
+      job.errorData = {
+        ...serializeError(appError("VIDEO_PROBE_FAILED")),
+        issues: [serializeError(e)],
+      };
+      job.error = job.errorData.message + "：" + e.message;
     }
     emitProgress();
   }
@@ -260,7 +279,7 @@ function createEncodeQueue({
   }
   function requireJob(id) {
     const j = getJobs().find((j) => j.id === id);
-    if (!j) throw Error("未找到此任务");
+    if (!j) throw appError("JOB_NOT_FOUND");
     return j;
   }
   // The settings a job encodes with: its own when "单独设置" is on for it
@@ -271,36 +290,34 @@ function createEncodeQueue({
       : getSettings();
   }
   function preview(job, s = settingsFor(job)) {
-    const errors = core.validate(s, job.meta);
+    const issues = core.validateIssues(s, job.meta);
     if (
       (s.vsr || s.vfg) &&
       (!verification().verified ||
         verification().signature !== enhancementSignature(s))
     )
-      errors.push("RTX 设置尚未通过本机验证，请在“超分补帧”页验证所选设置");
-    if (!job.meta) errors.push("素材信息尚未读取成功");
-    if (!engineInfo().ffmpeg) errors.push("未找到 FFmpeg");
+      issues.push(validationIssue("VIDEO_RTX_NOT_VERIFIED"));
+    if (!job.meta) issues.push(validationIssue("SOURCE_META_REQUIRED"));
+    if (!engineInfo().ffmpeg) issues.push(validationIssue("FFMPEG_REQUIRED"));
     // Mask only encodes with FFmpeg's lossless x264 / VP9, not the chosen encoder.
     const maskOnly = s.alphaMode === "mask";
     if (!maskOnly && s.encoder.startsWith("nvencc:") && !engineInfo().nvencc)
-      errors.push("未找到 NVEncC");
+      issues.push(validationIssue("NVENCC_REQUIRED"));
     if (
       !maskOnly &&
       !isDetecting() &&
       !engines().some((e) => e.id === s.encoder)
     )
-      errors.push("编码器当前不可用，请重新检测或选择其他编码器");
+      issues.push(validationIssue("ENCODER_UNAVAILABLE"));
     const available = engines().find((e) => e.id === s.encoder);
     if (!maskOnly && available && !available.depths.includes(s.bitDepth))
-      errors.push("此编码器未通过所选位深的实测");
+      issues.push(validationIssue("ENCODER_DEPTH_UNVERIFIED"));
     if (
       s.encoder === "nvencc:hevc" &&
       s.alphaMode === "preserve" &&
       !available?.alpha
     )
-      errors.push(
-        "本机 NVEncC HEVC Alpha 试编码未通过；请检查显卡支持和驱动，或选择 ProRes 4444 / VP9",
-      );
+      issues.push(validationIssue("HEVC_ALPHA_UNVERIFIED"));
     let paths = { output: "" },
       commands = [];
     try {
@@ -310,12 +327,12 @@ function createEncodeQueue({
         getJobs().indexOf(job) + 1,
         fs.existsSync,
       );
-      if (job.meta && errors.length === 0)
+      if (job.meta && issues.length === 0)
         commands = core.singlePass(
           core.buildCommands(job, s, engineInfo(), paths),
         );
     } catch (e) {
-      errors.push(e.message);
+      issues.push(serializeError(e));
     }
     const target = (() => {
       try {
@@ -325,17 +342,40 @@ function createEncodeQueue({
       }
     })();
     const meta = job.meta;
-    const summary = !meta
-      ? ""
-      : maskOnly
-        ? `${meta.width} × ${meta.height} · ${meta.fpsText || "未知"}${target ? " → " + s.fps : ""} FPS / 分离 Alpha · 仅黑白遮罩 · ${s.container === "webm" ? "VP9" : "H.264"} 无损 · 无音频 · ${s.container.toUpperCase()}`
-        : `${meta.width} × ${meta.height} · ${meta.fpsText || "未知"}${target ? " → " + s.fps : ""} FPS / ${core.ENGINES.find((e) => e.id === s.encoder)?.label || s.encoder} · ${s.bitDepth}-bit · ${s.audio === "none" ? "无音频" : s.audio.toUpperCase()} · ${s.container.toUpperCase()}${target > meta.fps ? "；通过重复帧提高帧率，不生成新的运动细节" : ""}${s.encoder.startsWith("nvencc:") ? "；NVEncC 预处理需要额外临时磁盘空间" : ""}`;
+    const engine = core.ENGINES.find((e) => e.id === s.encoder);
+    const summaryData = meta
+      ? {
+          code: maskOnly ? "VIDEO_MASK_PREVIEW" : "VIDEO_PREVIEW",
+          params: {
+            width: meta.width,
+            height: meta.height,
+            sourceFps: meta.fpsText || "",
+            targetFps: target ? s.fps : "",
+            encoder: s.encoder,
+            engineKey: engine?.labelKey || "",
+            engineParams: engine?.labelParams || {},
+            bitDepth: s.bitDepth,
+            audio: s.audio,
+            container: s.container,
+            repeatFrames: !maskOnly && target > meta.fps,
+            nvencc: !maskOnly && s.encoder.startsWith("nvencc:"),
+          },
+          message: "",
+        }
+      : undefined;
+    if (summaryData)
+      summaryData.message = formatVideoSummary(
+        { t: sourceText, number: String },
+        summaryData,
+      );
     return {
       ...paths,
       dimensions: meta ? core.dimensions(s, meta) : null,
-      summary,
+      summary: summaryData?.message || "",
+      summaryData,
       command: core.commandText(commands, { prepare: true }),
-      errors: [...new Set(errors)],
+      errors: [...new Set(issues.map((issue) => issue.message))],
+      issues,
     };
   }
   const encode = createEncoder({
@@ -352,22 +392,22 @@ function createEncodeQueue({
     emitProgress,
   });
   async function queue(jobs) {
-    if (toolsBusy() || verification().busy)
-      throw Error("工具管理或 RTX 验证中，请稍后处理队列");
-    if (isRunning()) throw Error("队列正在运行");
-    if (trimExporting()) throw Error("无损剪辑正在导出，请等它结束");
+    if (toolsBusy() || verification().busy) throw appError("VIDEO_TOOLS_BUSY");
+    if (isRunning()) throw appError("QUEUE_RUNNING");
+    if (trimExporting()) throw appError("TRIM_EXPORT_BUSY");
     // Validate the frozen per-job settings first; a bad alpha source must not
     // prevent valid items from continuing, or be mislabeled as an engine fault.
     jobs = jobs.filter((j) => {
       j.settings = clone(j._retrySettings || settingsFor(j));
-      const errors = core.validate(j.settings, j.meta);
-      if (!errors.length) return true;
+      const issues = core.validateIssues(j.settings, j.meta);
+      if (!issues.length) return true;
       j.status = "invalid";
-      j.error = errors.join("；");
+      j.errorData = serializeError(validationError(issues));
+      j.error = j.errorData.message;
       return false;
     });
     if (!jobs.length) {
-      onNotice("没有可编码的待处理任务");
+      onNotice(summary("VIDEO_EMPTY_QUEUE"));
       emit();
       return;
     }
@@ -393,7 +433,9 @@ function createEncodeQueue({
         await encode(job);
       }
     })()
-      .catch((e) => onNotice(e.message))
+      .catch((e) =>
+        onNotice(summary("VIDEO_QUEUE_FAILED", { detail: e.message })),
+      )
       .finally(() => {
         setRunning(false);
         flushEvidence();
@@ -405,7 +447,7 @@ function createEncodeQueue({
     remove(payload) {
       const job = requireJob(payload.id);
       if (job.status === "encoding" || (isRunning() && job.settings))
-        throw Error("已提交任务不能在运行中移除");
+        throw appError("JOB_REMOVE_BUSY");
       setJobs(getJobs().filter((j) => j.id !== job.id));
     },
     async setAudio(payload) {
@@ -413,10 +455,10 @@ function createEncodeQueue({
       // video's own audio again), as on the media page's merge.
       const job = requireJob(payload?.id);
       if (job.status === "encoding" || (isRunning() && job.settings))
-        throw Error("已提交任务不能更换音频");
+        throw appError("JOB_AUDIO_BUSY");
       const file = payload?.path || "";
       if (file && (!path.isAbsolute(file) || !fs.statSync(file).isFile()))
-        throw Error("请选择有效的音频文件");
+        throw appError("AUDIO_FILE_INVALID");
       delete job.audioMeta;
       delete job.audioDuration;
       delete job.audioOffset; // another audio: its alignment no longer holds
@@ -426,7 +468,7 @@ function createEncodeQueue({
       }
       await locate();
       const info = await probeMedia(file);
-      if (!info.audio) throw Error("这个文件没有音轨");
+      if (!info.audio) throw appError("AUDIO_TRACK_REQUIRED");
       job.audioPath = file;
       job.audioMeta = info.audio;
       job.audioDuration = info.audioDuration;
@@ -436,30 +478,32 @@ function createEncodeQueue({
     setAudioOffset(payload) {
       const job = requireJob(payload?.id);
       if (job.status === "encoding" || (isRunning() && job.settings))
-        throw Error("已提交任务不能更改对齐");
+        throw appError("JOB_ALIGNMENT_BUSY");
       const offset = payload?.offset;
       if (offset === null || offset === undefined) {
         delete job.audioOffset;
         return;
       }
-      if (!job.audioPath) throw Error("请先替换音频");
+      if (!job.audioPath) throw appError("AUDIO_REPLACEMENT_REQUIRED");
       if (!Number.isFinite(offset) || Math.abs(offset) > 24 * 3600)
-        throw Error("对齐数据无效");
+        throw appError("AUDIO_ALIGNMENT_INVALID");
       job.audioOffset = offset;
     },
     requeue(payload) {
       // Put a finished or cancelled item back in the queue; the next start
       // freezes the current settings, and existing outputs get a numbered name.
-      if (isRunning()) throw Error("请等待当前队列结束后再重新导出");
+      if (isRunning()) throw appError("REQUEUE_BUSY");
       const job = requireJob(payload.id);
       if (!["done", "cancelled"].includes(job.status))
-        throw Error("只有已完成或已取消的任务可以重新导出");
-      if (!job.meta) throw Error("素材探测失败，请重新添加");
+        throw appError("REQUEUE_STATUS_INVALID");
+      if (!job.meta) throw appError("SOURCE_READD_REQUIRED");
       for (const key of [
         "settings",
         "output",
         "maskOutput",
         "error",
+        "errorData",
+        "softwareRetry",
         "stage",
         "elapsed",
         "startedAt",
@@ -474,8 +518,8 @@ function createEncodeQueue({
       );
     },
     async start() {
-      if (verification().busy) throw Error("RTX 验证中，请稍后开始编码");
-      if (toolsBusy()) throw Error("工具安装中，请稍后开始编码");
+      if (verification().busy) throw appError("RTX_ENCODING_BUSY");
+      if (toolsBusy()) throw appError("TOOLS_ENCODING_BUSY");
       await locate();
       if (isDetecting()) await waitDetection();
       await queue(
@@ -489,21 +533,16 @@ function createEncodeQueue({
       killActive();
     },
     async retry(payload) {
-      if (isRunning()) throw Error("请等待当前队列停止");
+      if (isRunning()) throw appError("RETRY_BUSY");
       const j = requireJob(payload.id);
       if (!["failed", "partial", "cancelled", "invalid"].includes(j.status))
-        throw Error("此任务不需要重试");
-      if (!j.meta) throw Error("素材探测失败，请重新添加");
+        throw appError("RETRY_UNNEEDED");
+      if (!j.meta) throw appError("SOURCE_READD_REQUIRED");
       let s = clone(j.settings || settingsFor(j));
       if (payload.software) {
-        if (s.vsr || s.vfg)
-          throw Error(
-            "RTX VSR / VFG 不能软件回退；请修复本机 RTX 功能，或在“超分补帧”里关闭后重试",
-          );
+        if (s.vsr || s.vfg) throw appError("RTX_SOFTWARE_UNSUPPORTED");
         if (s.alphaMode === "preserve" && s.encoder === "nvencc:hevc")
-          throw Error(
-            "HEVC Alpha 无软件回退；请修复 NVEncC，或明确改选 ProRes 4444 / VP9 后重试",
-          );
+          throw appError("HEVC_ALPHA_SOFTWARE_UNSUPPORTED");
         const e = core.ENGINES.find((e) => e.id === s.encoder);
         s.encoder =
           {
@@ -518,10 +557,10 @@ function createEncodeQueue({
         s.rateControl = "quality";
         s.lookahead = 0;
         s.lookaheadLevel = 0;
-        onNotice("软件重试使用 CRF 18；CQ 与 CRF 数值不等效");
+        onNotice(summary("VIDEO_SOFTWARE_RETRY"));
       } else if (j.status !== "partial") s = clone(settingsFor(j));
-      const errors = core.validate(s, j.meta);
-      if (errors.length) throw Error(errors.join("；"));
+      const issues = core.validateIssues(s, j.meta);
+      if (issues.length) throw validationError(issues);
       j._retrySettings = s;
       await queue([j]);
       delete j._retrySettings;
@@ -532,11 +571,11 @@ function createEncodeQueue({
     setJobSettings(payload) {
       const job = requireJob(payload?.id);
       if (job.status === "encoding" || (isRunning() && job.settings))
-        throw Error("已提交任务不能更改设置");
+        throw appError("JOB_SETTINGS_BUSY");
       if (payload.own === false) delete job.ownSettings;
       else if (payload.own === true) job.ownSettings = clone(getSettings());
       if (payload.patch) {
-        if (!job.ownSettings) throw Error("这个视频没有开启单独设置");
+        if (!job.ownSettings) throw appError("JOB_SETTINGS_REQUIRED");
         job.ownSettings = { ...job.ownSettings, ...schema(payload.patch) };
       }
     },
@@ -545,8 +584,9 @@ function createEncodeQueue({
     },
     setSequenceFps(payload) {
       const job = requireJob(payload?.id);
-      if (!job.sequence) throw Error("这个素材不是图片序列");
-      if (!SEQUENCE_RATES.includes(payload.fps)) throw Error("帧率无效");
+      if (!job.sequence) throw appError("PNG_SEQUENCE_REQUIRED");
+      if (!SEQUENCE_RATES.includes(payload.fps))
+        throw appError("SEQUENCE_FPS_INVALID");
       if (
         ![
           "ready",
@@ -557,7 +597,7 @@ function createEncodeQueue({
           "partial",
         ].includes(job.status)
       )
-        throw Error("正在处理的素材不能改帧率");
+        throw appError("SEQUENCE_FPS_BUSY");
       Object.assign(job.sequence, sequenceRate(payload.fps));
       if (job.meta) job.meta = withSequenceRate(job.meta, job.sequence);
     },
@@ -566,13 +606,15 @@ function createEncodeQueue({
   // while it reads each file and returns the state when done).
   const queries = {
     add(payload) {
-      if (verification().busy) throw Error("RTX 验证中，请稍后添加素材");
-      if (toolsBusy()) throw Error("工具安装中，请稍后添加素材");
+      if (verification().busy) throw appError("RTX_IMPORT_BUSY");
+      if (toolsBusy()) throw appError("TOOLS_IMPORT_BUSY");
       return add(payload.paths);
     },
     preview: (payload) => preview(requireJob(payload.id)),
     logs: (payload) =>
-      payload.id ? requireJob(payload.id).log || "暂无日志" : getDetectionLog(),
+      payload.id
+        ? requireJob(payload.id).log || summary("VIDEO_NO_LOG").message
+        : getDetectionLog(),
   };
   return { actions, queries, requireJob };
 }

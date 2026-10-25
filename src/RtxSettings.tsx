@@ -1,3 +1,4 @@
+import { t, localeRuntime, summaryMessage, errorMessage } from "./i18n";
 import { Button, Field, Select } from "./components";
 import type { Settings, State } from "./types";
 // 超分补帧 tab: how to enlarge (Lanczos / ArtCNN / RTX VSR), RTX frame
@@ -43,35 +44,39 @@ export function RtxSettings({
   const warnings = [
     upscaler === "artcnn" &&
       s.resizeMode === "source" &&
-      "当前为“保持源分辨率”，不会放大。请在“画质”里设置更大的输出分辨率。",
+      t("rtx.noResizeWarning"),
     upscaler === "artcnn" &&
       s.alphaMode === "preserve" &&
-      "保留 Alpha 时速度只有 Lanczos 的三分之一左右，透明通道本身仍用 Lanczos 放大。",
-    !placebo &&
-      "本机未检测到可用的 Vulkan，ArtCNN 无法运行；请更新显卡驱动后重新检测。",
+      t("rtx.alphaWarning"),
+    !placebo && t("rtx.vulkanWarning"),
   ].filter(Boolean) as string[];
   const message =
-    verification.message === "RTX 设置已更改，请重新验证本机设置"
-      ? "设置已更改，请重新验证。"
-      : verification.message;
+    verification.messageData?.code === "RTX_SETTINGS_CHANGED"
+      ? t("rtx.changed")
+      : verification.messageData?.code === "RTX_FAILED" &&
+          verification.errorData
+        ? t("message.RTX_FAILED", {
+            detail: errorMessage(verification.errorData),
+          })
+        : summaryMessage(verification.messageData || verification.message);
   return (
     <>
       <section className="settings-group" aria-labelledby="upscale-title">
         <h3 id="upscale-title" className="settings-group-title">
-          放大
+          {t("rtx.upscale")}
         </h3>
         <Select
           id="upscaler"
-          label="放大算法"
+          label={t("rtx.upscaler")}
           value={upscaler}
           options={[
-            { value: "lanczos", label: "Lanczos · 标准缩放" },
+            { value: "lanczos", label: t("rtx.lanczos") },
             {
               value: "artcnn",
-              label: "ArtCNN · AI 放大",
+              label: t("rtx.artcnn"),
               disabled: !placebo && upscaler !== "artcnn",
             },
-            { value: "vsr", label: "RTX VSR · NVIDIA 超分" },
+            { value: "vsr", label: t("rtx.vsr") },
           ]}
           onChange={(v) =>
             patch(
@@ -83,30 +88,30 @@ export function RtxSettings({
           }
           hint={
             upscaler === "vsr"
-              ? "NVIDIA RTX 超分，只能配合 NVEncC 编码器；输出尺寸由下面的倍率决定。"
+              ? t("rtx.vsrHint")
               : upscaler === "artcnn"
-                ? "2 倍 AI 放大，线条更清晰，保留原有颗粒质感；需要支持 Vulkan 的显卡。输出尺寸在“画质”里设置，宽高都放大超过 1.3 倍才会使用 AI。"
-                : "速度最快，画面偏软。输出尺寸在“画质”里设置。"
+                ? t("rtx.artcnnHint")
+                : t("rtx.lanczosHint")
           }
         />
         {upscaler === "artcnn" && (
           <Select
             id="artcnnModel"
-            label="ArtCNN 模型"
+            label={t("rtx.artcnnModel")}
             value={s.artcnnModel || "C4F16"}
             options={[
-              { value: "C4F16", label: "C4F16 · 轻量（推荐）" },
-              { value: "C4F32", label: "C4F32 · 计算量更高" },
+              { value: "C4F16", label: t("rtx.artcnn16") },
+              { value: "C4F32", label: t("rtx.artcnn32") },
             ]}
             onChange={(v) => set("artcnnModel", v as Settings["artcnnModel"])}
-            hint="两者画质几乎相同，C4F32 慢约 30%–40%。"
+            hint={t("rtx.artcnnModelHint")}
           />
         )}
         {s.vsr && (
           <>
             <div className="form-row">
-              {number("vsrScale", "VSR 倍率 · 1.00–4.00", 1, 4)}
-              {number("vsrStrength", "VSR 强度 · 0.00–1.00", 0, 1)}
+              {number("vsrScale", t("rtx.vsrScale"), 1, 4)}
+              {number("vsrStrength", t("rtx.vsrStrength"), 0, 1)}
             </div>
             <Select
               id="vsrQuality"
@@ -117,10 +122,26 @@ export function RtxSettings({
                 23,
               ].map((v) => ({
                 value: v,
-                label: `${v} · ${v === 0 ? "双三次基线" : v <= 4 ? "VSR 放大" : v <= 11 ? "去噪（原尺寸）" : v <= 15 ? "去模糊（原尺寸）" : v <= 19 ? "补细节（非 VSR 放大）" : v === 21 ? "Streaming Medium" : "Streaming Ultra"}`,
+                label: t("rtx.qualityOption", {
+                  level: localeRuntime.number(v),
+                  mode:
+                    v === 0
+                      ? t("rtx.qualityBaseline")
+                      : v <= 4
+                        ? t("rtx.qualityUpscale")
+                        : v <= 11
+                          ? t("rtx.qualityDenoise")
+                          : v <= 15
+                            ? t("rtx.qualityDeblur")
+                            : v <= 19
+                              ? t("rtx.qualityDetail")
+                              : v === 21
+                                ? "Streaming Medium"
+                                : "Streaming Ultra",
+                }),
               }))}
               onChange={(v) => set("vsrQuality", Number(v))}
-              hint="MMD 画面放大选 4。8–19 保持原尺寸（倍率填 1）；强度需要 VFX SDK 1.3+。"
+              hint={t("rtx.qualityHint")}
             />
           </>
         )}
@@ -135,7 +156,7 @@ export function RtxSettings({
 
       <section className="settings-group" aria-labelledby="vfg-title">
         <h3 id="vfg-title" className="settings-group-title">
-          补帧
+          {t("rtx.frameGeneration")}
         </h3>
         <label className="checkbox-row">
           <input
@@ -145,11 +166,8 @@ export function RtxSettings({
             onChange={(e) => set("vfg", e.target.checked)}
           />
           <span>
-            启用 NVIDIA VFG 插帧
-            <small className="hint hires-hint">
-              需要 RTX 40 / 50 系列显卡、NVEncC 9.36+ 和 NVIDIA VFX
-              运行库；不支持 Alpha。
-            </small>
+            {t("rtx.vfg")}
+            <small className="hint hires-hint">{t("rtx.vfgHint")}</small>
           </span>
         </label>
         {s.vfg && (
@@ -157,31 +175,35 @@ export function RtxSettings({
             <div className="form-row">
               <Select
                 id="vfgMultiplier"
-                label="帧率倍率"
+                label={t("rtx.multiplier")}
                 value={s.vfgMultiplier}
                 options={[2, 3, 4, 5, 6, 7, 8].map((v) => ({
                   value: v,
-                  label: `${v}×`,
+                  label: t("rtx.multiplierOption", {
+                    value: localeRuntime.number(v),
+                  }),
                 }))}
                 onChange={(v) => set("vfgMultiplier", Number(v))}
-                hint={`输出帧率 = 源帧率 × ${s.vfgMultiplier}`}
+                hint={t("rtx.multiplierHint", {
+                  value: localeRuntime.number(s.vfgMultiplier),
+                })}
               />
               <Select
                 id="vfgMode"
-                label="VFG 模型"
+                label={t("rtx.vfgModel")}
                 value={s.vfgMode}
                 options={[
-                  { value: "low", label: "Low · 低复杂度" },
-                  { value: "medium", label: "Medium · 均衡" },
-                  { value: "high", label: "High · 高复杂度" },
+                  { value: "low", label: t("rtx.vfgLow") },
+                  { value: "medium", label: t("rtx.vfgMedium") },
+                  { value: "high", label: t("rtx.vfgHigh") },
                 ]}
                 onChange={(v) => set("vfgMode", v)}
               />
             </div>
             <Field
               id="vfgModelDir"
-              label="VFG 模型目录（可选）"
-              hint="留空使用 NVEncC 自带的模型；只有验证时报告找不到模型才需要选择。"
+              label={t("rtx.modelDirectory")}
+              hint={t("rtx.modelDirectoryHint")}
             >
               <div className="path-picker">
                 <input id="vfgModelDir" readOnly value={s.vfgModelDir} />
@@ -191,7 +213,7 @@ export function RtxSettings({
                     if (selected) set("vfgModelDir", selected);
                   }}
                 >
-                  选择模型目录
+                  {t("rtx.pickModelDirectory")}
                 </Button>
               </div>
             </Field>
@@ -202,11 +224,9 @@ export function RtxSettings({
       {(s.vsr || s.vfg) && (
         <section className="rtx-check" aria-labelledby="rtx-check-title">
           <h3 id="rtx-check-title" className="settings-group-title">
-            本机验证
+            {t("rtx.checkTitle")}
           </h3>
-          <p className="hint">
-            RTX VSR / VFG 要先用当前设置在本机试运行一次，通过后才能压制。
-          </p>
+          <p className="hint">{t("rtx.checkHint")}</p>
           <div className="rtx-check-row">
             <Button
               disabled={!canTest}
@@ -214,7 +234,7 @@ export function RtxSettings({
                 call("testEnhancements", { settings: s }).catch(() => {})
               }
             >
-              {verification.busy ? "正在验证…" : "验证本机 RTX 设置"}
+              {verification.busy ? t("rtx.checking") : t("rtx.check")}
             </Button>
             {message && (
               <p className="hint" role="status">

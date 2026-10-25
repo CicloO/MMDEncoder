@@ -1,4 +1,5 @@
 "use strict";
+const { appError, validationIssue, serializeError } = require("./errors.cjs");
 const path = require("node:path");
 const { FADES } = require("./media.cjs");
 const { ENGINES } = require("./definitions.cjs");
@@ -13,90 +14,78 @@ function filename(name) {
     name === "." ||
     name === ".."
   )
-    throw Error("输出名称包含非法字符或 Windows 保留名");
+    throw appError("OUTPUT_NAME_INVALID");
   return name;
 }
-function validate(s, meta) {
+function validateIssues(s, meta) {
   // Mask only: the colour encoder and audio settings are not used, so check
   // the mask's own encoding; RTX stays refused and the source needs alpha.
   if (s.alphaMode === "mask") {
-    const e = validate({ ...maskSettings(s), vsr: false, vfg: false }, meta);
-    if (s.vsr || s.vfg)
-      e.push("RTX VSR / VFG 暂不能与保留 Alpha 或独立 Alpha 遮罩组合");
-    if (meta && !meta.hasAlpha) e.push("源视频没有可读 Alpha，不能生成遮罩");
-    return [...new Set(e)];
+    const e = validateIssues(
+      { ...maskSettings(s), vsr: false, vfg: false },
+      meta,
+    );
+    if (s.vsr || s.vfg) e.push(validationIssue("RTX_ALPHA_UNSUPPORTED"));
+    if (meta && !meta.hasAlpha)
+      e.push(validationIssue("SOURCE_ALPHA_MASK_REQUIRED"));
+    return uniqueIssues(e);
   }
   const e = [];
-  const check = (ok, msg) => {
-    if (!ok) e.push(msg);
+  const check = (ok, code, params = {}) => {
+    if (!ok) e.push(validationIssue(code, params));
   };
   const eng = ENGINES.find((x) => x.id === s.encoder);
   if (s.vsr || s.vfg) {
-    check(eng?.backend === "nvencc", "RTX VSR / VFG 需要 NVEncC 编码器");
-    check(
-      s.alphaMode !== "preserve" && !s.alphaMask,
-      "RTX VSR / VFG 暂不能与保留 Alpha 或独立 Alpha 遮罩组合",
-    );
-    check(
-      s.bitDepth === 8 && s.chroma === "420",
-      "RTX VSR / VFG 使用 8-bit 4:2:0",
-    );
+    check(eng?.backend === "nvencc", "RTX_NVENCC_REQUIRED");
+    check(s.alphaMode !== "preserve" && !s.alphaMask, "RTX_ALPHA_UNSUPPORTED");
+    check(s.bitDepth === 8 && s.chroma === "420", "RTX_FORMAT_REQUIRED");
   }
   check(
     ["lanczos", "artcnn"].includes(s.upscaler ?? "lanczos"),
-    "放大算法无效",
+    "UPSCALER_INVALID",
   );
   check(
     ["C4F16", "C4F32"].includes(s.artcnnModel ?? "C4F16"),
-    "ArtCNN 模型无效",
+    "ARTCNN_MODEL_INVALID",
   );
   if (s.vsr) {
     check(
       Number.isFinite(s.vsrScale) && s.vsrScale >= 1 && s.vsrScale <= 4,
-      "VSR 倍率须为 1.00–4.00",
+      "VSR_SCALE_INVALID",
     );
     check(
       [
         0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 23,
       ].includes(s.vsrQuality),
-      "VSR QualityLevel 无效",
+      "VSR_QUALITY_INVALID",
     );
     check(
       Number.isFinite(s.vsrStrength) &&
         s.vsrStrength >= 0 &&
         s.vsrStrength <= 1,
-      "VSR 强度须为 0.00–1.00",
+      "VSR_STRENGTH_INVALID",
     );
-    check(
-      s.resizeMode === "source",
-      "启用 VSR 时请保持源分辨率，由 VSR 倍率控制输出尺寸",
-    );
+    check(s.resizeMode === "source", "VSR_SOURCE_SIZE_REQUIRED");
     if (s.vsrQuality >= 8 && s.vsrQuality <= 19)
-      check(
-        s.vsrScale === 1,
-        "VSR 去噪 / 去模糊 / 补细节模式使用 1.00 倍原尺寸",
-      );
+      check(s.vsrScale === 1, "VSR_NATIVE_SCALE_REQUIRED");
   }
   if (s.vfg) {
     check(
       !s.vfgModelDir || path.isAbsolute(s.vfgModelDir),
-      "VFG 模型目录必须为绝对路径",
+      "VFG_MODEL_PATH_INVALID",
     );
     check(
       Number.isInteger(s.vfgMultiplier) &&
         s.vfgMultiplier >= 2 &&
         s.vfgMultiplier <= 8,
-      "VFG 倍率须为 2–8",
+      "VFG_MULTIPLIER_INVALID",
     );
-    check(["low", "medium", "high"].includes(s.vfgMode), "VFG 模型无效");
-    check(
-      s.fps === "source",
-      "VFG 使用源帧率乘倍率，请将输出帧率设为保持源帧率",
-    );
+    check(["low", "medium", "high"].includes(s.vfgMode), "VFG_MODEL_INVALID");
+    check(s.fps === "source", "VFG_SOURCE_FPS_REQUIRED");
     if (meta)
-      check(meta.fps * s.vfgMultiplier <= 960, "VFG 输出帧率超过 960 FPS");
+      check(meta.fps * s.vfgMultiplier <= 960, "VFG_OUTPUT_FPS_INVALID");
   }
-  check(!!eng, "编码器无效");
+  check(!!eng, "ENCODER_INVALID");
   for (const [k, values] of Object.entries({
     container: ["mp4", "mkv", "mov", "webm"],
     bitDepth: [8, 10],
@@ -112,11 +101,11 @@ function validate(s, meta) {
     colorSpace: ["bt709", "bt601", "bt2020"],
     colorRange: ["tv", "pc"],
   }))
-    check(values.includes(s[k]), "无效设置：" + k);
+    check(values.includes(s[k]), "SETTING_VALUE_INVALID", { field: k });
   try {
     parseFps(s.fps);
   } catch (x) {
-    e.push(x.message);
+    e.push(serializeError(x));
   }
   try {
     filename(
@@ -126,10 +115,10 @@ function validate(s, meta) {
       !/[{}]/.test(
         String(s.nameTemplate).replace(/\{(?:name|preset|date|index)\}/g, ""),
       ),
-      "命名模板含未知占位符",
+      "NAME_TEMPLATE_TOKEN_INVALID",
     );
   } catch (x) {
-    e.push(x.message);
+    e.push(serializeError(x));
   }
   for (const [k, min, max] of [
     ["quality", 0, s.encoder === "prores_ks" ? 64 : 63],
@@ -141,37 +130,34 @@ function validate(s, meta) {
   ])
     check(
       Number.isFinite(s[k]) && s[k] >= min && s[k] <= max,
-      "无效数值：" + k,
+      "SETTING_NUMBER_INVALID",
+      { field: k },
     );
   check(
     [0, 64, 96, 128, 160, 192, 256, 320, 384, 512].includes(
       s.audioBitrate ?? 0,
     ),
-    "音频码率无效，请选择列表中的码率",
+    "AUDIO_BITRATE_INVALID",
   );
-  check(
-    FADES.includes(s.audioFade ?? 0),
-    "音频淡入淡出无效，请选择列表中的时长",
-  );
-  check(typeof s.alphaMask === "boolean", "透明遮罩开关无效");
-  check(/^#[0-9a-f]{6}$/i.test(s.alphaBackground), "背景颜色须为 #RRGGBB");
-  check(typeof s.hiRes === "boolean", "Hi-Res 开关无效");
-  check(typeof s.editFriendly === "boolean", "剪辑友好开关无效");
+  check(FADES.includes(s.audioFade ?? 0), "AUDIO_FADE_INVALID");
+  check(typeof s.alphaMask === "boolean", "ALPHA_MASK_SWITCH_INVALID");
+  check(/^#[0-9a-f]{6}$/i.test(s.alphaBackground), "ALPHA_BACKGROUND_INVALID");
+  check(typeof s.hiRes === "boolean", "HIRES_SWITCH_INVALID");
+  check(typeof s.editFriendly === "boolean", "EDIT_FRIENDLY_SWITCH_INVALID");
   if (s.hiRes)
     check(
       ["flac", "pcm_s16le"].includes(s.audio),
-      "Hi-Res 音频请选择 FLAC 或 PCM",
+      "HIRES_AUDIO_FORMAT_INVALID",
     );
   check(
     typeof s.preset === "string" && /^[a-zA-Z0-9_-]{1,24}$/.test(s.preset),
-    "速度预设无效",
+    "SPEED_PRESET_INVALID",
   );
-  if (s.rateControl === "bitrate")
-    check(s.bitrate > 0, "码率模式必须指定大于零的码率");
+  if (s.rateControl === "bitrate") check(s.bitrate > 0, "BITRATE_REQUIRED");
   if (s.outputMode === "custom")
     check(
       typeof s.outputDir === "string" && path.isAbsolute(s.outputDir),
-      "请选择有效的自定义绝对输出目录",
+      "OUTPUT_DIRECTORY_INVALID",
     );
   if (eng) {
     const speedValid =
@@ -193,26 +179,20 @@ function validate(s, meta) {
                   /^(ultrafast|superfast|veryfast|faster|fast|medium|slow|slower|veryslow|placebo)$/.test(
                     s.preset,
                   );
-    check(speedValid, "此编码器的速度预设无效，请重新选择");
+    check(speedValid, "ENCODER_SPEED_INVALID");
     if (["h264", "hevc"].includes(eng.codec))
-      check(s.quality <= 51, "H.264 / HEVC 质量值范围为 0–51");
+      check(s.quality <= 51, "H26X_QUALITY_INVALID");
     if (eng.codec === "prores")
       check(
         Number.isInteger(s.quality) && s.quality >= 0 && s.quality <= 64,
-        "ProRes 量化须为 0–64 的整数（0 为编码器默认）",
+        "PRORES_QUALITY_INVALID",
       );
     if (["libsvtav1", "libvpx-vp9", "prores_ks"].includes(s.encoder))
-      check(
-        s.rateControl !== "qp",
-        "此编码器不开放固定 QP，请选择恒定质量或码率",
-      );
-    check(eng.depths.includes(s.bitDepth), "所选编码器不支持此位深");
+      check(s.rateControl !== "qp", "ENCODER_QP_UNSUPPORTED");
+    check(eng.depths.includes(s.bitDepth), "ENCODER_DEPTH_UNSUPPORTED");
     if (s.container === "webm") {
-      check(["av1", "vp9"].includes(eng.codec), "WebM 仅支持 AV1 或 VP9");
-      check(
-        ["libopus", "none"].includes(s.audio),
-        "WebM 音频请选择 Opus 或无音频",
-      );
+      check(["av1", "vp9"].includes(eng.codec), "WEBM_VIDEO_UNSUPPORTED");
+      check(["libopus", "none"].includes(s.audio), "WEBM_AUDIO_UNSUPPORTED");
     }
     if (["mp4", "mov"].includes(s.container))
       check(
@@ -221,31 +201,34 @@ function validate(s, meta) {
           "none",
           ...(s.container === "mov" ? ["pcm_s16le"] : []),
         ].includes(s.audio),
-        "此容器不支持所选音频，请更换 MKV",
+        "CONTAINER_AUDIO_UNSUPPORTED",
       );
     if (eng.codec === "prores") {
-      check(["mov", "mkv"].includes(s.container), "ProRes 请选择 MOV 或 MKV");
+      check(
+        ["mov", "mkv"].includes(s.container),
+        "PRORES_CONTAINER_UNSUPPORTED",
+      );
       check(
         s.bitDepth === 10 && ["422", "444"].includes(s.chroma),
-        "ProRes 需要 10-bit 4:2:2 或 4:4:4",
+        "PRORES_FORMAT_REQUIRED",
       );
     }
     if (["qsv", "amf"].includes(eng.backend) || eng.codec === "av1")
-      check(s.chroma === "420", "此编码器仅开放已验证的 4:2:0");
+      check(s.chroma === "420", "ENCODER_CHROMA_420_REQUIRED");
     if (eng.codec === "h264" && eng.backend === "nvenc")
-      check(s.chroma !== "422", "H.264 NVENC 不支持此 4:2:2 配置");
+      check(s.chroma !== "422", "H264_NVENC_422_UNSUPPORTED");
   }
   if (s.resizeMode === "long")
     check(
       Number.isInteger(s.width) && s.width >= 2 && s.width <= 16384,
-      "长边须为 2–16384 的整数",
+      "LONG_EDGE_INVALID",
     );
   if (s.resizeMode === "custom") {
-    check(typeof s.keepAspect === "boolean", "保持宽高比开关无效");
+    check(typeof s.keepAspect === "boolean", "KEEP_ASPECT_SWITCH_INVALID");
     for (const key of ["width", "height"])
       check(
         Number.isInteger(s[key]) && s[key] >= 2 && s[key] <= 16384,
-        "分辨率宽高须为 2–16384 的整数",
+        "RESOLUTION_INTEGER_INVALID",
       );
   }
   if (s.alphaMode === "preserve") {
@@ -262,7 +245,7 @@ function validate(s, meta) {
           ["mp4", "mov", "mkv"].includes(s.container) &&
           s.bitDepth === 8 &&
           s.chroma === "420"),
-      "保留 Alpha 请选择 ProRes 4444（MOV/MKV、10-bit、4:4:4）、VP9（WebM/MKV、8-bit、4:2:0）或 NVEncC HEVC（MP4/MOV/MKV、8-bit、4:2:0），也可以改为“分离 Alpha”保持当前格式",
+      "ALPHA_FORMAT_UNSUPPORTED",
     );
   }
   if (meta) {
@@ -270,11 +253,11 @@ function validate(s, meta) {
       const size = dimensions(s, meta);
       check(
         size.width <= 16384 && size.height <= 16384,
-        "VSR 输出尺寸超过 16384 像素",
+        "VSR_OUTPUT_SIZE_INVALID",
       );
     }
     if (s.alphaMode === "preserve")
-      check(meta.hasAlpha, "源视频没有可读 Alpha，不能保留透明通道");
+      check(meta.hasAlpha, "SOURCE_ALPHA_REQUIRED");
     const size = dimensions(s, meta);
     if (s.resizeMode !== "source")
       check(
@@ -282,13 +265,27 @@ function validate(s, meta) {
           size.height >= 2 &&
           size.width <= 16384 &&
           size.height <= 16384,
-        "输出分辨率超出 2–16384 范围，请调整尺寸",
+        "OUTPUT_SIZE_INVALID",
       );
-    if (s.alphaMask) check(meta.hasAlpha, "源视频没有可读 Alpha，不能生成遮罩");
+    if (s.alphaMask) check(meta.hasAlpha, "SOURCE_ALPHA_MASK_REQUIRED");
     if (s.chroma === "420" || s.alphaMask)
-      check(!(size.width % 2 || size.height % 2), "4:2:0 要求宽高为偶数");
-    if (s.chroma === "422") check(!(size.width % 2), "4:2:2 要求宽度为偶数");
+      check(!(size.width % 2 || size.height % 2), "CHROMA_420_EVEN_REQUIRED");
+    if (s.chroma === "422")
+      check(!(size.width % 2), "CHROMA_422_EVEN_REQUIRED");
   }
-  return [...new Set(e)];
+  return uniqueIssues(e);
 }
-module.exports = { filename, validate };
+function uniqueIssues(issues) {
+  return [
+    ...new Map(
+      issues.map((issue) => [
+        JSON.stringify([issue.code, issue.params, issue.message]),
+        issue,
+      ]),
+    ).values(),
+  ];
+}
+function validate(s, meta) {
+  return [...new Set(validateIssues(s, meta).map((issue) => issue.message))];
+}
+module.exports = { filename, validate, validateIssues };

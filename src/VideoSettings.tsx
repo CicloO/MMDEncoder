@@ -1,3 +1,4 @@
+import { t, localeRuntime } from "./i18n";
 import { Button, Field, Select } from "./components";
 import { BackgroundColor } from "./BackgroundColor";
 import { RtxSettings } from "./RtxSettings";
@@ -11,8 +12,8 @@ import {
 import type { Settings, Engine, Job, Preview, State } from "./types";
 const options = (values: string[]) =>
   values.map((value) => ({ value, label: value }));
-const frameOptions = [
-  { value: "source", label: "保持源帧率" },
+const frameOptions = () => [
+  { value: "source", label: t("video.fpsSource") },
   ...["23.976", "24", "25", "29.97", "30", "50", "59.94", "60"].map((v) => ({
     value:
       (
@@ -22,9 +23,14 @@ const frameOptions = [
           "59.94": "60000/1001",
         } as Record<string, string>
       )[v] || v,
-    label: `${v} FPS`,
+    label: t("video.fpsOption", {
+      fps: localeRuntime.number(Number(v), {
+        useGrouping: false,
+        maximumFractionDigits: 3,
+      }),
+    }),
   })),
-  { value: "custom", label: "自定义帧率" },
+  { value: "custom", label: t("video.fpsCustom") },
 ];
 
 export function VideoSettings({
@@ -84,7 +90,10 @@ export function VideoSettings({
     const value = Number(s?.[key]);
     const fieldError =
       !Number.isFinite(value) || value < min || value > max
-        ? `请输入 ${min}–${max} 范围内的数值。`
+        ? t("video.numberRange", {
+            min: localeRuntime.number(min),
+            max: localeRuntime.number(max),
+          })
         : undefined;
     return (
       <Field id={key} label={label} hint={hint} error={fieldError}>
@@ -122,7 +131,7 @@ export function VideoSettings({
           <div className="form-row">
             <Select
               id="container"
-              label="封装格式"
+              label={t("video.container")}
               value={s.container}
               options={options(["mp4", "mkv", "mov", "webm"]).map((o) => ({
                 ...o,
@@ -132,25 +141,40 @@ export function VideoSettings({
             />
             <Select
               id="bitDepth"
-              label="色彩位深"
+              label={t("video.depth")}
               value={s.bitDepth}
               options={[
-                { value: 8, label: "8-bit" },
-                { value: 10, label: "10-bit" },
+                {
+                  value: 8,
+                  label: t("video.depthOption", {
+                    bits: localeRuntime.number(8),
+                  }),
+                },
+                {
+                  value: 10,
+                  label: t("video.depthOption", {
+                    bits: localeRuntime.number(10),
+                  }),
+                },
               ]}
               onChange={(v) => set("bitDepth", Number(v))}
             />
           </div>
           <Select
             id="encoder"
-            label="视频编码器"
+            label={t("video.encoder")}
             value={s.encoder}
             options={[
               ...(!engine
                 ? [
                     {
                       value: s.encoder,
-                      label: `${s.encoder} · ${detecting ? "检测中" : "不可用"}`,
+                      label: t("video.encoderAvailability", {
+                        encoder: s.encoder,
+                        status: detecting
+                          ? t("video.detecting")
+                          : t("video.unavailable"),
+                      }),
                     },
                   ]
                 : []),
@@ -182,33 +206,41 @@ export function VideoSettings({
             }}
             hint={
               detecting
-                ? "正在试编码，完成后显示当前电脑可用的编码器。"
-                : "只显示已通过本机试编码的编码器。"
+                ? t("video.encoderDetectingHint")
+                : t("video.encoderAvailableHint")
             }
           />
           <div className="form-row">
             <Select
               id="rateControl"
               disabled={s.encoder === "prores_ks"}
-              label="码率控制"
+              label={t("video.rateControl")}
               value={s.rateControl}
               options={[
                 {
                   value: "quality",
-                  label: backend === "cpu" ? "恒定质量 · CRF" : "目标质量 · CQ",
+                  label:
+                    backend === "cpu" ? t("video.rateCRF") : t("video.rateCQ"),
                 },
-                { value: "qp", label: "固定量化 · QP" },
-                { value: "bitrate", label: "目标码率" },
+                { value: "qp", label: t("video.rateQP") },
+                { value: "bitrate", label: t("video.rateBitrate") },
               ]}
               onChange={(v) => set("rateControl", v)}
             />
             {s.rateControl === "bitrate"
-              ? fieldNumber("bitrate", "码率 · kbps", 100, 1000000)
+              ? fieldNumber("bitrate", t("video.bitrate"), 100, 1000000)
               : fieldNumber(
                   "quality",
                   s.encoder === "prores_ks"
-                    ? "画质 · 量化"
-                    : `画质 · ${s.rateControl === "qp" ? "QP" : backend === "cpu" ? "CRF" : "CQ"}`,
+                    ? t("video.quantizer")
+                    : t("video.qualityLabel", {
+                        mode:
+                          s.rateControl === "qp"
+                            ? "QP"
+                            : backend === "cpu"
+                              ? "CRF"
+                              : "CQ",
+                      }),
                   0,
                   s.encoder === "prores_ks"
                     ? 64
@@ -219,18 +251,18 @@ export function VideoSettings({
           </div>
           <p className="hint quality-hint">
             {s.encoder === "prores_ks"
-              ? "ProRes 量化 1–64：数值越小质量越高、文件越大；0 为编码器默认（实测约为量化 12 的 4 倍大小）。4:2:2 对应 HQ，4:4:4 对应 4444。"
+              ? t("video.proresHint")
               : s.rateControl === "bitrate"
-                ? "目标平均码率（kbps）：数值越大通常质量越高、文件越大；单遍 VBR 实际码率会波动，不保证文件大小。"
+                ? t("video.bitrateHint")
                 : s.rateControl === "qp"
-                  ? "QP 固定量化：数值越小压缩越少；复杂场景使用相同量化，质量和码率会波动。"
+                  ? t("video.qpHint")
                   : backend === "cpu"
-                    ? "CRF 恒定质量：数值越小质量越高；码率随画面复杂度变化，不同软件编码器的 CRF 不可直接比较。"
-                    : "CQ 目标质量：硬件按画面分配码率，数值越小通常质量越高；CQ 与 CRF 不在相同尺度。"}
+                    ? t("video.crfHint")
+                    : t("video.cqHint")}
           </p>
           <Select
             id="speed"
-            label="编码预设 · 速度与压缩效率"
+            label={t("video.speed")}
             value={s.preset}
             disabled={s.encoder === "prores_ks"}
             options={options(
@@ -255,38 +287,38 @@ export function VideoSettings({
             onChange={(v) => set("preset", v)}
             hint={
               s.encoder === "prores_ks"
-                ? "ProRes 使用 Profile 决定压缩配置。"
+                ? t("video.speedProresHint")
                 : backend === "nvenc" || backend === "nvencc"
-                  ? "p1 最快，p7 压缩效率优先；具体速度依显卡和处理链。"
+                  ? t("video.speedNvencHint")
                   : s.encoder === "libsvtav1"
-                    ? "AV1 数字越小越慢、效率通常越高；数字越大越快。"
+                    ? t("video.speedAv1Hint")
                     : backend === "amf"
-                      ? "speed 优先速度，quality 优先压缩效率，balanced 折中。"
-                      : "veryfast / ultrafast 更快；slow / veryslow 更慢、压缩效率通常更高。"
+                      ? t("video.speedAmfHint")
+                      : t("video.speedCpuHint")
             }
           />
           <div className="divider" />
           <Select
             id="resizeMode"
-            label="输出分辨率"
+            label={t("video.resize")}
             value={s.resizeMode || "source"}
             options={[
-              { value: "source", label: "保持源分辨率" },
+              { value: "source", label: t("video.resizeSource") },
               {
                 value: "long",
-                label: "按长边缩放 · 自动识别横竖屏",
+                label: t("video.resizeLong"),
               },
-              { value: "custom", label: "自定义分辨率" },
+              { value: "custom", label: t("video.resizeCustom") },
             ]}
             onChange={(v) => set("resizeMode", v)}
           />
           {s.resizeMode === "long" &&
             fieldNumber(
               "width",
-              "长边 · px",
+              t("video.longEdge"),
               2,
               16384,
-              "横屏视频用作宽度，竖屏视频用作高度，另一边按原比例计算。",
+              t("video.longEdgeHint"),
             )}
           {s.resizeMode === "custom" && (
             <>
@@ -311,8 +343,10 @@ export function VideoSettings({
                     <Field
                       key={axis}
                       id={axis}
-                      label={axis === "width" ? "宽度 · px" : "高度 · px"}
-                      error={invalid ? "请输入 2–16384 的整数" : undefined}
+                      label={
+                        axis === "width" ? t("video.width") : t("video.height")
+                      }
+                      error={invalid ? t("video.sizeInteger") : undefined}
                     >
                       <input
                         id={axis}
@@ -372,36 +406,34 @@ export function VideoSettings({
                   }
                 />
                 <span>
-                  <strong>保持宽高比</strong>
-                  <small>
-                    默认开启；按每个源视频的比例计算另一边，取最接近的偶数像素。
-                  </small>
+                  <strong>{t("video.keepAspect")}</strong>
+                  <small>{t("video.keepAspectHint")}</small>
                 </span>
               </label>
               {!job?.meta && s.keepAspect && (
-                <p className="hint">添加视频后自动计算另一边尺寸。</p>
+                <p className="hint">{t("video.keepAspectEmpty")}</p>
               )}
             </>
           )}
           <Select
             id="fps"
-            label="输出帧率"
+            label={t("video.fps")}
             value={
-              customFPS || !frameOptions.some((o) => o.value === s.fps)
+              customFPS || !frameOptions().some((o) => o.value === s.fps)
                 ? "custom"
                 : s.fps
             }
-            options={frameOptions}
+            options={frameOptions()}
             onChange={(v) => {
               setCustomFPS(v === "custom");
               if (v !== "custom") set("fps", v);
             }}
           />
-          {(customFPS || !frameOptions.some((o) => o.value === s.fps)) && (
+          {(customFPS || !frameOptions().some((o) => o.value === s.fps)) && (
             <Field
               id="custom-fps"
-              label="自定义 FPS"
-              hint="1–240，可输入 30 或 30000/1001"
+              label={t("video.customFPS")}
+              hint={t("video.fpsHint")}
             >
               <input
                 id="custom-fps"
@@ -410,16 +442,14 @@ export function VideoSettings({
               />
             </Field>
           )}
-          <p className="hint">
-            降帧率保持时长与音画同步；提高帧率使用重复帧，不生成运动细节。
-          </p>
+          <p className="hint">{t("video.fpsConversionHint")}</p>
         </>
       )}
       {tab === "audio" && (
         <>
           <Select
             id="audio"
-            label="音频编码"
+            label={t("video.audio")}
             value={s.audio}
             options={Object.entries(audioLabels()).map(([value, label]) => ({
               value,
@@ -429,37 +459,41 @@ export function VideoSettings({
           />
           <Select
             id="audioBitrate"
-            label="音频码率"
+            label={t("video.audioBitrate")}
             value={s.audioBitrate ?? 0}
             options={[
               {
                 value: 0,
                 label:
-                  s.audio === "aac" ? "默认 · 192 kbps" : "默认 · 编码器自动",
+                  s.audio === "aac"
+                    ? t("video.audioBitrateDefaultAac")
+                    : t("video.audioBitrateDefault"),
               },
               ...[64, 96, 128, 160, 192, 256, 320, 384, 512].map((value) => ({
                 value,
-                label: `${value} kbps`,
+                label: t("video.bitrateOption", {
+                  bitrate: localeRuntime.number(value),
+                }),
               })),
             ]}
             onChange={(v) => set("audioBitrate", Number(v))}
             disabled={!["aac", "libopus"].includes(s.audio)}
             hint={
               s.audio === "none"
-                ? "不保留音频，无需设置码率。"
+                ? t("video.audioBitrateNoneHint")
                 : ["flac", "pcm_s16le"].includes(s.audio)
-                  ? "无损或未压缩音频不使用目标码率。"
-                  : "目标码率；实际码率会随编码器和声音内容变化。"
+                  ? t("video.audioBitrateLosslessHint")
+                  : t("video.audioBitrateHint")
             }
           />
           <Select
             id="audioFade"
-            label="音频淡入淡出"
+            label={t("video.audioFade")}
             value={String(s.audioFade ?? 0)}
             options={fadeOptions()}
             disabled={s.audio === "none"}
             hint={
-              s.audio === "none" ? "不保留音频，无需淡入淡出。" : fadeHint()
+              s.audio === "none" ? t("video.audioFadeNoneHint") : fadeHint()
             }
             onChange={(v) => set("audioFade", Number(v))}
           />
@@ -480,28 +514,39 @@ export function VideoSettings({
               }
             />
             <span>
-              Hi-Res 音频（24-bit，低于 48 kHz 时升到 2 倍采样率）
+              {t("video.hiRes")}
               <small className="hint hires-hint">
                 {!["flac", "pcm_s16le"].includes(s.audio)
-                  ? "选择 FLAC 或 PCM 音频后可用。"
-                  : (() => {
-                      const a = job?.audioPath
-                        ? job.audioMeta
-                        : job?.meta?.audio;
-                      if (!a?.sampleRate) return "按每个视频自己的音轨计算。";
-                      const rate =
-                        a.sampleRate < 48000 ? a.sampleRate * 2 : a.sampleRate;
-                      return `当前素材：${a.sampleRate / 1000} kHz / ${a.float ? "浮点" : a.bits ? a.bits + "-bit" : "位深未知"} → ${rate / 1000} kHz / 24-bit。`;
-                    })() + "升采样不会提高音质。"}
+                  ? t("video.hiResDisabled")
+                  : t("video.hiResDetails", {
+                      source: (() => {
+                        const a = job?.audioPath
+                          ? job.audioMeta
+                          : job?.meta?.audio;
+                        if (!a?.sampleRate) return t("video.hiResPerSource");
+                        const rate =
+                          a.sampleRate < 48000
+                            ? a.sampleRate * 2
+                            : a.sampleRate;
+                        return t("video.hiResCurrent", {
+                          fromRate: localeRuntime.number(a.sampleRate / 1000),
+                          depth: a.float
+                            ? t("video.audioFloat")
+                            : a.bits
+                              ? t("video.depthOption", {
+                                  bits: localeRuntime.number(a.bits),
+                                })
+                              : t("video.audioDepthUnknown"),
+                          toRate: localeRuntime.number(rate / 1000),
+                        });
+                      })(),
+                    })}
               </small>
             </span>
           </label>
           <div className="help-box">
             <Info size={17} />
-            <p>
-              保持源采样率与声道；MP4 用 AAC，FLAC 用
-              MKV。要换成别的音频，点队列里的 ♪ 为该视频选择，按视频时长截取。
-            </p>
+            <p>{t("video.audioHint")}</p>
           </div>
           <label className="checkbox-row">
             <input
@@ -510,9 +555,9 @@ export function VideoSettings({
               onChange={(e) => setAutoAlignAudio(e.target.checked)}
             />
             <span>
-              替换音频后自动对齐
+              {t("video.autoAlign")}
               <small className="hint hires-hint">
-                以视频自带的声音为参考；对不上时不应用，可在“当前素材”里点“对齐”检视、微调。
+                {t("video.autoAlignHint")}
               </small>
             </span>
           </label>
@@ -521,9 +566,16 @@ export function VideoSettings({
               const a = (job!.audioPath ? job!.audioMeta : job!.meta!.audio)!;
               return (
                 <div className="mini-facts">
-                  <span>{job!.audioPath ? "替换音频" : "源音频"}</span>
+                  <span>
+                    {job!.audioPath
+                      ? t("video.replacementAudio")
+                      : t("video.sourceAudio")}
+                  </span>
                   <strong>
-                    {a.codec.toUpperCase()} / {a.sampleRate / 1000} kHz
+                    {t("video.audioFacts", {
+                      codec: a.codec.toUpperCase(),
+                      rate: localeRuntime.number(a.sampleRate / 1000),
+                    })}
                   </strong>
                 </div>
               );
@@ -545,21 +597,21 @@ export function VideoSettings({
         <>
           <Select
             id="alphaMode"
-            label="透明通道处理"
+            label={t("video.alpha")}
             // "split" = colour video without alpha + separate mask
             // (stored as alphaMode discard + alphaMask, any format).
             value={
               s.alphaMask && s.alphaMode === "discard" ? "split" : s.alphaMode
             }
             options={[
-              { value: "discard", label: "移除 Alpha" },
-              { value: "preserve", label: "保留 Alpha" },
+              { value: "discard", label: t("video.alphaDiscard") },
+              { value: "preserve", label: t("video.alphaPreserve") },
               {
                 value: "split",
-                label: "分离 Alpha · 彩色视频 + 黑白遮罩",
+                label: t("video.alphaSplit"),
               },
-              { value: "mask", label: "分离 Alpha · 仅黑白遮罩" },
-              { value: "color", label: "合成到纯色" },
+              { value: "mask", label: t("video.alphaMask") },
+              { value: "color", label: t("video.alphaColor") },
             ]}
             onChange={(v) =>
               changed({
@@ -588,12 +640,7 @@ export function VideoSettings({
                 <Plus size={16} />
                 <div className="alpha-swatch mask">A</div>
               </div>
-              <p className="hint">
-                {
-                  "彩色视频不含 Alpha，可用任意编码器和封装；另外导出同尺寸、同帧率的黑白遮罩（_alpha 后缀，无损）。"
-                }
-                白色表示不透明，黑色表示透明，灰色保留半透明信息。
-              </p>
+              <p className="hint">{t("video.alphaSplitHint")}</p>
             </>
           )}
           {s.alphaMode === "mask" && (
@@ -601,20 +648,13 @@ export function VideoSettings({
               <div className="alpha-diagram">
                 <div className="alpha-swatch mask">A</div>
               </div>
-              <p className="hint">
-                只导出同尺寸、同帧率的黑白遮罩（_alpha
-                后缀，无损，不含音频），不导出彩色视频。WebM 用 VP9，其他格式用
-                H.264；画质页的编码器设置不影响遮罩。白色表示不透明，黑色表示透明，灰色保留半透明信息。
-              </p>
+              <p className="hint">{t("video.alphaMaskHint")}</p>
             </>
           )}
           {(s.alphaMask || s.alphaMode === "mask") &&
             job?.meta &&
             !job.meta.hasAlpha && (
-              <p className="inline-error">
-                当前素材没有可读取的 Alpha
-                通道，不能导出遮罩。请选择其他处理方式或包含透明通道的视频。
-              </p>
+              <p className="inline-error">{t("video.alphaMissing")}</p>
             )}
         </>
       )}
@@ -622,27 +662,27 @@ export function VideoSettings({
         <>
           <Select
             id="outputMode"
-            label="保存位置"
+            label={t("video.outputMode")}
             value={s.outputMode}
             options={[
-              { value: "source", label: "源文件目录" },
-              { value: "encoded", label: "源目录 \\ Encoded" },
-              { value: "custom", label: "自定义统一目录" },
+              { value: "source", label: t("video.outputSource") },
+              { value: "encoded", label: t("video.outputEncoded") },
+              { value: "custom", label: t("video.outputCustom") },
             ]}
             onChange={(v) => set("outputMode", v)}
           />
           {s.outputMode === "custom" && (
-            <Field id="outputDir" label="统一输出目录">
+            <Field id="outputDir" label={t("video.outputDirectory")}>
               <div className="input-action">
                 <input
                   id="outputDir"
                   value={s.outputDir}
                   onChange={(e) => set("outputDir", e.target.value)}
-                  placeholder="选择文件夹"
+                  placeholder={t("video.pickFolder")}
                 />
                 <Button
-                  title="选择输出文件夹"
-                  aria-label="选择输出文件夹"
+                  title={t("video.pickOutputFolder")}
+                  aria-label={t("video.pickOutputFolder")}
                   onClick={pickDirectory}
                 >
                   <Folder size={17} />
@@ -650,14 +690,12 @@ export function VideoSettings({
               </div>
             </Field>
           )}
-          <p className="hint">
-            自动记住上一次选择。不同源目录分别创建自己的 Encoded 文件夹。
-          </p>
+          <p className="hint">{t("video.outputHint")}</p>
           <div className="divider" />
           <Field
             id="nameTemplate"
-            label="文件名模板"
-            hint="扩展名自动添加，同名文件自动编号。"
+            label={t("video.nameTemplate")}
+            hint={t("video.nameTemplateHint")}
           >
             <input
               id="nameTemplate"
@@ -676,10 +714,10 @@ export function VideoSettings({
               </Button>
             ))}
           </div>
-          <p className="hint">原名 / 预设名 / 日期 / 队列序号</p>
+          <p className="hint">{t("video.templateTokens")}</p>
           <div className="path-preview">
-            <span>输出示例</span>
-            <code>{preview?.output || "添加视频后显示完整路径"}</code>
+            <span>{t("video.outputExample")}</span>
+            <code>{preview?.output || t("video.outputExampleEmpty")}</code>
           </div>
         </>
       )}
@@ -688,7 +726,7 @@ export function VideoSettings({
           <div className="form-row">
             <Select
               id="chroma"
-              label="色度采样"
+              label={t("video.chroma")}
               value={s.chroma}
               options={[
                 { value: "420", label: "4:2:0" },
@@ -699,18 +737,18 @@ export function VideoSettings({
             />
             <Select
               id="colorRange"
-              label="输出范围"
+              label={t("video.colorRange")}
               value={s.colorRange}
               options={[
-                { value: "tv", label: "有限 · TV" },
-                { value: "pc", label: "全范围 · PC" },
+                { value: "tv", label: t("video.rangeTv") },
+                { value: "pc", label: t("video.rangePc") },
               ]}
               onChange={(v) => set("colorRange", v)}
             />
           </div>
           <Select
             id="colorSpace"
-            label="色彩空间 · SDR"
+            label={t("video.colorSpace")}
             value={s.colorSpace}
             options={options(["bt709", "bt601", "bt2020"])}
             onChange={(v) => set("colorSpace", v)}
@@ -722,50 +760,62 @@ export function VideoSettings({
               onChange={(e) => set("editFriendly", e.target.checked)}
             />
             <span>
-              剪辑友好：每秒一个关键帧
+              {t("video.editFriendly")}
               <small className="hint hires-hint">
                 {s.gop >= 0
-                  ? "已手动设置 GOP 间隔，此项不生效。"
-                  : "成片可以按约 1 秒的间隔无损裁切；同画质下文件约大 2%–5%（软件编码更多）。"}
+                  ? t("video.editFriendlyManual")
+                  : t("video.editFriendlyHint")}
               </small>
             </span>
           </label>
           <div className="form-row">
-            {fieldNumber("gop", "GOP 间隔", -1, 10000, "-1 为自动")}
-            {fieldNumber("bframes", "B 帧", -1, 16, "-1 为自动")}
+            {fieldNumber(
+              "gop",
+              t("video.gop"),
+              -1,
+              10000,
+              t("video.automaticNegative"),
+            )}
+            {fieldNumber(
+              "bframes",
+              t("video.bframes"),
+              -1,
+              16,
+              t("video.automaticNegative"),
+            )}
           </div>
           <div className="form-row">
             {fieldNumber(
               "lookahead",
-              "前向分析帧数",
+              t("video.lookahead"),
               0,
               32,
-              lookaheadSupported ? undefined : "仅 NVIDIA 硬件编码",
+              lookaheadSupported ? undefined : t("video.lookaheadHint"),
             )}
             {fieldNumber(
               "lookaheadLevel",
-              "前向分析级别",
+              t("video.lookaheadLevel"),
               0,
               3,
-              lookaheadLevelSupported ? undefined : "仅 NVIDIA HEVC / AV1",
+              lookaheadLevelSupported
+                ? undefined
+                : t("video.lookaheadLevelHint"),
             )}
           </div>
           <div className="command-row">
             <details className="command-details">
-              <summary>查看完整命令</summary>
-              <pre>{preview?.command || "添加视频后生成命令"}</pre>
+              <summary>{t("video.showCommand")}</summary>
+              <pre>{preview?.command || t("video.commandEmpty")}</pre>
             </details>
             <Button disabled={!job} onClick={copy}>
               <Copy size={14} />
-              复制命令
+              {t("video.copyCommand")}
             </Button>
           </div>
         </>
       )}
       {s.encoder.startsWith("nvencc:") && (
-        <p className="help-box">
-          NVEncC 将先生成临时中间视频，可能需要较多磁盘空间；完成后自动清理。
-        </p>
+        <p className="help-box">{t("video.nvenccHint")}</p>
       )}
     </form>
   );

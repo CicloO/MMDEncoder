@@ -1,7 +1,12 @@
 import zhCN from "../locales/zh-CN.json";
 import registry from "../locales/registry.json";
 import { createTranslator } from "../locales/runtime.mjs";
-import { formatDescriptor, serializeError } from "../locales/messages.mjs";
+import { formatVideoSummary } from "../locales/video-summary.mjs";
+import {
+  formatDescriptor,
+  serializeError,
+  messageDescriptor,
+} from "../locales/messages.mjs";
 import type {
   MessageDescriptor,
   StageDescriptor,
@@ -47,5 +52,15 @@ export function stageMessage(value: StageDescriptor | string) {
 }
 
 export function summaryMessage(value: MessageDescriptor | string) {
-  return formatDescriptor(localeRuntime, "message", value);
+  return (
+    formatVideoSummary(localeRuntime, value) ??
+    formatDescriptor(localeRuntime, "message", value)
+  );
+}
+export function notification(code: string, params: MessageParams = {}) {
+  return messageDescriptor(
+    code,
+    params,
+    localeRuntime.t(`message.${code}`, params),
+  );
 }

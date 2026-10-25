@@ -1,7 +1,13 @@
+import { t, summaryMessage } from "./i18n";
 import { Info, X } from "lucide-react";
 import { Button } from "./components";
 import type { Settings } from "./types";
-export type VideoFix = { id: string; label: string; patch: Partial<Settings> };
+import type { MessageDescriptor } from "./i18n";
+export type VideoFix = Partial<MessageDescriptor> & {
+  id: string;
+  label: string;
+  patch: Partial<Settings>;
+};
 export function VideoFeedback({
   message,
   suggestions,
@@ -21,10 +27,20 @@ export function VideoFeedback({
       <span>{message}</span>
       {suggestions.map((fix) => (
         <Button key={fix.id} disabled={running} onClick={() => onFix(fix)}>
-          {fix.label}
+          {fix.code
+            ? summaryMessage({
+                code: fix.code,
+                params: fix.params || {},
+                message: fix.message || fix.label,
+              })
+            : fix.label}
         </Button>
       ))}
-      <Button variant="ghost" aria-label="关闭提示" onClick={onDismiss}>
+      <Button
+        variant="ghost"
+        aria-label={t("video.closeHint")}
+        onClick={onDismiss}
+      >
         <X size={15} />
       </Button>
     </div>

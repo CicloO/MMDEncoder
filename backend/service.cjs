@@ -421,6 +421,7 @@ function createService({
           e.stdout = stdout;
           e.stderr = stderr;
           e.code = code;
+          e.systemCode = err?.code;
           reject(e);
         } else resolve({ stdout, stderr });
       };
@@ -724,7 +725,10 @@ function createService({
     isDetecting: () => state.detecting,
     isRunning: () => state.running,
     setRunning: (value) => (state.running = value),
-    onNotice: (message) => (state.notice = message),
+    onNotice: (message) => {
+      state.notice = typeof message === "string" ? message : message.message;
+      state.noticeData = typeof message === "string" ? undefined : message;
+    },
     isStopped: () => stopped,
     setStopped: (value) => (stopped = value),
     waitDetection: () => detectPromise,
