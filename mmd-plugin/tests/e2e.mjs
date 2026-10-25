@@ -42,14 +42,22 @@ const check = (ok, what) => {
   console.log(`${ok ? "PASS" : "FAIL"} ${what}`);
   if (!ok) failures++;
 };
-const probe = (file) =>
-  JSON.parse(
-    execFileSync(
-      fp,
-      ["-v", "error", "-show_streams", "-show_format", "-of", "json", file],
-      { encoding: "utf8" },
-    ),
-  );
+// An unreadable or missing file gives no streams, so the checks that use it
+// fail and are reported instead of ending the whole run.
+const probe = (file) => {
+  try {
+    return JSON.parse(
+      execFileSync(
+        fp,
+        ["-v", "error", "-show_streams", "-show_format", "-of", "json", file],
+        { encoding: "utf8" },
+      ),
+    );
+  } catch (e) {
+    console.log(`probe failed for ${file}: ${e.message.split("\n")[0]}`);
+    return { streams: [], format: {} };
+  }
+};
 const pixel = (file, y) =>
   execFileSync(ff, [
     "-v",

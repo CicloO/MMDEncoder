@@ -230,7 +230,7 @@ void showSettings(HWND parent, HINSTANCE module, const std::wstring& dir, Proces
   ctx.appExe = config[L"appExe"].s;
   ctx.helper = config[L"helper"].s;
 
-  DialogTemplate t(L"MMDEncoder 导出设置", 270, 162);
+  DialogTemplate t(L"MMDEncoder 导出设置", 270, 150);
   const WORD STATIC_ = 0x0082, BUTTON_ = 0x0080, COMBO_ = 0x0085;
   t.control(0xFFFF, STATIC_, SS_LEFT, 10, 8, 250, 9, L"导出预设");
   t.control(IDC_PRESET, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 19, 250, 160, L"");
@@ -242,12 +242,12 @@ void showSettings(HWND parent, HINSTANCE module, const std::wstring& dir, Proces
   t.control(IDC_MASK, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 79, 120, 80, L"");
   t.control(0xFFFF, STATIC_, SS_LEFT, 140, 68, 120, 9, L"音频淡入淡出");
   t.control(IDC_FADE, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 140, 79, 120, 80, L"");
-  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 102, 250, 34,
-            L"成片保存在 AVI 旁并自动加音频；这里的选项优先于预设，并与 MMDEncoder 同步。");
-  t.control(IDC_OPEN_APP, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 10, 140, 80, 15, L"打开 MMDEncoder");
-  t.control(IDC_TEST, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 94, 140, 50, 15, L"编码测试");
-  t.control(IDOK, BUTTON_, BS_DEFPUSHBUTTON | WS_TABSTOP, 148, 140, 54, 15, L"确定");
-  t.control(IDCANCEL, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 206, 140, 54, 15, L"取消");
+  t.control(0xFFFF, STATIC_, SS_LEFT, 10, 102, 250, 18,
+            L"自动合成音频，完成后删除占位 AVI。此处选项优先级高于 MMDEncoder 预设本身。");
+  t.control(IDC_OPEN_APP, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 10, 128, 80, 15, L"打开 MMDEncoder");
+  t.control(IDC_TEST, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 94, 128, 50, 15, L"编码测试");
+  t.control(IDOK, BUTTON_, BS_DEFPUSHBUTTON | WS_TABSTOP, 148, 128, 54, 15, L"确定");
+  t.control(IDCANCEL, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 206, 128, 54, 15, L"取消");
   if (DialogBoxIndirectParamW(module, t.get(), parent, settingsProc, (LPARAM)&ctx) != 1) return;
 
   SYSTEMTIME st;
