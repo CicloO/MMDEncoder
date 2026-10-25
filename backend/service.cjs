@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const crypto = require("node:crypto");
-const { spawn } = require("node:child_process");
+const { createRunner } = require("./process-runner.cjs");
 const core = require("./core.cjs");
 const { probe: probeEnhancements } = require("./enhancements.cjs");
 const media = require("./media.cjs");
@@ -367,107 +367,14 @@ function createService({
         path.basename(backup);
     }
   }
-  function run(
-    exe,
-    args,
-    { timeout = 0, onData, encoding = false, stdin } = {},
-  ) {
-    return new Promise((resolve, reject) => {
-      if (disposed) return reject(Error("应用已关闭"));
-      const child = spawn(exe, args, {
-        windowsHide: true,
-        stdio: [stdin ? "pipe" : "ignore", "pipe", "pipe"],
-        shell: false,
-      });
-      children.add(child);
-      if (stdin) {
-        // The reader may stop early (error, cancel); the writer then fails.
-        child.stdin.on("error", () => {});
-        stdin.pipe(child.stdin);
-      }
-      if (encoding) active = child;
-      let stdout = "",
-        stderr = "",
-        timed = false;
-      const timer = timeout
-        ? setTimeout(() => {
-            timed = true;
-            child.kill();
-          }, timeout)
-        : null;
-      const data = (stream, b) => {
-        const s = b.toString();
-        if (stream === "out") stdout = (stdout + s).slice(-1024 * 1024);
-        else stderr = (stderr + s).slice(-1024 * 1024);
-        onData?.(s, stream);
-      };
-      child.stdout.on("data", (b) => data("out", b));
-      child.stderr.on("data", (b) => data("err", b));
-      let settled = false;
-      const done = (err, code) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        children.delete(child);
-        if (active === child) active = null;
-        if (err || code !== 0) {
-          const e = Error(
-            timed
-              ? "引擎运行超时"
-              : err
-                ? err.message
-                : stderr.trim().slice(-3000) || "编码器退出：" + code,
-          );
-          e.stdout = stdout;
-          e.stderr = stderr;
-          e.code = code;
-          e.systemCode = err?.code;
-          reject(e);
-        } else resolve({ stdout, stderr });
-      };
-      child.on("error", (e) => done(e));
-      child.on("close", (code) => done(null, code));
-    });
-  }
-  // A command fed by another program's output (FFmpeg -> NVEncC). Fails if
-  // either side fails: a writer that stops early would otherwise look like
-  // a short but complete video to the reader.
-  function runPiped(c, options) {
-    if (disposed) return Promise.reject(Error("应用已关闭"));
-    const writer = spawn(c.pipeFrom.exe, c.pipeFrom.args, {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      shell: false,
-    });
-    children.add(writer);
-    let stderr = "",
-      failure = null;
-    writer.stderr.on("data", (b) => {
-      const s = b.toString();
-      stderr = (stderr + s).slice(-64 * 1024);
-      options.onData?.(s, "err");
-    });
-    writer.on("error", (e) => (failure = e));
-    const written = new Promise((resolve) =>
-      writer.on("close", (code) => {
-        children.delete(writer);
-        resolve(code);
-      }),
-    );
-    const read = run(c.exe, c.args, { ...options, stdin: writer.stdout });
-    read.catch(() => writer.kill());
-    return Promise.allSettled([read, written]).then(([r, code]) => {
-      if (r.status === "rejected") throw r.reason;
-      if (failure || code.value !== 0)
-        throw Error(
-          failure?.message ||
-            stderr.trim().slice(-3000) ||
-            "预处理退出：" + code.value,
-        );
-      return r.value;
-    });
-  }
-  run.piped = runPiped; // for callers that only get run (RTX check)
+  const run = createRunner({
+    isDisposed: () => disposed,
+    children,
+    getActive: () => active,
+    setActive: (value) => {
+      active = value;
+    },
+  });
   async function locate() {
     if (locatePromise) return locatePromise;
     locatePromise = (async () => {

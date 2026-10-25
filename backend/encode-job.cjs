@@ -11,6 +11,7 @@ const {
 const fs = require("node:fs");
 const path = require("node:path");
 const core = require("./core.cjs");
+const { commandProcesses } = require("./command-processes.cjs");
 const { signature: enhancementSignature } = require("./enhancements.cjs");
 function createEncoder({
   engineInfo,
@@ -114,7 +115,11 @@ function createEncoder({
         append(job, "\n" + core.commandText([c]) + "\n");
         emit();
         let progressBuffer = "";
-        await (c.pipeFrom ? run.piped : (c, o) => run(c.exe, c.args, o))(c, {
+        await (
+          commandProcesses(c).length > 1
+            ? run.piped
+            : (c, o) => run(c.exe, c.args, o)
+        )(c, {
           encoding: true,
           onData: (t, stream) => {
             append(job, t);
