@@ -69,6 +69,9 @@ try {
   await slider.focus();
   await page.keyboard.press("ArrowRight");
   await expect(slider).toHaveValue("31");
+  await expect(page.locator("#trim-cut-landing")).toContainText(
+    "入点将落在第 30 帧",
+  );
   await expect
     .poll(() =>
       page.evaluate(
@@ -90,6 +93,13 @@ try {
   for (const locale of ["en-XA", "en-XB", "zh-CN", "unsupported", "en-XA"]) {
     await page.evaluate((locale) => window.alignLocale.choose(locale), locale);
     const expanded = locale.startsWith("en-X");
+    await expect(page.locator("#trim-cut-landing")).toHaveText(
+      expanded
+        ? labels["trim.cutLanding"]
+            .replace("{from}", "30")
+            .replace("{to}", "30")
+        : "入点将落在第 30 帧；出点将落在第 30 帧（不包含该帧）。",
+    );
     await expect(
       page.getByRole("heading", {
         name: expanded ? labels["trim.exportSettings"] : "导出设置",

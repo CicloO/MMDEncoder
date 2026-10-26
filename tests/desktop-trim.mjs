@@ -119,13 +119,16 @@ try {
   await page.keyboard.press("ArrowLeft");
   await expect.poll(value).toBe(30);
 
-  // Smart cut on, but this file has no recorded encode settings (not made
-  // by MMDEncoder), so it cannot be smart-cut: the slider keeps snapping.
+  // Smart cut frees the playhead even when this untagged file cannot be
+  // smart-cut. Its actual cut points stay safe and are shown explicitly.
   await page.evaluate(() =>
     window.encoder.invoke("trimSmart", { smart: true }),
   );
   await page.mouse.click(ticks[1] + (ticks[2] - ticks[1]) * 0.4, y);
-  assert.equal(await value(), 30, "still snaps when smart cut cannot be used");
+  assert.equal(await value(), 42, "smart preview stays on the requested frame");
+  await expect(page.locator("#trim-cut-landing")).toContainText(
+    "入点将落在第 30 帧",
+  );
 
   await page.locator("#trim-audio").selectOption("none");
   const state = () =>

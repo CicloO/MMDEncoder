@@ -89,13 +89,21 @@ export function TrimTools({
   }, [ready?.id, ready?.from, ready?.to, o.mmdFrames]);
 
   const cuts = ready && ready.cuts !== "all" ? (ready.cuts as number[]) : null;
-  // Without smart cut (or where it can't be used) a cut can only start at
-  // these frames, so the slider snaps to them.
-  const snapping = !!cuts && (!t.smart || !!ready?.smartBlocker);
-  const nearestCut = (f: number) =>
-    cuts!.reduce((best, c) =>
+  // Smart cut frees preview navigation even when this source cannot be
+  // smart-cut. The backend still owns the actual safe in/out points.
+  const snapping = !!cuts && !t.smart;
+  const nearestCut = (f: number, end = false) => {
+    const point = cuts!.reduce((best, c) =>
       Math.abs(c - f) < Math.abs(best - f) ? c : best,
     );
+    return end && ready?.frames && ready.frames - f < Math.abs(point - f)
+      ? ready.frames
+      : point;
+  };
+  const landing =
+    t.smart && cuts && ready?.smartBlocker
+      ? { from: nearestCut(frame), to: nearestCut(frame, true) }
+      : undefined;
   const move = (to: number) =>
     ready &&
     setCursor({
@@ -317,6 +325,7 @@ export function TrimTools({
                 smart={t.smart}
                 mmdFrames={o.mmdFrames}
                 cuts={cuts}
+                landing={landing}
                 inText={inText}
                 outText={outText}
                 onKey={onKey}

@@ -1078,7 +1078,9 @@
     "one": "可切位置共 {value} 处（只能从开头切）。",
     "other": "可切位置共 {value} 处（只能从开头切）。"
   },
-  "trim.smartBlocked": " 这个文件不能智能剪切：{reason}，仍吸附到可切位置。",
+  "trim.smartBlocked": " 这个文件不能智能剪切：{reason}，设入点 / 出点时仍吸附到可切位置。",
+  "trim.cutLanding": "入点将落在第 {from} 帧；出点将落在第 {to} 帧（不包含该帧）。",
+  "trim.cutLandingEnd": "入点将落在第 {from} 帧；出点将落在结尾。",
   "trim.smartAll": " 智能剪切：这一段第 {from}–{to} 帧全部重新编码。",
   "trim.smartRange": "第 {from}–{to} 帧",
   "trim.smartEdges": " 智能剪切：{ranges}重新编码，其余直接复制。",

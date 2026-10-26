@@ -1460,14 +1460,6 @@ textarea {
   }
 }
 @media (forced-colors: active) {
-  .trim-track input[type="range"]::-webkit-slider-thumb {
-    background: Highlight;
-    border-color: Canvas;
-  }
-  .trim-rail,
-  .trim-tick {
-    background: CanvasText;
-  }
   html {
     scrollbar-color: auto;
   }
@@ -1668,6 +1660,7 @@ html[data-theme="light"] {
   position: relative;
   width: 100%;
   height: 28px;
+  min-height: 0;
   margin: 0;
   background: transparent;
   -webkit-appearance: none;
@@ -1700,6 +1693,25 @@ html[data-theme="light"] {
   box-shadow:
     0 0 0 1px var(--color-primary),
     0 0 0 4px color-mix(in srgb, var(--color-primary) 40%, transparent);
+}
+@media (forced-colors: active) {
+  .trim-marks {
+    forced-color-adjust: none;
+  }
+  .trim-rail,
+  .trim-tick {
+    background: CanvasText;
+    opacity: 1;
+  }
+  .trim-range {
+    background: Highlight;
+  }
+  .trim-track input[type="range"]::-webkit-slider-thumb {
+    forced-color-adjust: none;
+    background: Highlight;
+    border-color: Canvas;
+    box-shadow: 0 0 0 1px CanvasText;
+  }
 }
 .trim-buttons {
   display: flex;

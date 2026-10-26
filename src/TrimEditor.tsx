@@ -53,6 +53,7 @@ export function TrimEditor({
   smart,
   mmdFrames,
   cuts,
+  landing,
   inText,
   outText,
   onKey,
@@ -74,6 +75,7 @@ export function TrimEditor({
   smart: boolean;
   mmdFrames: boolean;
   cuts: number[] | null;
+  landing?: { from: number; to: number };
   inText: string;
   outText: string;
   onKey: (event: React.KeyboardEvent) => void;
@@ -177,6 +179,9 @@ export function TrimEditor({
     }
   }
   const n = (v: number | undefined) => localeRuntime.number(v ?? 0);
+  // Keep this row mounted throughout blocked smart preview navigation so
+  // crossing a cut point does not shift the slider under a pointer drag.
+  const showLanding = !!landing;
   return (
     <section
       className="detail-card trim-editor"
@@ -381,6 +386,7 @@ export function TrimEditor({
         <Button
           disabled={running}
           title="I"
+          aria-describedby={showLanding ? "trim-cut-landing" : undefined}
           onClick={() =>
             edit(() =>
               setRange(
@@ -395,11 +401,25 @@ export function TrimEditor({
         <Button
           disabled={running}
           title="O"
+          aria-describedby={showLanding ? "trim-cut-landing" : undefined}
           onClick={() => edit(() => setRange(ready.from ?? 0, frame))}
         >
           {text("trim.setOut")}
         </Button>
       </div>
+      {showLanding && (
+        <p className="hint" id="trim-cut-landing">
+          {text(
+            landing.to === ready.frames
+              ? "trim.cutLandingEnd"
+              : "trim.cutLanding",
+            {
+              from: n(landing.from),
+              to: n(landing.to),
+            },
+          )}
+        </p>
+      )}
       <div className="form-row">
         <Field
           id="trim-in"
