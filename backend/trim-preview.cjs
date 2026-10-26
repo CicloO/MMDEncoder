@@ -1,5 +1,6 @@
 "use strict";
 const trim = require("./trim.cjs");
+const { appError } = require("./errors.cjs");
 // Owns the JPEG LRU and one preview controller, never clip/app state.
 function createTrimPreview({ engineInfo, requireClip, getIndex }) {
   let previewAbort = null;
@@ -29,7 +30,7 @@ function createTrimPreview({ engineInfo, requireClip, getIndex }) {
     // One preview at a time: a newer request stops the older one.
     const clip = requireClip(payload?.id);
     const idx = getIndex(clip.id);
-    if (!idx) throw Error("片段还没有读取完成");
+    if (!idx) throw appError("TRIM_CLIP_NOT_READY");
     const frame = Number(payload.frame) || 0;
     const key = clip.path + "|" + frame;
     previewAbort?.abort();

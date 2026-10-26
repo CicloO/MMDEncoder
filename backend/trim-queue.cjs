@@ -1,5 +1,6 @@
 "use strict";
 const trim = require("./trim.cjs");
+const { appError } = require("./errors.cjs");
 const { createTrimClips } = require("./trim-clips.cjs");
 const { createTrimPreview } = require("./trim-preview.cjs");
 const { createTrimExport } = require("./trim-export.cjs");
@@ -60,9 +61,15 @@ function createTrimQueue({
       exporting.cancel();
     },
     async trimClear(payload) {
-      if (isRunning()) throw Error("导出时不能清空");
+      if (isRunning()) throw appError("TRIM_CLEAR_BUSY");
       clips.dropClips([...getClips()]);
-      updateExport({ output: "", error: "", stage: "", progress: 0 });
+      updateExport({
+        output: "",
+        error: "",
+        errorData: null,
+        stage: "",
+        progress: 0,
+      });
     },
   };
   return {

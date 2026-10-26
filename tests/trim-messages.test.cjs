@@ -14,6 +14,62 @@ const { formatDescriptor } = require("../locales/messages.mjs");
 const { formatTrimMessage } = require("../locales/trim-messages.mjs");
 const source = require("../locales/zh-CN.json");
 
+test("trim join differences keep technical keys and refresh their complete sentences", () => {
+  const runtime = createTranslator({
+    sourceLocale: "zh-CN",
+    catalogs: {
+      "zh-CN": source,
+      en: {
+        "error.TRIM_JOIN_MISMATCH": "JOIN {detail}",
+        "trim.compatibility.value":
+          "{name} {field}={value}, {reference}={expected}",
+        "trim.compatibility.sets": "{name} {field} differs from {reference}",
+        "trim.parameter.width": "WIDTH TEST",
+        "trim.parameter.extradata": "SETS TEST",
+        "trim.listSeparator": " | ",
+      },
+    },
+  });
+  const record = serializeError(
+    appError("TRIM_JOIN_MISMATCH", {
+      differences: [
+        {
+          name: "用户 B.mp4",
+          reference: "User A.mp4",
+          key: "width",
+          value: 640,
+          expected: 320,
+        },
+        {
+          name: "用户 B.mp4",
+          reference: "User A.mp4",
+          key: "extradata",
+          value: "Source diagnostic",
+          expected: "",
+        },
+        {
+          name: "用户 B.mp4",
+          reference: "User A.mp4",
+          key: "future_field",
+          value: "Foreign detail",
+          expected: "Expected detail",
+        },
+      ],
+    }),
+  );
+  runtime.setLocale("en");
+  assert.equal(
+    formatTrimMessage(runtime, record),
+    "JOIN 用户 B.mp4 WIDTH TEST=640, User A.mp4=320 | 用户 B.mp4 SETS TEST differs from User A.mp4 | 用户 B.mp4 future_field=Foreign detail, User A.mp4=Expected detail",
+  );
+  assert.equal(record.params.differences[0].key, "width");
+  runtime.setLocale("zh-CN");
+  assert.match(
+    formatTrimMessage(runtime, record),
+    /用户 B.mp4 的宽度与 User A.mp4 不同（640 \/ 320）/,
+  );
+});
+
 test("trim cut errors retain nested reason codes across JSON and refresh their display", () => {
   const reason = serializeError(appError("TRIM_OPEN_GOP"));
   const frames = [

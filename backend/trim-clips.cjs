@@ -3,21 +3,22 @@ const fs = require("node:fs"),
   path = require("node:path"),
   crypto = require("node:crypto");
 const trim = require("./trim.cjs");
+const { appError, serializeError, restoreError } = require("./errors.cjs");
 
-// Why a clip cannot be smart-cut ("" = it can, or needs no re-encoding).
+// Why a clip cannot be smart-cut (null = it can, or needs no re-encoding).
 function smartBlocker(idx) {
-  if (idx.frames.every((f) => f.safe)) return "";
+  if (idx.frames.every((f) => f.safe)) return null;
   if (!idx.encoding)
-    return "没有记录编码参数（不是 MMDEncoder 1.5.0 起导出的）";
+    return serializeError(appError("TRIM_SMART_SETTINGS_MISSING"));
   if (String(idx.encoding.encoder).startsWith("nvencc:"))
-    return "NVEncC 编码的文件暂不支持";
-  return "";
+    return serializeError(appError("TRIM_SMART_NV_UNSUPPORTED"));
+  return null;
 }
 
 // The clip's requested range, snapped to safe cut points (out may be the
 // end) — or, with smart cut on a clip that allows it, exactly as asked.
 function setClipRange(clip, idx, smart, from, to) {
-  if (!idx) throw Error("片段还没有读取完成");
+  if (!idx) throw appError("TRIM_CLIP_NOT_READY");
   const n = idx.frames.length;
   const exact = smart && !smartBlocker(idx);
   const clamp = (v) => Math.max(0, Math.min(n, Math.round(Number(v) || 0)));
@@ -84,7 +85,7 @@ function createTrimClips({
   }
   function requireClip(id) {
     const c = getClips().find((c) => c.id === id);
-    if (!c) throw Error("未找到这个片段");
+    if (!c) throw appError("TRIM_CLIP_MISSING");
     return c;
   }
   function dropClips(clips) {
@@ -103,7 +104,7 @@ function createTrimClips({
   async function trimAdd(paths) {
     await locate();
     if (!engineInfo().ffmpeg || !engineInfo().ffprobe)
-      throw Error("请先安装 FFmpeg / ffprobe");
+      throw appError("TRIM_TOOLS_REQUIRED");
     for (const raw of paths || []) {
       if (typeof raw !== "string" || !path.isAbsolute(raw)) continue;
       const file = path.resolve(raw);
@@ -133,7 +134,10 @@ function createTrimClips({
           ? trimIndexes.get(shared.id)
           : await readIndex(clip, file, key);
         if (!getClips().includes(clip)) continue; // removed meanwhile
-        if (!idx.supported) throw Error(idx.reason);
+        if (!idx.supported)
+          throw idx.reasonData
+            ? restoreError(idx.reasonData)
+            : Error(idx.reason);
         trimIndexes.set(clip.id, idx);
         const safe = idx.frames.filter((f) => f.safe).map((f) => f.frame);
         Object.assign(clip, {
@@ -154,18 +158,33 @@ function createTrimClips({
           refused:
             safe.length < idx.frames.filter((f) => f.key).length
               ? [
-                  ...new Set(
+                  ...new Map(
                     idx.frames
                       .filter((f) => f.key && !f.safe)
-                      .map((f) => f.why),
-                  ),
+                      .map((f) => {
+                        const reason =
+                          f.whyData || serializeError(Error(f.why));
+                        return [
+                          JSON.stringify([
+                            reason.code,
+                            reason.params,
+                            reason.code ? null : reason.message,
+                          ]),
+                          reason,
+                        ];
+                      }),
+                  ).values(),
                 ]
               : [],
         });
         applyRange(clip, 0, "end");
       } catch (e) {
         if (!getClips().includes(clip)) continue;
-        Object.assign(clip, { status: "invalid", error: e.message });
+        Object.assign(clip, {
+          status: "invalid",
+          error: e.message,
+          errorData: serializeError(e),
+        });
       } finally {
         reading.get(key)?.users.delete(clip.id);
       }
@@ -178,13 +197,13 @@ function createTrimClips({
     },
     async trimRemove(payload) {
       const clip = requireClip(payload?.id);
-      if (isRunning()) throw Error("导出时不能移除片段");
+      if (isRunning()) throw appError("TRIM_REMOVE_BUSY");
       dropClips([clip]);
     },
     async trimDuplicate(payload) {
       // Another range of the same file.
       const clip = requireClip(payload?.id);
-      if (clip.status !== "ready") throw Error("片段还没有读取完成");
+      if (clip.status !== "ready") throw appError("TRIM_CLIP_NOT_READY");
       const copy = { ...clip, id: crypto.randomUUID() };
       trimIndexes.set(copy.id, trimIndexes.get(clip.id));
       fileKeys.set(copy.id, fileKeys.get(clip.id));
@@ -198,14 +217,14 @@ function createTrimClips({
       if (payload.mmdStart !== undefined) {
         const n = Number(payload.mmdStart);
         if (!Number.isInteger(n) || n < 0)
-          throw Error("MMD 起始帧须为 0 或正整数");
+          throw appError("TRIM_MMD_START_INVALID");
         Object.assign(clip, { mmdStart: n, mmdStartFrom: "manual" });
       }
       if (payload.from !== undefined)
         applyRange(clip, payload.from, payload.to);
     },
     async trimSmart(payload) {
-      if (isRunning()) throw Error("导出时不能切换");
+      if (isRunning()) throw appError("TRIM_SMART_BUSY");
       setSmart(!!payload?.smart);
       // Re-apply every clip's requested range under the new rule.
       for (const c of getClips())

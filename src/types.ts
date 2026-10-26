@@ -132,6 +132,7 @@ export type TrimClip = {
   name: string;
   status: "indexing" | "ready" | "invalid";
   error?: string;
+  errorData?: ErrorData;
   codec?: string;
   width?: number;
   height?: number;
@@ -139,14 +140,14 @@ export type TrimClip = {
   frames?: number;
   // Frames a cut may start at, or "all" when every frame can.
   cuts?: number[] | "all";
-  refused?: string[];
+  refused?: (ErrorData | string)[];
   // MMD frame of the video's first frame and where that came from.
   mmdStart?: number | null;
   mmdStartFrom?: "tag" | "name" | "manual" | "";
   // Encode settings recorded by MMDEncoder (needed for smart cut).
   encoding?: Record<string, unknown> | null;
-  // Why smart cut cannot be used on this clip ("" when it can).
-  smartBlocker?: string;
+  // Structured reason, null when smart cut can be used.
+  smartBlocker?: ErrorData | string | null;
   from?: number;
   to?: number;
   requested?: { from: number; to: number };
@@ -232,9 +233,10 @@ export type State = {
     running: boolean;
     smart: boolean;
     progress: number;
-    stage: string;
+    stage: StageDescriptor | string;
     output: string;
     error: string;
+    errorData?: ErrorData | null;
   };
   mmd: {
     presetId: string;

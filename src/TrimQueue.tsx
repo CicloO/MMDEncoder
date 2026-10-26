@@ -11,6 +11,7 @@ import {
 import { Button, useDragSort } from "./components";
 import { clock, seconds } from "./trimCoordinates";
 import type { TrimClip } from "./types";
+import { errorMessage } from "./i18n";
 export function TrimQueue({
   clips,
   selectedId,
@@ -54,7 +55,7 @@ export function TrimQueue({
               ? `第 ${c.from}–${c.to === c.frames ? "结尾" : c.to} 帧 · ${(c.to ?? 0) - (c.from ?? 0)} 帧 · ${clock(seconds(c, (c.to ?? 0) - (c.from ?? 0)))}`
               : c.status === "indexing"
                 ? "正在读取关键帧…"
-                : c.error}
+                : errorMessage(c.errorData || c.error || "")}
           </span>
           <span
             className={`job-status ${c.status === "invalid" ? "failed" : c.empty ? "failed" : "ready"}`}

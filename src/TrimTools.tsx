@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { useDragSort } from "./components";
 import { autoAlign } from "./autoAlign";
-import { t as text, summaryMessage } from "./i18n";
+import {
+  t as text,
+  summaryMessage,
+  errorMessage,
+  type ErrorData,
+} from "./i18n";
+import { serializeError } from "../locales/messages.mjs";
 import { AlignDialog } from "./AlignDialog";
 import { TrimQueue } from "./TrimQueue";
 import { TrimEditor } from "./TrimEditor";
@@ -26,7 +32,7 @@ export function TrimTools({
   const clips = t.clips;
   const [o, setOptions] = useState<Options>(loadOptions),
     [selectedId, setSelectedId] = useState(""),
-    [error, setError] = useState(""),
+    [error, setError] = useState<string | ErrorData>(""),
     [cursor, setCursor] = useState<Record<string, number>>({}),
     [inText, setInText] = useState(""),
     [outText, setOutText] = useState("");
@@ -47,7 +53,7 @@ export function TrimTools({
     try {
       return await call(action, payload);
     } catch (e) {
-      setError((e as Error).message);
+      setError(serializeError(e));
     }
   }
   const sortClip = useDragSort(
@@ -266,7 +272,7 @@ export function TrimTools({
             o={o}
             running={t.running}
             smart={t.smart}
-            error={error || t.error}
+            error={errorMessage(error || t.errorData || t.error)}
             aligning={aligning}
             hasExportable={!!exportable.length}
             set={set}

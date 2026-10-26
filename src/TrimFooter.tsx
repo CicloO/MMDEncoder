@@ -8,6 +8,7 @@ import {
 import { Button } from "./components";
 import { clock } from "./trimCoordinates";
 import { AUDIO_MODES, AUDIO_CODECS, LOCATIONS } from "./trimOptions";
+import { stageMessage, type StageDescriptor } from "./i18n";
 export function TrimFooter({
   clipCount,
   totalFrames,
@@ -31,7 +32,7 @@ export function TrimFooter({
   audioCodec: string;
   location: string;
   running: boolean;
-  stage?: string;
+  stage?: StageDescriptor | string;
   progress: number;
   output?: string;
   canExport: boolean;
@@ -61,11 +62,11 @@ export function TrimFooter({
         </span>
         <span className="output-path" title={output}>
           {running
-            ? `${stage} · ${progress}%`
+            ? `${stageMessage(stage || "")} · ${progress}%`
             : output
               ? `已保存：${output}`
-              : stage === "已取消"
-                ? "已取消"
+              : typeof stage === "object" && stage.stage === "trim_cancelled"
+                ? stageMessage(stage)
                 : "保存为“第一个片段名_trimmed”，不覆盖已有文件"}
         </span>
       </div>

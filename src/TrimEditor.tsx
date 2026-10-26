@@ -9,6 +9,7 @@ import {
 import { Button, Field } from "./components";
 import { clock, seconds, mmdFrame } from "./trimCoordinates";
 import type { TrimClip } from "./types";
+import { errorMessage } from "./i18n";
 export function TrimEditor({
   ready,
   frame,
@@ -235,7 +236,7 @@ export function TrimEditor({
         {smart &&
           ready.cuts !== "all" &&
           (ready.smartBlocker
-            ? ` 这个文件不能智能剪切：${ready.smartBlocker}，仍吸附到可切位置。`
+            ? ` 这个文件不能智能剪切：${errorMessage(ready.smartBlocker)}，仍吸附到可切位置。`
             : (() => {
                 const list = (ready.cuts as number[]) || [];
                 const from = ready.from ?? 0,
@@ -256,7 +257,7 @@ export function TrimEditor({
                   : " 智能剪切：切点正好在关键帧上，全部直接复制。";
               })())}
         {ready.refused?.length
-          ? ` 其他关键帧不能切：${ready.refused.join("；")}。`
+          ? ` 其他关键帧不能切：${ready.refused.map(errorMessage).join("；")}。`
           : ""}
       </p>
     </section>
