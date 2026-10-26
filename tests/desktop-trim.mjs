@@ -131,22 +131,45 @@ try {
   const state = () =>
     page.evaluate(async () => (await window.encoder.invoke("state")).trim);
   for (const suffix of ["", " (2)"]) {
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(async () => {
+            const current = await window.encoder.invoke("state");
+            return (
+              !current.detecting &&
+              !current.tools.busy &&
+              !current.enhancements.busy
+            );
+          }),
+        { timeout: 60000 },
+      )
+      .toBe(true);
     const previousOutput = (await state()).output;
     await page.getByRole("button", { name: "导出", exact: true }).click();
     await expect
-      .poll(async () => {
-        const current = await state();
-        return (
-          !current.running &&
-          current.output !== previousOutput &&
-          current.stage?.stage === "trim_completed"
-        );
-      })
+      .poll(
+        async () => {
+          const current = await state();
+          return (
+            !current.running &&
+            current.output !== previousOutput &&
+            current.stage?.stage === "trim_completed"
+          );
+        },
+        { timeout: 30000 },
+      )
       .toBe(true);
     const result = await state();
     assert.equal(result.stage.stage, "trim_completed");
     assert.ok(Number.isFinite(result.elapsed) && result.elapsed >= 0);
     assert.ok(fs.existsSync(result.output));
+    console.log(
+      "Trim output",
+      path.basename(result.output),
+      "elapsed",
+      result.elapsed,
+    );
     assert.equal(
       path.basename(result.output),
       `剪辑 测试_trimmed${suffix}.mp4`,
@@ -163,6 +186,21 @@ try {
   await page.screenshot({ path: path.join(evidence, "trim-slider.png") });
   console.log("Desktop trim PASS");
   passed = true;
+} catch (error) {
+  const page = await app.firstWindow();
+  fs.writeFileSync(
+    path.join(testDir, "failure-state.json"),
+    JSON.stringify(
+      await page.evaluate(async () => ({
+        trim: (await window.encoder.invoke("state")).trim,
+        text: document.body.innerText,
+      })),
+      null,
+      2,
+    ),
+  );
+  await page.screenshot({ path: path.join(testDir, "failure.png") });
+  throw error;
 } finally {
   await app.close();
   if (passed) fs.rmSync(testDir, { recursive: true, force: true });
