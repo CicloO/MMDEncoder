@@ -1,5 +1,6 @@
 // Actual App + LocaleRoot with test-only registry and update-server adapters.
 import { _electron as electron, expect } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 import { build } from "vite";
 import fs from "node:fs";
 import path from "node:path";
@@ -96,10 +97,20 @@ try {
     page.getByRole("dialog", { name: "关于", exact: true }),
   ).toBeVisible();
   const before = await app.evaluate(() => global.testCalls.aboutInfo || 0);
+  const language = page.getByRole("combobox", {
+    name: "界面语言 · Language",
+    exact: true,
+  });
+  await expect(language).toHaveValue("system");
+  assert.deepEqual(await language.locator("option").allTextContents(), [
+    "跟随系统（简体中文）",
+    "简体中文",
+    "Test English",
+  ]);
   await page.evaluate(() => {
     window.aboutNode = document.querySelector('[role="dialog"]');
-    return window.encoder.invokeResult("setLocale", { locale: "en-XA" });
   });
+  await language.selectOption("en-XA");
   const pseudo = await page.evaluate(() => window.appAboutFixture.pseudo);
   await expect(
     page.getByRole("dialog", { name: pseudo["about.title"], exact: true }),
@@ -121,6 +132,126 @@ try {
     await app.evaluate(() => global.testCalls.aboutInfo || 0),
     before,
   );
+  const changed = page.getByRole("combobox", {
+    name: pseudo["about.language"] + " · Language",
+    exact: true,
+  });
+  await expect(changed).toHaveValue("en-XA");
+  const state = await page.evaluate(() => window.encoder.invokeResult("state"));
+  assert.equal(state.preferences.locale, "en-XA");
+  assert.equal(state.systemLocale, "zh-CN");
+  assert.deepEqual(
+    (await changed.locator("option").allTextContents()).slice(1),
+    ["简体中文", "Test English"],
+  );
+  await changed.selectOption("system");
+  await expect(
+    page.getByRole("dialog", { name: "关于", exact: true }),
+  ).toBeVisible();
+  assert.equal(
+    (await page.evaluate(() => window.encoder.invokeResult("state")))
+      .preferences.locale,
+    null,
+  );
+  await page
+    .getByRole("combobox", { name: "界面语言 · Language", exact: true })
+    .selectOption("en-XA");
+  await expect(
+    page.getByRole("dialog", { name: pseudo["about.title"], exact: true }),
+  ).toBeVisible();
+  // A real settings-store failure must keep the selected locale and show a
+  // localized error. These files belong only to this fixture's data directory.
+  const settings = path.join(dir, "data/settings.json"),
+    held = settings + ".held";
+  assert.equal(path.dirname(settings), path.join(dir, "data"));
+  fs.renameSync(settings, held);
+  fs.mkdirSync(settings);
+  try {
+    await page
+      .getByRole("combobox", {
+        name: pseudo["about.language"] + " · Language",
+        exact: true,
+      })
+      .selectOption("zh-CN");
+    await expect(page.getByRole("alert")).toContainText(
+      pseudo["about.languageFailed"].split("{detail}")[0],
+    );
+    await expect(
+      page.getByRole("combobox", {
+        name: pseudo["about.language"] + " · Language",
+        exact: true,
+      }),
+    ).toHaveValue("en-XA");
+    assert.equal(
+      (await page.evaluate(() => window.encoder.invokeResult("state")))
+        .preferences.locale,
+      "en-XA",
+    );
+  } finally {
+    fs.rmdirSync(settings);
+    fs.renameSync(held, settings);
+  }
+  await page
+    .getByRole("combobox", {
+      name: pseudo["about.language"] + " · Language",
+      exact: true,
+    })
+    .selectOption("zh-CN");
+  await page
+    .getByRole("combobox", { name: "界面语言 · Language", exact: true })
+    .selectOption("en-XA");
+  await expect(
+    page.getByRole("dialog", { name: pseudo["about.title"], exact: true }),
+  ).toBeVisible();
+  const layouts = [];
+  for (const width of [1360, 650]) {
+    await app.evaluate(
+      ({ BrowserWindow }, width) =>
+        BrowserWindow.getAllWindows()[0].setSize(width, 1000),
+      width,
+    );
+    const rect = await page
+      .getByRole("dialog", { name: pseudo["about.title"], exact: true })
+      .boundingBox();
+    const png = await app.evaluate(
+      async ({ BrowserWindow }, rect) =>
+        (await BrowserWindow.getAllWindows()[0].webContents.capturePage(rect))
+          .toPNG()
+          .toString("base64"),
+      Object.fromEntries(
+        Object.entries(rect).map(([key, value]) => [key, Math.round(value)]),
+      ),
+    );
+    fs.writeFileSync(
+      path.join(dir, `language-expanded-${width}.png`),
+      Buffer.from(png, "base64"),
+    );
+    assert.ok(rect.height <= 1000 && rect.width <= width);
+    const layout = await page
+      .getByRole("dialog", { name: pseudo["about.title"], exact: true })
+      .evaluate((el) => ({
+        client: el.clientWidth,
+        scroll: el.scrollWidth,
+        title: getComputedStyle(el.querySelector(".about-language-label"))
+          .fontSize,
+        support: getComputedStyle(el.querySelector("section:last-child h3"))
+          .fontSize,
+        titleWeight: getComputedStyle(el.querySelector(".about-language-label"))
+          .fontWeight,
+        supportWeight: getComputedStyle(
+          el.querySelector("section:last-child h3"),
+        ).fontWeight,
+      }));
+    assert.ok(layout.scroll <= layout.client + 1);
+    assert.equal(layout.title, layout.support);
+    assert.equal(layout.titleWeight, layout.supportWeight);
+    layouts.push({ width, rect, ...layout });
+  }
+  const axe = await new AxeBuilder({ page })
+    .include('[role="dialog"]')
+    .setLegacyMode()
+    .analyze();
+  assert.deepEqual(axe.violations, []);
   await app.close();
   app = await launch();
   const restarted = await app.firstWindow();
@@ -148,6 +279,7 @@ try {
     JSON.stringify(
       {
         registry,
+        layouts,
         testOnly: true,
         aboutQueries: before,
         checks: [
@@ -156,6 +288,10 @@ try {
           "dialog-not-remounted",
           "no-repeated-about-query",
           "preference-survives-restart",
+          "native-language-names",
+          "system-selection-uses-policy-resolution",
+          "failed-save-preserves-locale",
+          "language-section-at-two-formal-locales",
         ],
       },
       null,

@@ -28,7 +28,7 @@ export function Field({
   id,
   error,
 }: {
-  label: string;
+  label: ReactNode;
   children: ReactNode;
   hint?: string;
   id: string;
@@ -61,7 +61,7 @@ export function Select({
   disabled = false,
 }: {
   id: string;
-  label: string;
+  label: ReactNode;
   value: string | number;
   options: { value: string | number; label: string; disabled?: boolean }[];
   onChange: (value: string) => void;

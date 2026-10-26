@@ -39,6 +39,8 @@ function Fixture() {
       onClose={() => setOpen(false)}
       update={update}
       appUpdate={appUpdate}
+      localePreference={null}
+      systemLocale="zh-CN"
       blocked=""
       onCheck={() => calls.push({ name: "check" })}
       onDownload={() => calls.push({ name: "download" })}

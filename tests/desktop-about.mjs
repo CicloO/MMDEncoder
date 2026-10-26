@@ -45,6 +45,7 @@ try {
   const dialog = page.getByRole("dialog", { name: "关于", exact: true });
   await expect(dialog).toBeVisible();
   await expect(dialog.locator(".release-notes")).toHaveCount(0);
+  await expect(dialog.locator("#about-locale")).toHaveCount(0);
   await expect(
     dialog.getByRole("region", { name: "本版更新日志" }),
   ).toHaveCount(0);
@@ -164,6 +165,7 @@ try {
         info,
         checks: [
           "no-changelog",
+          "one-formal-locale-hides-language-section",
           "current-release-page",
           "new-version-auto-install",
           "new-version-manual-install",

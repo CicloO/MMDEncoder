@@ -107,8 +107,10 @@ test("locale is persisted before broadcast, survives restart and leaves presets,
     const before = svc.getState();
     assert.equal(before.preferences.locale, null);
     assert.equal(before.locale, "zh-CN");
+    assert.equal(before.systemLocale, "zh-CN");
     const state = await svc.invoke("setLocale", { locale: "en-XA" });
     assert.equal(state.locale, "en-XA");
+    assert.equal(state.systemLocale, "zh-CN");
     for (const key of [
       "settings",
       "jobs",

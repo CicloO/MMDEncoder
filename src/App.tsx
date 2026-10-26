@@ -1109,6 +1109,8 @@ export default function App() {
         onClose={() => setModal("")}
         update={update}
         appUpdate={appUpdate}
+        localePreference={state.preferences.locale}
+        systemLocale={state.systemLocale}
         blocked={
           busy || state.running || state.trim?.running ? t("about.busy") : ""
         }

@@ -211,6 +211,7 @@ export type Engine = {
 export type State = {
   preferences: { locale: string | null };
   locale: string;
+  systemLocale: string;
   jobs: Job[];
   settings: Settings;
   presets: Preset[];

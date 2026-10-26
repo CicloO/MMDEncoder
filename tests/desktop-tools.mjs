@@ -259,7 +259,16 @@ try {
   ).toBeVisible();
   await expect(about.getByRole("button", { name: "问题反馈" })).toBeVisible();
   const aboutHeight = (await about.boundingBox()).height;
-  await screenshot(app, "about-fixed.png");
+  await expect(about).not.toHaveClass(/modal-fixed/);
+  const fixedHeight = Math.min(
+    752,
+    await page.evaluate(() => innerHeight - 50),
+  );
+  assert.ok(
+    aboutHeight < fixedHeight,
+    "Chinese About fits its content without the old empty log area",
+  );
+  await screenshot(app, "about-adaptive.png");
   const aboutAxe = await new AxeBuilder({ page })
     .include('[role="dialog"]')
     .setLegacyMode()
@@ -270,7 +279,7 @@ try {
   await expect(page.getByRole("dialog", { name: "编码引擎" })).toBeVisible();
   assert.ok(
     Math.abs(
-      (await page.getByRole("dialog").boundingBox()).height - aboutHeight,
+      (await page.getByRole("dialog").boundingBox()).height - fixedHeight,
     ) < 2,
   );
   await expect(page.getByRole("region", { name: "软件更新" })).toHaveCount(0);

@@ -65,6 +65,7 @@ function createService({
   const state = {
     preferences: { locale: null },
     locale: preferences.resolve(null),
+    systemLocale: preferences.resolve(null),
     jobs: [],
     settings: { ...core.DEFAULTS },
     presets: clone(core.BUILTINS),

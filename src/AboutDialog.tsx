@@ -3,13 +3,16 @@ import {
   ArrowDownToLine,
   ExternalLink,
   FolderOpen,
+  Globe,
   Layers,
   MessageSquareWarning,
   RefreshCw,
 } from "lucide-react";
-import { Button, Modal } from "./components";
+import { Button, Modal, Select } from "./components";
 import { formatSize } from "./presentation";
 import { t as text, errorMessage, type ErrorData } from "./i18n";
+import { serializeError } from "../locales/messages.mjs";
+import registry from "../locales/registry.json";
 import { invoke } from "./ipc";
 
 export type UpdateCheck = {
@@ -37,6 +40,8 @@ export function AboutDialog({
   onClose,
   update,
   appUpdate,
+  localePreference,
+  systemLocale,
   blocked,
   onCheck,
   onDownload,
@@ -47,6 +52,8 @@ export function AboutDialog({
   onClose: () => void;
   update: UpdateCheck;
   appUpdate: AppUpdate;
+  localePreference: string | null;
+  systemLocale: string;
   // Why installing has to wait (an encode is running), "" when it can go.
   blocked: string;
   onCheck: () => void;
@@ -57,6 +64,23 @@ export function AboutDialog({
   const [info, setInfo] = useState<{ version: string }>({
     version: __APP_VERSION__,
   });
+  const [languagePending, setLanguagePending] = useState(false);
+  const [languageError, setLanguageError] = useState<ErrorData | string>("");
+  const languageLabel = `${text("about.language")} · Language`;
+  const systemName =
+    registry.locales.find((l) => l.id === systemLocale)?.name ||
+    registry.locales[0].name;
+  async function changeLanguage(value: string) {
+    setLanguagePending(true);
+    setLanguageError("");
+    try {
+      await invoke("setLocale", { locale: value === "system" ? null : value });
+    } catch (error) {
+      setLanguageError(serializeError(error));
+    } finally {
+      setLanguagePending(false);
+    }
+  }
   useEffect(() => {
     if (open && window.encoder)
       invoke("aboutInfo")
@@ -86,7 +110,6 @@ export function AboutDialog({
     <Modal
       open={open}
       onClose={onClose}
-      fixedHeight
       title={text("about.title")}
       description={text("about.description")}
     >
@@ -182,6 +205,48 @@ export function AboutDialog({
         )}
       </section>
 
+      {registry.locales.length >= 2 && (
+        <section
+          className="modal-section about-language"
+          aria-label={languageLabel}
+          aria-busy={languagePending}
+        >
+          <Select
+            id="about-locale"
+            label={
+              <span
+                className="about-language-label"
+                role="heading"
+                aria-level={3}
+              >
+                <Globe size={18} aria-hidden="true" />
+                {languageLabel}
+              </span>
+            }
+            value={localePreference ?? "system"}
+            disabled={languagePending}
+            options={[
+              {
+                value: "system",
+                label: text("about.followSystem", { language: systemName }),
+              },
+              ...registry.locales.map(({ id, name }) => ({
+                value: id,
+                label: name,
+              })),
+            ]}
+            onChange={(value) => void changeLanguage(value)}
+            hint={text("about.languageHint")}
+          />
+          {languageError && (
+            <p className="inline-error" role="alert">
+              {text("about.languageFailed", {
+                detail: errorMessage(languageError),
+              })}
+            </p>
+          )}
+        </section>
+      )}
       <section className="modal-section" aria-label={text("about.support")}>
         <h3>{text("about.support")}</h3>
         <dl className="about-facts">

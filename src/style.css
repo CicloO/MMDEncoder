@@ -1351,6 +1351,17 @@ textarea {
   gap: 10px 20px;
   margin: 0;
 }
+.about-language-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.about-language .field {
+  margin-bottom: 0;
+}
 .about-facts div {
   display: grid;
   gap: 2px;
@@ -1811,11 +1822,6 @@ html[data-theme="light"] {
 .modal-fixed:not(:has(.preset-list, .engine-list)) .modal-body > :last-child {
   margin-top: auto;
 }
-/* About shares the body height of the fixed header dialogs. */
-.modal-fixed .modal-body:has(.about-hero) {
-  flex: 1 1 auto;
-}
-
 /* Page tabs: one strip under the header that ends the fixed top area with a
    single line; content scrolling beneath it gets a soft shade once moved. */
 .app-header {
