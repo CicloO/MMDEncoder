@@ -63,6 +63,9 @@ try {
 await fs.mkdir(dest, { recursive: true });
 const electronExe = require("electron");
 const electronDir = path.dirname(electronExe);
+const electronVersion = (
+  await fs.readFile(path.join(electronDir, "version"), "utf8")
+).trim();
 await fs.cp(electronDir, dest, {
   recursive: true,
   filter: (source) =>
@@ -144,6 +147,7 @@ await fs.writeFile(
   JSON.stringify({
     name: "mmd-encoder",
     version,
+    electronVersion,
     main: "desktop/main.cjs",
   }),
 );

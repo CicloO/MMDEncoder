@@ -147,6 +147,10 @@ pnpm package           # 打包便携版
 node scripts/zip-portable.mjs
 ```
 
+压缩脚本同时生成完整包 `MMDEncoder-x.y.z-win-x64.zip`、程序包 `MMDEncoder-x.y.z-app.zip`、各自的 `.sha256` 和 `MMDEncoder-x.y.z-update.json` 清单；它会解包核对两种包内的 `resources/app` 完全一致。已有同版本文件须显式加 `--replace`。隔离验收可用 `MMD_PACKAGE_DEST` 指定新的便携目录，再用 `MMD_ARCHIVE_DEST` 指定独立的压缩包目录。
+
+自动更新在 Electron 版本相同时只下载程序包；运行环境不符、清单缺失或程序包未能通过下载校验时改用完整包。程序包只替换 `resources/app`，完整包替换程序目录；两者都保留 `data`，安装失败还原旧文件，日志在 `data/logs/update.log`。
+
 测试（`MMD_TEST_TOOLS_ROOT` 指向编码工具目录）：
 
 ```powershell

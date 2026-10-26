@@ -1154,7 +1154,7 @@
   "error.UPDATE_CHECKSUM_DOWNLOAD": "校验文件下载失败：{status}",
   "error.UPDATE_CHECKSUM_FORMAT": "校验文件格式无效",
   "error.UPDATE_ARCHIVE_DOWNLOAD": "压缩包下载失败：{status}",
-  "error.UPDATE_CHECKSUM_MISMATCH": "压缩包校验失败（SHA-256 不一致），已放弃更新",
+  "error.UPDATE_CHECKSUM_MISMATCH": "压缩包校验失败（SHA-256 不一致）",
   "error.UPDATE_EXTRACT_FAILED": "解压失败：{detail}",
   "error.UPDATE_INVALID_PACKAGE": "压缩包内容不是 MMDEncoder 便携版",
   "error.UPDATE_HELPER_MISSING": "新版本不支持自动更新，请打开下载页手动更新",
@@ -1174,5 +1174,12 @@
   "update.log.restoring": "更新失败，正在还原旧版本：{detail}",
   "update.log.restored": "已还原旧版本",
   "update.log.restoreFailed": "还原失败，旧文件保存在：{path}；{detail}",
-  "update.log.failed": "更新出错：{detail}"
+  "update.log.failed": "更新出错：{detail}",
+  "error.UPDATE_SIZE_MISMATCH": "压缩包大小与发行记录不一致，已放弃更新",
+  "error.UPDATE_INVALID_APP_PACKAGE": "压缩包内容不是完整的 MMDEncoder 程序目录",
+  "error.UPDATE_RUNTIME_MISMATCH": "程序包要求的 Electron 版本与本机不一致",
+  "about.packageSize": "{kind} · 下载大小 {size}",
+  "about.appPackage": "程序包",
+  "about.fullPackage": "完整包",
+  "about.fullFallback": "程序包未能使用，已改用完整包：{detail}"
 }

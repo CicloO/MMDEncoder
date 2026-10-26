@@ -67,6 +67,7 @@ try {
         latest: "9.9.0",
         newer: true,
         canInstall: true,
+        assets: { kind: "app", size: 4096 },
         url,
       }),
     url,
@@ -74,6 +75,15 @@ try {
   await expect(
     dialog.getByRole("button", { name: "下载并更新", exact: true }),
   ).toBeEnabled();
+  const smallSize = new Intl.NumberFormat("zh-CN", {
+    style: "unit",
+    unit: "kilobyte",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(4);
+  await expect(
+    dialog.getByText("程序包 · 下载大小 " + smallSize, { exact: true }),
+  ).toBeVisible();
   await dialog.getByRole("button", { name: "打开下载页", exact: true }).click();
   assert.deepEqual(
     (await page.evaluate(() => window.aboutFixture.calls())).at(-1),
@@ -187,6 +197,53 @@ try {
     );
     await expect(page.getByRole("alert")).toContainText(expected);
   }
+  const fallbackData = serializeError(appError("UPDATE_CHECKSUM_MISMATCH"));
+  await page.evaluate(
+    (fallbackData) =>
+      window.aboutFixture.progress({
+        phase: "downloading",
+        received: 4096,
+        total: 8192,
+        error: "",
+        errorData: null,
+        packageKind: "full",
+        fallbackData,
+      }),
+    fallbackData,
+  );
+  await page.evaluate(() => window.aboutFixture.choose("zh-CN"));
+  const fullSize = new Intl.NumberFormat("zh-CN", {
+    style: "unit",
+    unit: "kilobyte",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(8);
+  await expect(
+    dialog.getByText("完整包 · 下载大小 " + fullSize, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText("程序包未能使用，已改用完整包：" + fallbackData.message, {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.evaluate(() => window.aboutFixture.choose("en-XA"));
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  assert.equal(
+    await page.evaluate(
+      () => window.aboutNode === document.querySelector('[role="dialog"]'),
+    ),
+    true,
+  );
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].setSize(650, 1000),
+  );
+  const layout = await page
+    .locator('[role="dialog"]')
+    .evaluate((el) => ({ client: el.clientWidth, scroll: el.scrollWidth }));
+  assert.ok(layout.scroll <= layout.client + 1);
+  await page.screenshot({
+    path: path.join(dir, "incremental-fallback-long.png"),
+  });
   fs.writeFileSync(
     path.join(dir, "result.json"),
     JSON.stringify(
@@ -201,6 +258,8 @@ try {
           "locale-preserves-dialog-progress-and-actions",
           "foreign-update-diagnostic-stays-exact",
           "coded-update-error-reformats-and-preserves-extractor-diagnostic",
+          "selected-package-size-and-fallback-full-size",
+          "fallback-cause-and-unknown-diagnostics-remain-readable",
         ],
         calls: await page.evaluate(() => window.aboutFixture.calls()),
       },

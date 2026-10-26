@@ -1,5 +1,5 @@
 "use strict";
-// Update helper, run by the NEW version's "MMDEncoder.exe" in Node mode
+// Update helper, run by the current (app-only) or new (full) executable in Node mode
 // (ELECTRON_RUN_AS_NODE) from <app>\.update\new. It waits for the old app to
 // exit, moves the old program files to <app>\.update\old, copies the new ones in
 // (copy, because this helper runs from them), keeps the data folder, and puts
@@ -12,7 +12,16 @@ const { appError, sourceText } = require("./errors.cjs");
 
 // The process entry and importable operation share this transaction owner.
 async function installUpdate(job) {
-  const { appDir, newDir, backup, pid, log, keep = [], relaunch = true } = job;
+  const {
+    appDir,
+    newDir,
+    backup,
+    pid,
+    log,
+    keep = [],
+    relaunch = true,
+    kind = "full",
+  } = job;
   const exeOf = () => path.join(appDir || "", "MMDEncoder.exe");
 
   function write(message) {
@@ -82,12 +91,16 @@ async function installUpdate(job) {
       await sleep(300);
     }
     const names = (dir) => fs.readdirSync(dir).filter((n) => !keep.includes(n));
-    const incoming = names(newDir);
+    const incoming =
+      kind === "app" ? [path.join("resources", "app")] : names(newDir);
     const moved = [],
       placed = [];
     fs.mkdirSync(backup, { recursive: true });
     try {
-      for (const name of names(appDir)) {
+      for (const name of kind === "app" ? incoming : names(appDir)) {
+        fs.mkdirSync(path.dirname(path.join(backup, name)), {
+          recursive: true,
+        });
         await retry(
           () => fs.renameSync(path.join(appDir, name), path.join(backup, name)),
           "UPDATE_MOVE_FAILED",

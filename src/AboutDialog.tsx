@@ -26,6 +26,7 @@ export type UpdateCheck = {
   canInstall?: boolean;
   installBlocked?: string;
   installBlockedData?: ErrorData | null;
+  assets?: { size: number; kind?: "app" | "full" } | null;
 };
 export type AppUpdate = {
   phase: string;
@@ -33,6 +34,8 @@ export type AppUpdate = {
   total: number;
   error: string;
   errorData?: ErrorData | null;
+  packageKind?: "app" | "full";
+  fallbackData?: ErrorData | null;
 };
 
 export function AboutDialog({
@@ -106,6 +109,9 @@ export function AboutDialog({
   const tone =
     update.error || update.errorData ? "danger" : update.newer ? "new" : "";
   const updateError = errorMessage(appUpdate.errorData || appUpdate.error);
+  const started = appUpdate.phase !== "idle";
+  const packageSize = started ? appUpdate.total : update.assets?.size;
+  const packageKind = started ? appUpdate.packageKind : update.assets?.kind;
   return (
     <Modal
       open={open}
@@ -177,6 +183,25 @@ export function AboutDialog({
             </Button>
           </div>
         </div>
+        {update.newer && update.canInstall && !!packageSize && (
+          <p className="hint">
+            {text("about.packageSize", {
+              kind: text(
+                packageKind === "app"
+                  ? "about.appPackage"
+                  : "about.fullPackage",
+              ),
+              size: formatSize(packageSize),
+            })}
+          </p>
+        )}
+        {update.newer && appUpdate.fallbackData && (
+          <p className="hint" role="status">
+            {text("about.fullFallback", {
+              detail: errorMessage(appUpdate.fallbackData),
+            })}
+          </p>
+        )}
         {update.newer && (
           <p
             className={updateError ? "inline-error" : "hint"}

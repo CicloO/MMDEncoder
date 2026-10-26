@@ -24,7 +24,7 @@ import { MediaDetails } from "./MediaDetails";
 import { EncodeFooter } from "./EncodeFooter";
 import { VideoFeedback } from "./VideoFeedback";
 import { VideoSettings } from "./VideoSettings";
-import { AboutDialog, type UpdateCheck } from "./AboutDialog";
+import { AboutDialog, type UpdateCheck, type AppUpdate } from "./AboutDialog";
 import { VideoSettingsPanel } from "./VideoSettingsPanel";
 import { PresetList } from "./PresetList";
 import { MmdExportDialog, useMmdExport } from "./MmdExportDialog";
@@ -132,14 +132,23 @@ export default function App() {
     ? t("about.openUpdate", { label: aboutLabel, version: update.latest ?? "" })
     : aboutLabel;
   // In-place update progress, mirrored from the main process.
-  const [appUpdate, setAppUpdate] = useState({
+  const [appUpdate, setAppUpdate] = useState<AppUpdate>({
     phase: "idle",
     received: 0,
     total: 0,
     error: "",
   });
   async function downloadUpdate() {
-    setAppUpdate((s) => ({ ...s, phase: "downloading", error: "" }));
+    setAppUpdate((s) => ({
+      ...s,
+      phase: "downloading",
+      error: "",
+      errorData: null,
+      fallbackData: null,
+      received: 0,
+      total: update.assets?.size || 0,
+      packageKind: update.assets?.kind,
+    }));
     const timer = setInterval(() => {
       invoke("appUpdateStatus")
         .then(setAppUpdate)
