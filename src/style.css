@@ -1599,7 +1599,8 @@ html[data-theme="light"] {
   background: #101318;
   overflow: hidden;
 }
-.trim-preview img {
+.trim-preview img,
+.trim-preview video {
   position: absolute;
   inset: 0;
   width: 100%;

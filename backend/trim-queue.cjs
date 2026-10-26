@@ -75,7 +75,15 @@ function createTrimQueue({
   };
   return {
     actions,
-    queries: { trimFrame: preview.frame },
+    queries: {
+      trimFrame: preview.frame,
+      // Main-process media protocol only; not exposed through renderer IPC.
+      trimPreviewSource({ id }) {
+        const clip = clips.requireClip(id);
+        if (clip.status !== "ready") throw appError("TRIM_CLIP_NOT_READY");
+        return clip.path;
+      },
+    },
     stop() {
       exporting.cancel();
       preview.stop();

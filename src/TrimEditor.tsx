@@ -6,32 +6,38 @@ import {
   ChevronRight,
   FolderOpen,
   LoaderCircle,
+  Pause,
+  Play,
 } from "lucide-react";
 import { Button, Field } from "./components";
 import { clock, seconds, mmdFrame } from "./trimCoordinates";
 import type { TrimClip } from "./types";
 import { t as text, localeRuntime, errorMessage } from "./i18n";
 
-// Owns the original JPEG request debounce and newest-response check only.
+// JPEGs are used while native preview loads, or as its format fallback.
 function useTrimPreview(
   id: string | undefined,
   frame: number,
   readFrame: (id: string, frame: number) => Promise<string>,
+  enabled: boolean,
 ) {
-  const [image, setImage] = useState("");
+  const [image, setImage] = useState({ id: "", src: "" });
   const request = useRef(0);
   useEffect(() => {
-    if (!id) return setImage("");
     const n = ++request.current;
+    if (!id || !enabled) return;
     const timer = setTimeout(() => {
       readFrame(id, frame)
-        .then((src) => n === request.current && src && setImage(src))
+        .then((src) => n === request.current && src && setImage({ id, src }))
         .catch(() => {});
     }, 120);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      request.current++;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, frame]);
-  return image;
+  }, [id, frame, enabled]);
+  return image.id === id ? image.src : "";
 }
 
 export function TrimEditor({
@@ -77,14 +83,108 @@ export function TrimEditor({
   applyText: (which: "in" | "out") => unknown;
   pct: (frame: number) => string;
 }) {
-  const image = useTrimPreview(ready.id, frame, readFrame);
+  const video = useRef<HTMLVideoElement>(null);
+  type Phase = "loading" | "ready" | "playing" | "unavailable";
+  const [playback, setPlayback] = useState<{ id: string; phase: Phase }>({
+    id: "",
+    phase: "loading",
+  });
+  const phase = playback.id === ready.id ? playback.phase : "loading";
+  const native = phase === "ready" || phase === "playing";
+  const playing = phase === "playing";
+  const loadVideo = phase !== "unavailable";
+  const image = useTrimPreview(ready.id, frame, readFrame, !native);
+  const latest = useRef({ ready, frame, move });
+  latest.current = { ready, frame, move };
+  const setPhase = (next: Phase) => setPlayback({ id: ready.id, phase: next });
+
+  useEffect(() => {
+    const element = video.current;
+    return () => {
+      if (!element) return;
+      element.pause();
+      element.removeAttribute("src");
+      element.load();
+    };
+  }, [ready.id, loadVideo]);
+  useEffect(() => {
+    const element = video.current;
+    if (!element || !native || playing) return;
+    const time = seconds(ready, frame);
+    if (Math.abs(element.currentTime - time) > 0.000001)
+      element.currentTime = time;
+  }, [ready.id, frame, native, playing]);
+  useEffect(() => {
+    if (running) video.current?.pause();
+  }, [running]);
+  useEffect(() => {
+    const element = video.current;
+    if (!playing || !element) return;
+    let timer = 0;
+    const tick = () => {
+      if (element.paused) return;
+      const current = latest.current;
+      const clip = current.ready;
+      const end = clip.to ?? clip.frames ?? 1;
+      const at = Math.floor(
+        element.currentTime * (clip.fps!.num / clip.fps!.den) + 0.0001,
+      );
+      if (at >= end || element.ended) {
+        element.pause();
+        element.currentTime = seconds(clip, end - 1);
+        current.move(end - 1);
+        setPhase("ready");
+        return;
+      }
+      const next = Math.min((clip.frames || 1) - 1, Math.max(0, at));
+      if (next !== current.frame) current.move(next);
+      timer = requestAnimationFrame(tick);
+    };
+    timer = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(timer);
+    // The callback consumes current coordinates without restarting playback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, ready.id]);
+  function edit(action: () => unknown) {
+    video.current?.pause();
+    action();
+  }
+  async function togglePlayback() {
+    const element = video.current;
+    if (!element || !native) return;
+    if (playing) return element.pause();
+    const start =
+      frame >= (ready.to ?? ready.frames ?? 1) ? (ready.from ?? 0) : frame;
+    element.currentTime = seconds(ready, start);
+    move(start);
+    try {
+      await element.play();
+    } catch {
+      if (video.current === element) setPhase("unavailable");
+    }
+  }
   const n = (v: number | undefined) => localeRuntime.number(v ?? 0);
   return (
     <section
       className="detail-card trim-editor"
       aria-label={text("trim.editor")}
       tabIndex={0}
-      onKeyDown={onKey}
+      onKeyDown={(event) => {
+        const target = event.target as HTMLInputElement;
+        if (
+          !(target.tagName === "INPUT" && target.type !== "range") &&
+          [
+            "arrowleft",
+            "arrowright",
+            "arrowup",
+            "arrowdown",
+            "i",
+            "o",
+          ].includes(event.key.toLowerCase())
+        )
+          video.current?.pause();
+        onKey(event);
+      }}
     >
       <div className="detail-title">
         <span className="eyebrow">{text("trim.edit")}</span>
@@ -97,15 +197,49 @@ export function TrimEditor({
       </div>
       <h3 title={ready.path}>{ready.name}</h3>
       <div className="trim-preview">
-        {image ? (
-          <img
-            src={image}
-            alt={text("trim.framePosition", { frame: n(frame) })}
+        {loadVideo && (
+          <video
+            key={ready.id}
+            ref={video}
+            src={`mmd-preview://clip/${encodeURIComponent(ready.id)}`}
+            preload="metadata"
+            playsInline
+            hidden={!native}
+            aria-label={text("trim.videoPreview")}
+            onLoadedData={() => setPhase("ready")}
+            onPlay={() => setPhase("playing")}
+            onPause={() =>
+              setPlayback((current) =>
+                current.id === ready.id && current.phase === "playing"
+                  ? { ...current, phase: "ready" }
+                  : current,
+              )
+            }
+            onEnded={() => {
+              const end = Math.max(0, (ready.to ?? ready.frames ?? 1) - 1);
+              move(end);
+              if (video.current)
+                video.current.currentTime = seconds(ready, end);
+              setPhase("ready");
+            }}
+            onError={() => setPhase("unavailable")}
           />
-        ) : (
-          <LoaderCircle size={22} className="spin" />
         )}
+        {!native &&
+          (image ? (
+            <img
+              src={image}
+              alt={text("trim.framePosition", { frame: n(frame) })}
+            />
+          ) : (
+            <LoaderCircle size={22} className="spin" />
+          ))}
       </div>
+      {phase === "unavailable" && (
+        <p className="hint" role="status">
+          {text("trim.previewUnavailable")}
+        </p>
+      )}
       {mmdFrames && (
         <div className="file-pick mmd-start">
           <span>{text("trim.mmdOriginPrefix")}</span>
@@ -173,16 +307,24 @@ export function TrimEditor({
           onChange={(e) => {
             // Pointer drags and clicks (keys are handled by onKey).
             const v = Number(e.target.value);
-            onSeek(v);
+            edit(() => onSeek(v));
           }}
         />
       </div>
       <div className="trim-buttons">
         <Button
+          disabled={!native || running || !!ready.empty}
+          aria-pressed={playing}
+          onClick={togglePlayback}
+        >
+          {playing ? <Pause size={16} /> : <Play size={16} />}
+          {text(playing ? "trim.pause" : "trim.play")}
+        </Button>
+        <Button
           variant="ghost icon"
           aria-label={text("trim.previousCut")}
           title={text("trim.previousCutHint")}
-          onClick={() => jump(-1)}
+          onClick={() => edit(() => jump(-1))}
         >
           <ChevronFirst size={16} />
         </Button>
@@ -190,7 +332,7 @@ export function TrimEditor({
           variant="ghost icon"
           aria-label={text("trim.previousFrame")}
           title={text("trim.previousFrameHint")}
-          onClick={() => move(frame - 1)}
+          onClick={() => edit(() => move(frame - 1))}
         >
           <ChevronLeft size={16} />
         </Button>
@@ -198,7 +340,7 @@ export function TrimEditor({
           variant="ghost icon"
           aria-label={text("trim.nextFrame")}
           title={text("trim.nextFrameHint")}
-          onClick={() => move(frame + 1)}
+          onClick={() => edit(() => move(frame + 1))}
         >
           <ChevronRight size={16} />
         </Button>
@@ -206,7 +348,7 @@ export function TrimEditor({
           variant="ghost icon"
           aria-label={text("trim.nextCut")}
           title={text("trim.nextCutHint")}
-          onClick={() => jump(1)}
+          onClick={() => edit(() => jump(1))}
         >
           <ChevronLast size={16} />
         </Button>
@@ -214,7 +356,12 @@ export function TrimEditor({
           disabled={running}
           title="I"
           onClick={() =>
-            setRange(frame, ready.to === ready.frames ? "end" : (ready.to ?? 0))
+            edit(() =>
+              setRange(
+                frame,
+                ready.to === ready.frames ? "end" : (ready.to ?? 0),
+              ),
+            )
           }
         >
           {text("trim.setIn")}
@@ -222,7 +369,7 @@ export function TrimEditor({
         <Button
           disabled={running}
           title="O"
-          onClick={() => setRange(ready.from ?? 0, frame)}
+          onClick={() => edit(() => setRange(ready.from ?? 0, frame))}
         >
           {text("trim.setOut")}
         </Button>
@@ -237,8 +384,8 @@ export function TrimEditor({
             value={inText}
             disabled={running}
             onChange={(e) => setInText(e.target.value)}
-            onBlur={() => applyText("in")}
-            onKeyDown={(e) => e.key === "Enter" && applyText("in")}
+            onBlur={() => edit(() => applyText("in"))}
+            onKeyDown={(e) => e.key === "Enter" && edit(() => applyText("in"))}
           />
         </Field>
         <Field id="trim-out" label={text("trim.out")}>
@@ -247,8 +394,8 @@ export function TrimEditor({
             value={outText}
             disabled={running}
             onChange={(e) => setOutText(e.target.value)}
-            onBlur={() => applyText("out")}
-            onKeyDown={(e) => e.key === "Enter" && applyText("out")}
+            onBlur={() => edit(() => applyText("out"))}
+            onKeyDown={(e) => e.key === "Enter" && edit(() => applyText("out"))}
           />
         </Field>
       </div>

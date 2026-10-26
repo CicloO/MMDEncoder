@@ -69,10 +69,10 @@ try {
   );
   const slider = page.getByRole("slider", { name: "当前帧" });
   await expect(slider).toBeVisible();
-  await expect(page.locator(".trim-preview img")).toHaveAttribute(
-    "src",
-    /^data:image\/jpeg;base64,/,
-  );
+  await expect(page.locator(".trim-preview video")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "播放", exact: true }),
+  ).toBeEnabled();
   await expect(page.locator(".trim-tick")).toHaveCount(4);
   await slider.scrollIntoViewIfNeeded();
   const value = async () => Number(await slider.inputValue());

@@ -1,4 +1,4 @@
-// Real JPEGs from four source aspect ratios at two window sizes.
+// Real directly decoded videos from four aspect ratios at two window sizes.
 import { _electron as electron, expect } from "@playwright/test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -78,15 +78,15 @@ try {
       "title",
       source.file,
     );
-    const image = page.locator(".trim-preview img");
+    const image = page.locator(".trim-preview video");
     await expect
       .poll(() =>
         image
           .evaluate(
             (node, ratio) =>
-              node.complete &&
-              node.naturalWidth > 0 &&
-              Math.abs(node.naturalWidth / node.naturalHeight - ratio) < 0.01,
+              node.readyState >= 2 &&
+              node.videoWidth > 0 &&
+              Math.abs(node.videoWidth / node.videoHeight - ratio) < 0.01,
             source.width / source.height,
           )
           .catch(() => false),
@@ -109,15 +109,15 @@ try {
         const frame = node.parentElement.getBoundingClientRect(),
           image = node.getBoundingClientRect();
         const scale = Math.min(
-          frame.width / node.naturalWidth,
-          frame.height / node.naturalHeight,
+          frame.width / node.videoWidth,
+          frame.height / node.videoHeight,
         );
         return {
           frame: frame.toJSON(),
           image: image.toJSON(),
-          natural: [node.naturalWidth, node.naturalHeight],
+          natural: [node.videoWidth, node.videoHeight],
           fit: getComputedStyle(node).objectFit,
-          content: [node.naturalWidth * scale, node.naturalHeight * scale],
+          content: [node.videoWidth * scale, node.videoHeight * scale],
           page: [
             document.querySelector(".page-scroll").clientWidth,
             document.querySelector(".page-scroll").scrollWidth,

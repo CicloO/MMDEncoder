@@ -5,8 +5,11 @@ const {
   dialog,
   clipboard,
   shell,
+  net,
+  protocol,
 } = require("electron");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const { createService } = require("../backend/service.cjs");
@@ -29,6 +32,17 @@ const engineDir = process.env.MMD_ENCODER_ENGINES;
 const dataDir = process.env.MMD_ENCODER_DATA || path.join(base, "data");
 app.setPath("userData", path.join(dataDir, "electron"));
 app.setName("MMDEncoder");
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "mmd-preview",
+    privileges: {
+      standard: true,
+      secure: true,
+      stream: true,
+      supportFetchAPI: true,
+    },
+  },
+]);
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -83,6 +97,32 @@ else {
         },
       });
       const { registerAction } = require("./actions.cjs");
+      protocol.handle("mmd-preview", async (request) => {
+        if (!["GET", "HEAD"].includes(request.method))
+          return new Response(null, { status: 405 });
+        try {
+          const url = new URL(request.url);
+          if (
+            url.host !== "clip" ||
+            url.username ||
+            url.password ||
+            url.search ||
+            url.hash
+          )
+            return new Response(null, { status: 404 });
+          const id = decodeURIComponent(url.pathname.slice(1));
+          if (!id || url.pathname !== `/${encodeURIComponent(id)}`)
+            return new Response(null, { status: 404 });
+          const file = await service.invoke("trimPreviewSource", { id });
+          return await net.fetch(pathToFileURL(file).href, {
+            method: request.method,
+            headers: request.headers,
+            signal: request.signal,
+          });
+        } catch {
+          return new Response(null, { status: 404 });
+        }
+      });
       const { mediaOutputDialogOptions } = require("./media-output-dialog.cjs");
       registerAction(ipcMain, async (event, action, payload) => {
         if (
