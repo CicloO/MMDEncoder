@@ -10,7 +10,7 @@ import {
 import { Button, Modal, useDragSort, PAGE_SIZE } from "./components";
 import { MediaDetails } from "./MediaDetails";
 import { AlignDialog } from "./AlignDialog";
-import { createMediaAudioReplacement } from "./mediaAudioReplacement";
+import { createMediaAudioReplacement } from "./audioReplacement";
 import { useAlignmentTasks } from "./useAlignmentTasks";
 import { FileMeta } from "./FileMeta";
 import {
@@ -199,10 +199,10 @@ export function MediaTools({
   }
   const { setAudio } = createMediaAudioReplacement({
     run,
+    call,
     notify: (notice) => setError({ notice }),
     tasks: audioAlignment,
-    applyOffset: (id, file, offset) =>
-      call("mediaSetAudioOffset", { id, offset, expectedAudioPath: file }),
+    actions: { replace: "mediaSetAudio", offset: "mediaSetAudioOffset" },
   });
   async function pickFolder() {
     const dir = await run("pickDirectory", {

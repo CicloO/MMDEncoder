@@ -325,6 +325,7 @@ export default function App() {
     call,
     notify,
     tasks: videoAlignment,
+    actions: { replace: "setAudio", offset: "setAudioOffset" },
   });
   const pickAudio = (row: Job) => audioReplacement.pickAudio(audioTarget(row));
   const replaceAudio = (row: Job, file: string) =>

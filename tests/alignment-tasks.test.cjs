@@ -149,10 +149,10 @@ test("removing a task, replacing its target and unmounting cancel its slot and c
 });
 
 test("video and media replacements always align new audio, guard its identity and suppress superseded requests", async () => {
-  const { createAudioReplacement } = load("src/audioReplacement.ts", {
-    "./i18n": i18n,
-  });
-  const { createMediaAudioReplacement } = load("src/mediaAudioReplacement.ts");
+  const { createAudioReplacement, createMediaAudioReplacement } = load(
+    "src/audioReplacement.ts",
+    { "./i18n": i18n },
+  );
   for (const mode of ["video", "media"]) {
     const calls = [],
       notices = [],
@@ -181,17 +181,17 @@ test("video and media replacements always align new audio, guard its identity an
             call: run,
             notify: (n) => notices.push(n),
             tasks,
+            actions: { replace: "setAudio", offset: "setAudioOffset" },
           })
         : createMediaAudioReplacement({
             run,
+            call: run,
             notify: (n) => notices.push(n),
             tasks,
-            applyOffset: (id, file, offset) =>
-              run("mediaSetAudioOffset", {
-                id,
-                expectedAudioPath: file,
-                offset,
-              }),
+            actions: {
+              replace: "mediaSetAudio",
+              offset: "mediaSetAudioOffset",
+            },
           });
     const choose = mode === "video" ? api.replaceAudio : api.setAudio;
     const row = {
@@ -230,5 +230,88 @@ test("video and media replacements always align new audio, guard its identity an
       notices.some((n) => n.code === "AUTO_ALIGN_FAILED"),
       false,
     );
+  }
+});
+
+test("replacement adapters preserve their reference, response, feedback and error policies", async () => {
+  const { createAudioReplacement, createMediaAudioReplacement } = load(
+    "src/audioReplacement.ts",
+    { "./i18n": i18n },
+  );
+  for (const mode of ["video", "media"]) {
+    const events = [],
+      row = {
+        id: "job",
+        path: "original.mp4",
+        hasAudio: true,
+        isSequence: false,
+        meta: { audio: {} },
+      },
+      response = {
+        [mode === "video" ? "jobs" : "mediaJobs"]: [
+          { ...row, path: "updated.mp4", audioPath: "new.wav" },
+        ],
+      },
+      error = new Error("replacement failed");
+    let failed = false;
+    const request = async (action, payload, notice) => {
+      events.push([action, payload, notice?.code]);
+      if (failed) throw error;
+      return response;
+    };
+    const options = {
+      call: request,
+      run: request,
+      actions: { replace: "replace", offset: "offset" },
+      notify: (notice) => events.push(["notice", notice.code]),
+      tasks: {
+        begin: () => ({
+          current: () => true,
+          finish: () => events.push(["finish"]),
+          run: async (reference, target, apply) => {
+            events.push(["align", reference, target]);
+            await apply(0.125);
+            return "";
+          },
+        }),
+      },
+    };
+    const replace =
+      mode === "video"
+        ? createAudioReplacement(options).replaceAudio
+        : createMediaAudioReplacement(options).setAudio;
+    assert.equal(
+      await replace(row, "new.wav"),
+      mode === "video" ? undefined : response,
+    );
+    assert.deepEqual(events, [
+      [
+        "replace",
+        { id: "job", path: "new.wav" },
+        mode === "video" ? "VIDEO_AUDIO_REPLACED" : undefined,
+      ],
+      ["align", mode === "video" ? "updated.mp4" : "original.mp4", "new.wav"],
+      [
+        "offset",
+        { id: "job", offset: 0.125, expectedAudioPath: "new.wav" },
+        undefined,
+      ],
+      ...(mode === "video" ? [["notice", "VIDEO_AUDIO_ALIGNED"]] : []),
+    ]);
+    events.length = 0;
+    failed = true;
+    if (mode === "video") {
+      assert.equal(await replace(row, "new.wav"), undefined);
+      assert.deepEqual(events.at(-1), ["finish"]);
+    } else {
+      await assert.rejects(
+        replace(row, "new.wav"),
+        (caught) => caught === error,
+      );
+      assert.equal(
+        events.some(([event]) => event === "finish"),
+        false,
+      );
+    }
   }
 });
