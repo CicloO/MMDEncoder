@@ -102,13 +102,17 @@ async function addAudio(tools, segments, video, output, audio, signal) {
     graph.push(
       "[1:a:0]" +
         [
-          offset > 0 ? `atrim=start=${offset.toFixed(6)}` : "anull",
+          offset > 0
+            ? `atrim=start_sample=${Math.round(offset * rate)}`
+            : "anull",
           "asetpts=PTS-STARTPTS",
-          ...(offset < 0 ? [`adelay=${Math.round(-offset * 1000)}:all=1`] : []),
+          ...(offset < 0
+            ? [`adelay=delays=${Math.round(-offset * rate)}S:all=1`]
+            : []),
           `aresample=${rate}`,
           "aformat=sample_fmts=fltp:channel_layouts=stereo",
-          `apad=whole_dur=${total.toFixed(6)}`,
-          `atrim=end=${total.toFixed(6)}`,
+          `apad=whole_len=${Math.round(total * rate)}`,
+          `atrim=end_sample=${Math.round(total * rate)}`,
         ].join(",") +
         "[aout]",
     );
