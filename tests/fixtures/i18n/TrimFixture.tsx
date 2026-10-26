@@ -1,10 +1,15 @@
 import { useEffect, useState } from "react";
 import { TrimTools } from "../../../src/TrimTools";
-import type { State } from "../../../src/types";
+import type { State, TrimClip } from "../../../src/types";
 
 const calls: Array<{ action: string; payload: any }> = [];
 let mounts = 0;
 let complete = (_output: string, _elapsed: number) => {};
+let configureClips = (_clips: TrimClip[]) => {};
+let dropFiles = (_paths: string[]) => {};
+let dropSequence = 0;
+export const setTrimClips = (clips: TrimClip[]) => configureClips(clips);
+export const dropTrimFiles = (paths: string[]) => dropFiles(paths);
 const initial: State["trim"] = {
   clips: [
     {
@@ -71,6 +76,10 @@ export const completeTrim = (output: string, elapsed: number) =>
 
 export function TrimFixture() {
   const [trim, setTrim] = useState(initial);
+  const [dropped, setDropped] = useState<{ paths: string[]; seq: number }>();
+  configureClips = (clips) =>
+    setTrim((current) => ({ ...current, clips, error: "", errorData: null }));
+  dropFiles = (paths) => setDropped({ paths, seq: ++dropSequence });
   complete = (output, elapsed) =>
     setTrim((current) => ({
       ...current,
@@ -89,6 +98,8 @@ export function TrimFixture() {
       <div className="page">
         <TrimTools
           trim={trim}
+          dropped={dropped}
+          onDropHandled={() => setDropped(undefined)}
           call={async (action, payload: any) => {
             calls.push({ action, payload });
             if (action === "trimFrame")
