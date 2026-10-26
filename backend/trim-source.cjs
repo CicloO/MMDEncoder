@@ -386,7 +386,22 @@ async function index(tools, file, { signal } = {}) {
     const sorted = [...step].sort((a, b) => a - b);
     const median = sorted[sorted.length >> 1];
     const tol = Math.max(1.5, median * 0.02);
-    if (!(median > 0) || step.some((d) => Math.abs(d - median) > tol)) {
+    // A Matroska stream copied into MP4 keeps millisecond-rounded PTS but
+    // gains a finer time base. Compare the entire nominal frame grid before
+    // calling that quantization VFR; widening adjacent-step tolerance alone
+    // would also accept accumulated timing drift or a discontinuity.
+    const uneven = step.some((d) => Math.abs(d - median) > tol);
+    const roundedGrid =
+      uneven &&
+      fps.num > 0 &&
+      order.every(
+        (d, i) =>
+          Math.abs(
+            ((pts[d] - pts[order[0]]) * tb.num) / tb.den -
+              (i * fps.den) / fps.num,
+          ) <= 0.0015,
+      );
+    if (!(median > 0) || (uneven && !roundedGrid)) {
       const reasonData = serializeError(appError("TRIM_VFR_UNSUPPORTED"));
       return {
         codec,
