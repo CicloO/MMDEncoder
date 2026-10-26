@@ -1,4 +1,5 @@
 "use strict";
+const { appError } = require("./errors.cjs");
 const fs = require("node:fs");
 const { run } = require("./trim-probe.cjs");
 const { timing } = require("./trim-range.cjs");
@@ -36,9 +37,9 @@ const AUDIO_CODECS = {
 //   audio.fade: seconds of fade in / out over the whole result (0 = off).
 async function addAudio(tools, segments, video, output, audio, signal) {
   const codec = AUDIO_CODECS[audio.codec || "aac"];
-  if (!codec) throw Error("音频格式无效");
+  if (!codec) throw appError("TRIM_AUDIO_CODEC_INVALID");
   if (audio.codec === "pcm" && /\.mp4$/i.test(output))
-    throw Error("PCM 音频请输出 MOV 或 MKV");
+    throw appError("TRIM_PCM_CONTAINER");
   const times = segments.map(timing);
   const total = times.reduce((a, t) => a + t.length, 0);
   const inputs = [];
@@ -72,9 +73,9 @@ async function addAudio(tools, segments, video, output, audio, signal) {
     );
   } else if (audio.mode === "replace") {
     if (!audio.file || !fs.existsSync(audio.file))
-      throw Error("请选择替换用的音频文件");
+      throw appError("TRIM_AUDIO_FILE_REQUIRED");
     const stream = await audioStream(tools, audio.file);
-    if (!stream) throw Error("所选文件没有音轨");
+    if (!stream) throw appError("TRIM_AUDIO_STREAM_MISSING");
     rate = Number(stream.sample_rate) || 48000;
     inputs.push("-i", audio.file);
     const offset = Number(audio.offset) || 0;
@@ -91,7 +92,7 @@ async function addAudio(tools, segments, video, output, audio, signal) {
         ].join(",") +
         "[aout]",
     );
-  } else throw Error("音频方式无效");
+  } else throw appError("TRIM_AUDIO_MODE_INVALID");
   // Optional fade in at the very start and out at the very end of the whole
   // result (joins between segments stay unfaded).
   const fade = require("./media.cjs").fadeFilter(audio.fade, total);

@@ -1,4 +1,5 @@
 "use strict";
+const { appError } = require("./errors.cjs");
 const { execFile } = require("node:child_process");
 const { seekTime } = require("./trim-range.cjs");
 
@@ -39,7 +40,9 @@ function frameJpeg(tools, idx, file, frame, { height = 360, signal } = {}) {
       { windowsHide: true, encoding: "buffer", maxBuffer: 64 << 20, signal },
       (e, out) =>
         signal?.aborted
-          ? reject(Object.assign(Error("已取消"), { cancelled: true }))
+          ? reject(
+              Object.assign(appError("TRIM_CANCELLED"), { cancelled: true }),
+            )
           : e
             ? reject(e)
             : resolve(out),

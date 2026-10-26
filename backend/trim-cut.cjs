@@ -1,4 +1,5 @@
 "use strict";
+const { appError, serializeError, sourceText } = require("./errors.cjs");
 const fs = require("node:fs"),
   path = require("node:path");
 const { run, compatibility } = require("./trim-probe.cjs");
@@ -13,11 +14,9 @@ async function encodeRange(tools, s, from, to, out, exec) {
   const core = require("./core.cjs");
   const { idx } = s;
   if (!idx.encoding)
-    throw Error(
-      `${path.basename(s.file)} 没有记录编码参数（不是 MMDEncoder 1.5.0 起导出的），不能智能剪切`,
-    );
+    throw appError("TRIM_SMART_TAG_REQUIRED", { name: path.basename(s.file) });
   if (String(idx.encoding.encoder).startsWith("nvencc:"))
-    throw Error("NVEncC 编码的文件暂不支持智能剪切");
+    throw appError("TRIM_NV_SMART_UNSUPPORTED");
   const meta = core.metadata(
     JSON.parse(
       (
@@ -77,18 +76,25 @@ async function encodeRange(tools, s, from, to, out, exec) {
   // The edges must decode with the copied parts' parameter sets.
   const diffs = await compatibility(tools, [s.file, out]);
   const blocking = diffs.filter((d) => d.key !== "time_base");
-  if (blocking.length)
-    throw Error(
-      "重新编码的片段与原片参数不一致，不能智能剪切：" +
-        blocking
-          .map((d) =>
-            d.key === "extradata"
-              ? "编码参数集不同"
-              : `${d.key} ${d.value} / ${d.expected}`,
-          )
-          .join("；") +
-        "。请确认本机编码器与导出原片时相同，或关闭智能剪切",
+  if (blocking.length) {
+    const differences = blocking.map((d) =>
+      serializeError(
+        d.key === "extradata"
+          ? appError("TRIM_CODEC_DATA_MISMATCH")
+          : appError("TRIM_PARAMETER_MISMATCH", {
+              key: d.key,
+              value: d.value,
+              expected: d.expected,
+            }),
+      ),
     );
+    throw appError("TRIM_REENCODE_MISMATCH", {
+      detail: differences
+        .map((d) => d.message)
+        .join(sourceText("trim.listSeparator")),
+      differences,
+    });
+  }
 }
 
 // Cut segments (each { file, idx, from, to } with idx = index(file)) and
@@ -108,7 +114,7 @@ async function cut(
   { onPart = () => {}, audio = { mode: "none" }, signal, smart = false } = {},
 ) {
   const exec = (exe, args) => run(exe, args, { signal });
-  if (!segments.length) throw Error("没有片段");
+  if (!segments.length) throw appError("TRIM_NO_SEGMENTS");
   const temp = fs.mkdtempSync(path.join(path.dirname(output), ".mmd-trim-"));
   try {
     const withAudio = audio && audio.mode !== "none";
@@ -204,7 +210,7 @@ async function cut(
     const got = parseInt(stdout, 10) || 0;
     if (got !== want) {
       fs.rmSync(joined, { force: true });
-      throw Error(`拼接结果应有 ${want} 帧，实际 ${got} 帧，已放弃这次导出`);
+      throw appError("TRIM_OUTPUT_FRAME_MISMATCH", { want, got });
     }
     if (withAudio)
       await addAudio(tools, segments, joined, output, audio, signal);

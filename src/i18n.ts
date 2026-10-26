@@ -3,6 +3,7 @@ import registry from "../locales/registry.json";
 import { createTranslator } from "../locales/runtime.mjs";
 import { formatVideoSummary } from "../locales/video-summary.mjs";
 import { formatMediaMessage } from "../locales/media-messages.mjs";
+import { formatTrimMessage } from "../locales/trim-messages.mjs";
 import {
   formatDescriptor,
   serializeError,
@@ -37,10 +38,12 @@ export function t(key: MessageKey, params: MessageParams = {}) {
 export function errorMessage(error: unknown) {
   const e = serializeError(error);
   const lines = [
-    formatMediaMessage(localeRuntime, "error", e) ??
+    formatTrimMessage(localeRuntime, e) ??
+      formatMediaMessage(localeRuntime, "error", e) ??
       formatDescriptor(localeRuntime, "error", e),
     ...(e.issues || []).map(
       (issue) =>
+        formatTrimMessage(localeRuntime, issue) ??
         formatMediaMessage(localeRuntime, "error", issue) ??
         formatDescriptor(localeRuntime, "error", issue),
     ),

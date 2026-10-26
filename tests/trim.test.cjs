@@ -117,6 +117,8 @@ test(
       const refused = idx.frames.filter((f) => f.key && !f.safe);
       assert.ok(refused.length >= 3);
       assert.match(refused[0].why, /开放 GOP/);
+      assert.equal(refused[0].whyData.code, "TRIM_OPEN_GOP");
+      assert.equal(refused[0].whyData.message, refused[0].why);
       assert.equal(trim.snap(idx, 60), 0, "only the start can be cut");
 
       await make(a, x264(3));
@@ -593,6 +595,8 @@ test(
       const v = await trim.index(tools, vfr);
       assert.equal(v.supported, false);
       assert.match(v.reason, /可变帧率/);
+      assert.equal(v.reasonData.code, "TRIM_VFR_UNSUPPORTED");
+      assert.equal(v.reasonData.message, v.reason);
       // 24 000 frames, every one an IDR: the safe-point check is linear.
       const many = path.join(dir, "many.mp4");
       await trim.run(ff, [

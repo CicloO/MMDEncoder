@@ -1,4 +1,5 @@
 "use strict";
+const { appError, sourceText } = require("./errors.cjs");
 const { execFile, spawn } = require("node:child_process");
 
 // signal: an AbortSignal that stops the process (cancel).
@@ -10,7 +11,9 @@ function run(exe, args, { timeout = 0, maxBuffer = 1 << 30, signal } = {}) {
       { windowsHide: true, timeout, maxBuffer, encoding: "utf8", signal },
       (e, stdout, stderr) =>
         signal?.aborted
-          ? reject(Object.assign(Error("已取消"), { cancelled: true }))
+          ? reject(
+              Object.assign(appError("TRIM_CANCELLED"), { cancelled: true }),
+            )
           : e
             ? reject(
                 Object.assign(
@@ -50,7 +53,7 @@ async function probeInfo(tools, file, signal) {
     { signal, timeout: 60000 },
   );
   const j = JSON.parse(stdout);
-  if (!j.streams?.length) throw Error("没有视频轨");
+  if (!j.streams?.length) throw appError("TRIM_NO_VIDEO");
   return j;
 }
 
@@ -113,14 +116,21 @@ function streamPackets(tools, file, signal) {
     child.on("error", (e) =>
       reject(
         signal?.aborted
-          ? Object.assign(Error("已取消"), { cancelled: true })
+          ? Object.assign(appError("TRIM_CANCELLED"), { cancelled: true })
           : e,
       ),
     );
     child.on("close", (code) => {
       if (signal?.aborted)
-        return reject(Object.assign(Error("已取消"), { cancelled: true }));
-      if (code) return reject(Error(stderr.trim() || "读取视频包失败"));
+        return reject(
+          Object.assign(appError("TRIM_CANCELLED"), { cancelled: true }),
+        );
+      if (code)
+        return reject(
+          stderr.trim()
+            ? Error(stderr.trim())
+            : appError("TRIM_PACKET_READ_FAILED"),
+        );
       resolve({ pts: pts.subarray(0, n), keys, missing });
     });
   });
@@ -182,7 +192,7 @@ async function compatibility(tools, files) {
       diffs.push({
         part: i + 2,
         key: "extradata",
-        value: "参数集不同",
+        value: sourceText("error.TRIM_PARAMETER_SETS_DIFFER"),
         expected: "",
       });
     if (info.rotation !== first.rotation)

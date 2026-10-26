@@ -1,4 +1,5 @@
 "use strict";
+const { appError } = require("./errors.cjs");
 
 // Codecs whose every frame stands alone.
 const INTRA = new Set([
@@ -26,7 +27,7 @@ function snap(idx, frame, { end = false } = {}) {
   frame = Math.max(0, Math.min(n, Math.round(frame)));
   if (end && frame >= n) return n;
   const points = safePoints(idx);
-  if (!points.length && !end) throw Error("这个文件没有可以无损切开的位置");
+  if (!points.length && !end) throw appError("TRIM_NO_CUT_POINTS");
   // The first point at or after the frame, and the one before it.
   const i = firstAtLeast(points, frame);
   const after = i < points.length ? points[i] : end ? n : undefined;
@@ -65,11 +66,21 @@ function firstAtLeast(list, x) {
 // packets in decode order that shows exactly those frames.
 function segment(idx, from, to) {
   const n = idx.frames.length;
-  if (!(from >= 0 && to <= n && from < to)) throw Error("片段为空或越界");
+  if (!(from >= 0 && to <= n && from < to))
+    throw appError("TRIM_INVALID_RANGE");
   const start = idx.frames[from];
-  if (!start.safe) throw Error(`第 ${from} 帧不能作为入点：${start.why}`);
+  if (!start.safe)
+    throw appError("TRIM_UNSAFE_IN", {
+      frame: from,
+      detail: start.why,
+      reason: start.whyData || start.why,
+    });
   if (to < n && !idx.frames[to].safe)
-    throw Error(`第 ${to} 帧不能作为出点：${idx.frames[to].why}`);
+    throw appError("TRIM_UNSAFE_OUT", {
+      frame: to,
+      detail: idx.frames[to].why,
+      reason: idx.frames[to].whyData || idx.frames[to].why,
+    });
   const firstDecode = start.decode;
   const lastDecode = to < n ? idx.frames[to].decode : n;
   const shown = idx.frames
@@ -79,7 +90,7 @@ function segment(idx, from, to) {
   const ok =
     shown.length === lastDecode - firstDecode &&
     shown.every((d, i) => d === firstDecode + i);
-  if (!ok) throw Error(`第 ${from}–${to} 帧在码流里不连续，不能无损切出`);
+  if (!ok) throw appError("TRIM_NONCONTIGUOUS", { from, to });
   return { from, to, startPts: start.pts, count: to - from };
 }
 

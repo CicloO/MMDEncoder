@@ -1,4 +1,5 @@
 "use strict";
+const { appError, serializeError } = require("./errors.cjs");
 const fs = require("node:fs"),
   path = require("node:path");
 const { probeInfo, streamPackets, rational } = require("./trim-probe.cjs");
@@ -53,23 +54,27 @@ async function index(tools, file, { signal } = {}) {
   const info = await probeInfo(tools, file, signal);
   const s = info.streams[0];
   const codec = s.codec_name;
-  if (codec !== "h264" && codec !== "hevc" && !INTRA.has(codec))
+  if (codec !== "h264" && codec !== "hevc" && !INTRA.has(codec)) {
+    const reasonData = serializeError(
+      appError("TRIM_CODEC_UNSUPPORTED", { codec }),
+    );
     return {
       codec,
       supported: false,
-      reason: `暂不支持无损裁切 ${codec} 编码`,
+      reason: reasonData.message,
+      reasonData,
     };
+  }
   const { pts, keys, missing } = await streamPackets(tools, file, signal);
   const n = pts.length;
-  if (!n) throw Error("视频轨没有数据");
-  if (missing) throw Error("视频包缺少时间戳，无法无损裁切");
+  if (!n) throw appError("TRIM_EMPTY_VIDEO");
+  if (missing) throw appError("TRIM_MISSING_TIMESTAMPS");
   let types = new Map();
   if (codec === "h264" || codec === "hevc") {
     if (needsRemux(file, codec)) {
       const copy = await remuxed(tools, file, signal);
       const again = await streamPackets(tools, copy, signal);
-      if (again.pts.length !== n)
-        throw Error("无法读取视频包的类型（包数量不一致）");
+      if (again.pts.length !== n) throw appError("TRIM_PACKET_COUNT_MISMATCH");
       types = nalTypes(copy, again.keys, codec);
     } else types = nalTypes(file, keys, codec);
   }
@@ -91,13 +96,15 @@ async function index(tools, file, { signal } = {}) {
     const sorted = [...step].sort((a, b) => a - b);
     const median = sorted[sorted.length >> 1];
     const tol = Math.max(1.5, median * 0.02);
-    if (!(median > 0) || step.some((d) => Math.abs(d - median) > tol))
+    if (!(median > 0) || step.some((d) => Math.abs(d - median) > tol)) {
+      const reasonData = serializeError(appError("TRIM_VFR_UNSUPPORTED"));
       return {
         codec,
         supported: false,
-        reason:
-          "可变帧率（VFR）的视频暂不支持无损剪辑，请先在“视频压制”里转成固定帧率",
+        reason: reasonData.message,
+        reasonData,
       };
+    }
   }
   // For each decode position: the latest time shown by anything decoded
   // before it, and the earliest time shown by anything decoded after it
@@ -119,19 +126,19 @@ async function index(tools, file, { signal } = {}) {
     const d = order[f];
     const key = keySet.has(d);
     let safe = false,
-      why = "";
+      why = null;
     if (INTRA.has(codec)) {
       safe = key;
-      if (!safe) why = "不是关键帧";
-    } else if (!key) why = "不是关键帧";
+      if (!safe) why = serializeError(appError("TRIM_NOT_KEYFRAME"));
+    } else if (!key) why = serializeError(appError("TRIM_NOT_KEYFRAME"));
     else {
       const t = types.get(d);
-      if (!t) why = "无法读取帧类型";
+      if (!t) why = serializeError(appError("TRIM_FRAME_TYPE_UNREADABLE"));
       else if (!t.some(IDR[codec]))
-        why = "关键帧但不是 IDR（开放 GOP），从这里开始会花屏";
+        why = serializeError(appError("TRIM_OPEN_GOP"));
       // Nothing decoded later shows earlier, nothing decoded earlier later.
       else if (after[d] < pts[d] || before[d] > pts[d])
-        why = "IDR 前后有交叉显示的帧，不能在这里切开";
+        why = serializeError(appError("TRIM_CROSSING_FRAMES"));
       else safe = true;
     }
     frames[f] = {
@@ -140,7 +147,7 @@ async function index(tools, file, { signal } = {}) {
       pts: pts[d],
       key,
       safe,
-      ...(why ? { why } : {}),
+      ...(why ? { why: why.message, whyData: why } : {}),
     };
   }
   // MMDEncoder's own outputs say how they were encoded and, for MMD
