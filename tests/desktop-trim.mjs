@@ -131,8 +131,18 @@ try {
   const state = () =>
     page.evaluate(async () => (await window.encoder.invoke("state")).trim);
   for (const suffix of ["", " (2)"]) {
+    const previousOutput = (await state()).output;
     await page.getByRole("button", { name: "导出", exact: true }).click();
-    await expect.poll(async () => (await state()).running).toBe(false);
+    await expect
+      .poll(async () => {
+        const current = await state();
+        return (
+          !current.running &&
+          current.output !== previousOutput &&
+          current.stage?.stage === "trim_completed"
+        );
+      })
+      .toBe(true);
     const result = await state();
     assert.equal(result.stage.stage, "trim_completed");
     assert.ok(Number.isFinite(result.elapsed) && result.elapsed >= 0);
