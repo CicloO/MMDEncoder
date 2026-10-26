@@ -128,6 +128,18 @@ try {
     before,
     "locale changes do not remount, request new frames, apply drafts or rewrite options",
   );
+  const longOutput = "C:/output/User " + "最终成片".repeat(35) + " (2).mp4";
+  await page.evaluate(
+    (output) => window.alignLocale.completeTrim(output, 12.5),
+    longOutput,
+  );
+  await expect(page.locator(".output-file-name")).toHaveAttribute(
+    "title",
+    longOutput,
+  );
+  await expect(page.locator(".trim-completion-label")).toContainText(
+    labels["trim.completed"],
+  );
   for (const width of [1360, 700]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.evaluate(
@@ -149,6 +161,19 @@ try {
       footer && footer.y + footer.height <= 1001,
       "footer remains in the viewport",
     );
+    const tail = await page.locator(".output-file-tail").boundingBox();
+    assert.ok(
+      tail && tail.x + tail.width <= width + 1,
+      "filename tail remains visible",
+    );
+    if (width === 700)
+      assert.equal(
+        await page
+          .locator(".output-file-lead")
+          .evaluate((node) => node.scrollWidth > node.clientWidth),
+        true,
+        "long filename truncates in the middle",
+      );
     measurements.push({ width, measured, footer });
     const png = await app.evaluate(async ({ BrowserWindow }) =>
       (await BrowserWindow.getAllWindows()[0].webContents.capturePage())

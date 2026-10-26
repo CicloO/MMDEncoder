@@ -67,6 +67,7 @@ function createTrimQueue({
         output: "",
         error: "",
         errorData: null,
+        elapsed: undefined,
         stage: "",
         progress: 0,
       });

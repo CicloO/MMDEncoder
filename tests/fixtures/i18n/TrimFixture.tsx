@@ -4,6 +4,7 @@ import type { State } from "../../../src/types";
 
 const calls: Array<{ action: string; payload: any }> = [];
 let mounts = 0;
+let complete = (_output: string, _elapsed: number) => {};
 const initial: State["trim"] = {
   clips: [
     {
@@ -65,9 +66,21 @@ const initial: State["trim"] = {
 export function trimSnapshot() {
   return { mounts, calls: [...calls] };
 }
+export const completeTrim = (output: string, elapsed: number) =>
+  complete(output, elapsed);
 
 export function TrimFixture() {
   const [trim, setTrim] = useState(initial);
+  complete = (output, elapsed) =>
+    setTrim((current) => ({
+      ...current,
+      running: false,
+      output,
+      elapsed,
+      stage: { stage: "trim_completed", params: {} },
+      error: "",
+      errorData: null,
+    }));
   useEffect(() => {
     mounts++;
   }, []);

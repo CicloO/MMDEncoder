@@ -86,6 +86,7 @@ function createTrimExport({
     );
     fs.mkdirSync(path.dirname(output), { recursive: true });
     trimAbort = new AbortController();
+    const startedAt = Date.now();
     updateExport({
       running: true,
       progress: 0,
@@ -93,6 +94,7 @@ function createTrimExport({
       output,
       error: "",
       errorData: null,
+      elapsed: undefined,
     });
     emit();
     (async () => {
@@ -121,7 +123,11 @@ function createTrimExport({
             },
           },
         );
-        updateExport({ progress: 100, stage: stage("trim_completed") });
+        updateExport({
+          progress: 100,
+          stage: stage("trim_completed"),
+          elapsed: (Date.now() - startedAt) / 1000,
+        });
       } catch (e) {
         fs.rmSync(output, { force: true });
         updateExport({

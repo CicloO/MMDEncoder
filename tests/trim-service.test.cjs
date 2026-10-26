@@ -112,6 +112,7 @@ test(
       assert.equal(st().error, "");
       assert.equal(st().errorData, null);
       assert.equal(st().stage.stage, "trim_completed");
+      assert.ok(Number.isFinite(st().elapsed) && st().elapsed >= 0);
       const out = st().output;
       assert.equal(out, path.join(dir, "Encoded", "舞台 A_trimmed.mp4"));
       assert.equal(await frames(out), 60 + 30);
@@ -121,6 +122,11 @@ test(
         audio: { mode: "none" },
         location: "encoded",
       });
+      assert.equal(
+        st().elapsed,
+        undefined,
+        "a new export clears the previous duration",
+      );
       await until(() => !st().running);
       assert.equal(
         st().output,
@@ -144,6 +150,11 @@ test(
 
       // Cancel a running export: no output is left behind.
       await svc.invoke("trimClear");
+      assert.equal(
+        st().elapsed,
+        undefined,
+        "clearing also drops the completed duration",
+      );
       await trim.run(ff, [
         "-v",
         "error",
@@ -165,6 +176,7 @@ test(
       await svc.invoke("trimCancel");
       await until(() => !st().running);
       assert.equal(st().stage.stage, "trim_cancelled");
+      assert.equal(st().elapsed, undefined);
       assert.equal(st().output, "");
       assert.equal(fs.existsSync(path.join(dir, "long_trimmed.mov")), false);
       assert.deepEqual(

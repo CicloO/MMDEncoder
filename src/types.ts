@@ -237,6 +237,7 @@ export type State = {
     output: string;
     error: string;
     errorData?: ErrorData | null;
+    elapsed?: number;
   };
   mmd: {
     presetId: string;

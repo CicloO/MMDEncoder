@@ -8,6 +8,8 @@ import {
 import { Button } from "./components";
 import { clock } from "./trimCoordinates";
 import { LOCATIONS } from "./trimOptions";
+import { OutputFiles } from "./OutputFiles";
+import { formatDuration } from "./presentation";
 import {
   t as text,
   localeRuntime,
@@ -26,6 +28,7 @@ export function TrimFooter({
   stage,
   progress,
   output,
+  elapsed,
   canExport,
   onReveal,
   onCancel,
@@ -41,12 +44,18 @@ export function TrimFooter({
   stage?: StageDescriptor | string;
   progress: number;
   output?: string;
+  elapsed?: number;
   canExport: boolean;
   onReveal: () => unknown;
   onCancel: () => unknown;
   onExport: () => unknown;
 }) {
   const n = (v: number) => localeRuntime.number(v);
+  const completed =
+    !running &&
+    typeof stage === "object" &&
+    stage.stage === "trim_completed" &&
+    !!output;
   return (
     <footer className="output-strip">
       <div className="output-icon">
@@ -83,21 +92,39 @@ export function TrimFooter({
           <i />{" "}
           {text("trim.outputLocation", { location: LOCATIONS()[location] })}
         </span>
-        <span className="output-path" title={output}>
-          {running
-            ? text("trim.progress", {
-                stage: stageMessage(stage || ""),
-                progress: n(progress),
-              })
-            : output
-              ? text("trim.saved", { path: output })
-              : typeof stage === "object" && stage.stage === "trim_cancelled"
-                ? stageMessage(stage)
-                : text("trim.outputName")}
+        <span
+          className={`output-path${completed ? " trim-completion" : ""}`}
+          title={output}
+        >
+          {running ? (
+            text("trim.progress", {
+              stage: stageMessage(stage || ""),
+              progress: n(progress),
+            })
+          ) : completed ? (
+            <>
+              <span className="trim-completion-label">
+                {text("trim.completed")}
+                {elapsed !== undefined
+                  ? text("queue.completedTime", {
+                      time:
+                        elapsed < 1
+                          ? text("queue.lessThanSecond")
+                          : formatDuration(elapsed),
+                    })
+                  : ""}
+              </span>
+              <OutputFiles output={output} />
+            </>
+          ) : typeof stage === "object" && stage.stage === "trim_cancelled" ? (
+            stageMessage(stage)
+          ) : (
+            text("trim.outputName")
+          )}
         </span>
       </div>
       <div className="run-actions">
-        {output && !running && (
+        {completed && (
           <Button variant="ghost" onClick={onReveal}>
             <FolderOpen size={15} />
             {text("trim.reveal")}

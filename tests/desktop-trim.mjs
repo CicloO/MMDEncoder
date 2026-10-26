@@ -127,6 +127,29 @@ try {
   await page.mouse.click(ticks[1] + (ticks[2] - ticks[1]) * 0.4, y);
   assert.equal(await value(), 30, "still snaps when smart cut cannot be used");
 
+  await page.locator("#trim-audio").selectOption("none");
+  const state = () =>
+    page.evaluate(async () => (await window.encoder.invoke("state")).trim);
+  for (const suffix of ["", " (2)"]) {
+    await page.getByRole("button", { name: "导出", exact: true }).click();
+    await expect.poll(async () => (await state()).running).toBe(false);
+    const result = await state();
+    assert.equal(result.stage.stage, "trim_completed");
+    assert.ok(Number.isFinite(result.elapsed) && result.elapsed >= 0);
+    assert.ok(fs.existsSync(result.output));
+    assert.equal(
+      path.basename(result.output),
+      `剪辑 测试_trimmed${suffix}.mp4`,
+    );
+    await expect(page.locator(".output-file-name")).toHaveAttribute(
+      "title",
+      result.output,
+    );
+    await expect(page.locator(".trim-completion-label")).toContainText(
+      "已完成 · 用时",
+    );
+  }
+
   await page.screenshot({ path: path.join(evidence, "trim-slider.png") });
   console.log("Desktop trim PASS");
   passed = true;

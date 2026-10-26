@@ -316,6 +316,7 @@ export function TrimTools({
         stage={t.stage}
         progress={t.progress}
         output={t.output}
+        elapsed={t.elapsed}
         canExport={canExport}
         onReveal={() => run("reveal", { path: t.output })}
         onCancel={() => run("trimCancel")}

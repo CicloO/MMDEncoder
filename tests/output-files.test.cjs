@@ -179,3 +179,84 @@ test("500 completed media tasks keep the existing payload size and one copy of e
   );
   console.log(`500 media tasks: output payload ${before} -> ${after} bytes`);
 });
+
+test("trim completion reuses the filename view, formats elapsed time and hides uncommitted or stale paths", () => {
+  const i18n = load("src/i18n.ts");
+  const { TrimFooter } = load("src/TrimFooter.tsx", {
+    "./i18n": i18n,
+    "./trimOptions": load("src/trimOptions.ts", { "./i18n": i18n }),
+    "./trimCoordinates": load("src/trimCoordinates.ts", { "./i18n": i18n }),
+    "./presentation": load("src/presentation.ts", { "./i18n": i18n }),
+    "./OutputFiles": { OutputFiles },
+    "./components": {
+      Button: ({ children }) => React.createElement("button", {}, children),
+    },
+  });
+  const props = {
+    clipCount: 1,
+    totalFrames: 30,
+    totalSeconds: 1,
+    audioMode: "none",
+    audioCodec: "aac",
+    location: "source",
+    running: false,
+    stage: { stage: "trim_completed", params: {} },
+    progress: 100,
+    output: "H:/用户成品/User result_trimmed (2).mp4",
+    elapsed: 12.5,
+    canExport: true,
+    onReveal() {},
+    onCancel() {},
+    onExport() {},
+  };
+  const render = (patch) =>
+    renderToStaticMarkup(
+      React.createElement(TrimFooter, { ...props, ...patch }),
+    );
+  assert.match(render({}), /已完成 · 用时 00:00:12/);
+  assert.match(
+    render({}),
+    /title="H:\/用户成品\/User result_trimmed \(2\).mp4"/,
+  );
+  assert.equal((render({}).match(/class="output-file-name"/g) || []).length, 1);
+  assert.match(render({ elapsed: 0.25 }), /已完成 · 用时 不到 1 秒/);
+  for (const patch of [
+    { running: true },
+    { output: "" },
+    { stage: { stage: "trim_cancelled", params: {} } },
+    { stage: { stage: "trim_failed", params: {} } },
+  ])
+    assert.ok(!render(patch).includes('class="output-file-name"'));
+  i18n.localeRuntime.registerCatalog("en-XA", {
+    "trim.completed": "COMPLETE TEST",
+    "queue.completedTime": " / TIME {time}",
+  });
+  i18n.setLocale("en-XA");
+  assert.match(render({}), /COMPLETE TEST \/ TIME 00:00:12/);
+  assert.match(render({}), /User result_trimmed/);
+});
+
+test("one trim elapsed value adds a bounded payload to 500 tasks without repeating output paths", () => {
+  const state = {
+    jobs: Array.from({ length: 500 }, (_, id) => ({
+      id,
+      output: `H:/output/User ${id}.mp4`,
+    })),
+    mediaJobs: [],
+    trim: { output: "H:/output/User_trimmed.mp4" },
+  };
+  const before = Buffer.byteLength(JSON.stringify(uiState(state)));
+  state.trim.elapsed = 12.5;
+  const projected = uiState(state);
+  const after = Buffer.byteLength(JSON.stringify(projected));
+  assert.equal(projected.trim.elapsed, 12.5);
+  assert.equal(
+    (JSON.stringify(projected).match(/User_trimmed\.mp4/g) || []).length,
+    1,
+  );
+  assert.ok(
+    after - before <= 32,
+    `unexpected payload growth: ${after - before}`,
+  );
+  console.log(`500 tasks + trim elapsed: ${before} -> ${after} bytes`);
+});

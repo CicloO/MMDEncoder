@@ -1098,7 +1098,7 @@
   "trim.outputCodec": " · {codec}",
   "trim.outputLocation": "位置 → {location}",
   "trim.progress": "{stage} · {progress}%",
-  "trim.saved": "已保存：{path}",
   "trim.alignDescription": "把替换音频对齐到“{name}”自带的声音；应用后填入起点偏移（按第一个片段的起点换算）。",
-  "error.TRIM_POSITION_INVALID": "请输入帧号或时间（如 1234 或 00:00:41.133）"
+  "error.TRIM_POSITION_INVALID": "请输入帧号或时间（如 1234 或 00:00:41.133）",
+  "trim.completed": "已完成"
 }

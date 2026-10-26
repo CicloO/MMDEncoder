@@ -4,7 +4,7 @@ import { AlignDialog, type Alignment } from "../../../src/AlignDialog";
 import { FileMeta } from "../../../src/FileMeta";
 import { MediaDetails } from "../../../src/MediaDetails";
 import { MediaFixture } from "./MediaFixture";
-import { TrimFixture, trimSnapshot } from "./TrimFixture";
+import { TrimFixture, trimSnapshot, completeTrim } from "./TrimFixture";
 import { Modal } from "../../../src/components";
 import type { MediaMeta } from "../../../src/types";
 import { LocaleRoot } from "../../../src/LocaleRoot";
@@ -87,6 +87,7 @@ function Fixture() {
   showMedia: () => showMedia(),
   showTrim: () => showTrim(),
   trimSnapshot,
+  completeTrim,
   showMetadata: (value: { meta: MediaMeta; details: any }) =>
     showMetadata(value),
 };

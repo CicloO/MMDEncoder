@@ -965,6 +965,16 @@ input:not([type="checkbox"]):hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.trim-completion {
+  display: flex;
+  align-items: baseline;
+}
+.trim-completion-label {
+  flex: none;
+}
+.trim-completion > .output-files {
+  flex: 0 1 auto;
+}
 .run-actions {
   display: flex;
   align-items: center;
