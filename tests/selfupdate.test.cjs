@@ -274,6 +274,7 @@ test(
   { skip: process.platform !== "win32", timeout: 60000 },
   async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-relaunch-"));
+    assert.equal(path.dirname(path.resolve(root)), path.resolve(os.tmpdir()));
     try {
       const appDir = path.join(root, "app");
       const newDir = path.join(root, "new");
@@ -288,6 +289,7 @@ test(
         hook,
         `if (require("path").basename(process.execPath) === "MMDEncoder.exe") {
   require("fs").writeFileSync(${JSON.stringify(seen)}, JSON.stringify({
+    pid: process.pid,
     runAsNode: process.env.ELECTRON_RUN_AS_NODE ?? null,
     job: process.env.MMD_UPDATE_JOB ?? null,
   }));
@@ -321,7 +323,24 @@ test(
       for (let i = 0; i < 100 && !fs.existsSync(seen); i++)
         await new Promise((r) => setTimeout(r, 100));
       assert.match(fs.readFileSync(log, "utf8"), /更新完成/);
-      assert.deepEqual(JSON.parse(fs.readFileSync(seen, "utf8")), {
+      const { pid, ...environment } = JSON.parse(fs.readFileSync(seen, "utf8"));
+      const running = () => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch (error) {
+          if (error.code === "ESRCH") return false;
+          throw error;
+        }
+      };
+      for (let i = 0; i < 100 && running(); i++)
+        await new Promise((r) => setTimeout(r, 20));
+      assert.equal(
+        running(),
+        false,
+        "the test relaunch process must exit before cleanup",
+      );
+      assert.deepEqual(environment, {
         runAsNode: null,
         job: null,
       });
