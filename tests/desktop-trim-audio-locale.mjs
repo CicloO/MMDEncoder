@@ -71,6 +71,15 @@ const app = await electron.launch({
   },
   timeout: 60000,
 });
+const capture = async (file) => {
+  const data = await app.evaluate(async ({ BrowserWindow }) =>
+    (await BrowserWindow.getAllWindows()[0].webContents.capturePage())
+      .toPNG()
+      .toString("base64"),
+  );
+  assert.ok(data.length > 100);
+  fs.writeFileSync(file, Buffer.from(data, "base64"));
+};
 try {
   const page = await app.firstWindow();
   page.setDefaultTimeout(30000);
@@ -189,7 +198,7 @@ try {
       measure.scroll <= measure.width,
       JSON.stringify({ width, measure }),
     );
-    await page.screenshot({ path: path.join(dir, `expanded-${width}.png`) });
+    await capture(path.join(dir, `expanded-${width}.png`));
   }
   await page.evaluate(() => window.alignLocale.choose("zh-CN"));
   await dialog.getByRole("button", { name: "应用", exact: true }).click();
@@ -220,7 +229,7 @@ try {
   await expect(frames).toHaveValue("0");
   await expect(dialog.getByText(/目标开头多出 1\.25\d\d 秒/)).toBeVisible();
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
-  await page.screenshot({ path: path.join(dir, "audio-settings-700.png") });
+  await capture(path.join(dir, "audio-settings-700.png"));
   console.log(
     "Trim drop before reference, deferred automatic match, new audio reset, reduced motion and locale preservation PASS",
     dir,
@@ -231,9 +240,7 @@ try {
     String(error.stack || error),
   );
   try {
-    await (
-      await app.firstWindow()
-    ).screenshot({ path: path.join(dir, "failure.png") });
+    await capture(path.join(dir, "failure.png"));
   } catch {}
   throw error;
 } finally {
