@@ -161,30 +161,43 @@ class RenderFailureGuard {
     DWORD pid = 0;
     GetWindowThreadProcessId(dialog, &pid);
     GetClassNameW(dialog, cls, 64);
-    HWND ok = GetDlgItem(dialog, IDOK);
-    if (pid != GetCurrentProcessId() || wcscmp(cls, L"#32770") || !ok) return;
+    if (pid != GetCurrentProcessId() || wcscmp(cls, L"#32770")) return;
     DWORD_PTR copied = 0;
     if (!SendMessageTimeoutW(dialog, WM_GETTEXT, 128, (LPARAM)title,
           SMTO_ABORTIFHUNG | SMTO_BLOCK, 100, &copied) || wcscmp(title, L"MMDEncoder")) return;
+    std::wstring text;
+    std::vector<HWND> children, buttons;
+    EnumChildWindows(dialog, [](HWND child, LPARAM p) -> BOOL {
+      wchar_t name[64]{};
+      GetClassNameW(child, name, 64);
+      if (!wcscmp(name, L"Static")) ((std::vector<HWND>*)p)->push_back(child);
+      return TRUE;
+    }, (LPARAM)&children);
+    EnumChildWindows(dialog, [](HWND child, LPARAM p) -> BOOL {
+      wchar_t name[64]{};
+      GetClassNameW(child, name, 64);
+      if (!wcscmp(name, L"Button")) ((std::vector<HWND>*)p)->push_back(child);
+      return TRUE;
+    }, (LPARAM)&buttons);
+    if (buttons.size() != 1) return;
+    HWND ok = buttons[0];
+    const int buttonId = GetDlgCtrlID(ok);
+    if (buttonId != IDOK && buttonId != IDCANCEL) return;
+    for (HWND child : children) {
+      wchar_t value[8192]{};
+      if (SendMessageTimeoutW(child, WM_GETTEXT, 8192, (LPARAM)value,
+            SMTO_ABORTIFHUNG | SMTO_BLOCK, 100, &copied) && copied)
+        text += std::wstring(value) + L"\n";
+    }
+    // A single-button export error can use IDCANCEL on Windows. Match its
+    // known body as well as process/thread/title before dismissing anything.
+    if (text.rfind(L"MMDEncoder 导出失败：", 0) != 0) return;
     if (!failed_.exchange(true)) {
-      std::wstring text;
-      std::vector<HWND> children;
-      EnumChildWindows(dialog, [](HWND child, LPARAM p) -> BOOL {
-        wchar_t name[64]{};
-        GetClassNameW(child, name, 64);
-        if (!wcscmp(name, L"Static")) ((std::vector<HWND>*)p)->push_back(child);
-        return TRUE;
-      }, (LPARAM)&children);
-      for (HWND child : children) {
-        wchar_t value[8192]{};
-        if (SendMessageTimeoutW(child, WM_GETTEXT, 8192, (LPARAM)value,
-              SMTO_ABORTIFHUNG | SMTO_BLOCK, 100, &copied) && copied)
-          text += std::wstring(value) + L"\n";
-      }
       int size = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, nullptr, 0, nullptr, nullptr);
       std::string bytes(size, 0);
       WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, bytes.data(), size, nullptr, nullptr);
       std::printf("renderFailure=%s\n", bytes.c_str());
+      std::printf("renderFailureButton=%d\n", buttonId);
     }
     PostMessageW(ok, BM_CLICK, 0, 0);
   }
