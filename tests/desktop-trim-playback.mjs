@@ -1,5 +1,6 @@
 // Native media decode, timeline coordination, stream access and file release.
 import { _electron as electron, expect } from "@playwright/test";
+import { build } from "vite";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -36,6 +37,15 @@ make(input, [
   "0",
 ]);
 make(prores, ["-c:v", "prores_ks", "-profile:v", "1"]);
+const fixtureDir = path.join(dir, "fixture-dist");
+await build({
+  root,
+  base: "./",
+  build: {
+    outDir: fixtureDir,
+    rollupOptions: { input: path.join(root, "tests/fixtures/i18n/align.html") },
+  },
+});
 const app = await electron.launch({
   executablePath: require("electron"),
   args: [root],
@@ -213,6 +223,9 @@ try {
     saved,
   );
 
+  await slider.focus();
+  await page.keyboard.press("ArrowUp");
+  await expect(slider).toHaveValue("30");
   await play().click();
   await expect.poll(() => video.evaluate((node) => !node.paused)).toBe(true);
   await page.getByRole("button", { name: "下一帧", exact: true }).click();
@@ -274,6 +287,131 @@ try {
       ),
     )
     .toBe(true);
+  const actualClips = (await state()).clips;
+  await app.evaluate(
+    async ({ BrowserWindow }, file) =>
+      BrowserWindow.getAllWindows()[0].loadFile(file),
+    path.join(fixtureDir, "tests/fixtures/i18n/align.html"),
+  );
+  await page
+    .getByRole("button", { name: "Alignment fixture focus target" })
+    .waitFor();
+  await page.evaluate(() => window.alignLocale.showTrim());
+  await expect(page.locator(".trim-editor h3")).toBeVisible();
+  await page.evaluate(
+    (clips) =>
+      window.alignLocale.setTrimClips([
+        { ...clips[0], from: 0, to: clips[0].frames },
+      ]),
+    actualClips,
+  );
+  await expect(play()).toBeEnabled();
+  await video.evaluate((node) => {
+    node.muted = true;
+    window.localeTrimVideo = node;
+  });
+  await play().click();
+  await expect
+    .poll(() =>
+      video.evaluate((node) => !node.paused && node.currentTime > 0.2),
+    )
+    .toBe(true);
+  const localeBefore = await page.evaluate(() => ({
+    time: document.querySelector("video").currentTime,
+    snapshot: window.alignLocale.trimSnapshot(),
+  }));
+  for (const locale of ["en-XA", "en-XB", "unsupported", "zh-CN"]) {
+    await page.evaluate((locale) => window.alignLocale.choose(locale), locale);
+    const expected = await page.evaluate(
+      (locale) =>
+        locale.startsWith("en-X")
+          ? window.alignLocale.pseudo["trim.pause"]
+          : "暂停",
+      locale,
+    );
+    await expect(
+      page.locator(".trim-buttons > button[aria-pressed]"),
+    ).toHaveText(expected);
+    assert.equal(
+      await page.evaluate(
+        (time) =>
+          window.localeTrimVideo === document.querySelector("video") &&
+          !window.localeTrimVideo.paused &&
+          window.localeTrimVideo.currentTime >= time,
+        localeBefore.time,
+      ),
+      true,
+    );
+    assert.deepEqual(
+      await page.evaluate(() => window.alignLocale.trimSnapshot()),
+      localeBefore.snapshot,
+    );
+  }
+  await page.getByRole("button", { name: "暂停", exact: true }).click();
+  const png = await app.evaluate(async ({ BrowserWindow }) =>
+    (await BrowserWindow.getAllWindows()[0].webContents.capturePage())
+      .toPNG()
+      .toString("base64"),
+  );
+  fs.writeFileSync(
+    path.join(dir, "native-player.png"),
+    Buffer.from(png, "base64"),
+  );
+  await page.evaluate(
+    (clips) => window.alignLocale.setTrimClips([clips[1]]),
+    actualClips,
+  );
+  await expect(
+    page.getByText("此文件无法直接播放，使用逐帧预览。", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => window.alignLocale.choose("en-XA"));
+  const fallback = await page.evaluate(
+    () => window.alignLocale.pseudo["trim.previewUnavailable"],
+  );
+  await expect(page.getByText(fallback, { exact: true })).toBeVisible();
+
+  // A sparse tail makes cancellation observable before EOF without creating
+  // a large media fixture or changing the user's files.
+  let cancelledStream;
+  fs.truncateSync(input, size + (64 << 20));
+  try {
+    await app.evaluate((_, source) => {
+      const fs = process.getBuiltinModule("fs"),
+        create = fs.createReadStream;
+      globalThis.trimStreamChecks = [];
+      fs.createReadStream = (...args) => {
+        const stream = create(...args);
+        if (args[0] === source) {
+          const check = { closed: false, bytesRead: 0 };
+          globalThis.trimStreamChecks.push(check);
+          stream.once("close", () => {
+            check.closed = true;
+            check.bytesRead = stream.bytesRead;
+          });
+        }
+        return stream;
+      };
+    }, input);
+    const bytes = await app.evaluate(async ({ net }, url) => {
+      const response = await net.fetch(url),
+        reader = response.body.getReader();
+      const first = await reader.read();
+      await reader.cancel();
+      return first.value.length;
+    }, stream);
+    assert.ok(bytes > 0);
+    await expect
+      .poll(() =>
+        app.evaluate(() => globalThis.trimStreamChecks.at(-1)?.closed),
+      )
+      .toBe(true);
+    cancelledStream = await app.evaluate(() =>
+      globalThis.trimStreamChecks.at(-1),
+    );
+    assert.ok(cancelledStream.bytesRead < size + (64 << 20));
+  } finally {
+    fs.truncateSync(input, size);
+  }
   const renamed = path.join(dir, "released.mp4");
   assert.equal(path.dirname(input), path.resolve(dir));
   assert.equal(path.dirname(renamed), path.resolve(dir));
@@ -305,6 +443,7 @@ try {
         lastFrame: 59,
         pausedFrame,
         jpegReads: calls,
+        cancelledStream,
         checks: [
           "range-and-head",
           "path-and-method-restrictions",
@@ -316,6 +455,8 @@ try {
           "switch-release",
           "leave-release",
           "revocation",
+          "playing-locale-preserved",
+          "consumer-cancel-closes-file",
         ],
       },
       null,
