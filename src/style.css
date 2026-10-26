@@ -2171,6 +2171,12 @@ html[data-theme="light"] {
 .align-group .align-shift-input {
   width: 112px;
   flex: 0 0 112px;
+  appearance: textfield;
+}
+.align-shift-input::-webkit-inner-spin-button,
+.align-shift-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 .align-shift-feedback .hint {
   margin: 0;

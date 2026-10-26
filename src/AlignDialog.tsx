@@ -7,7 +7,6 @@ import {
   parseFrameRate,
   type ReferenceTiming,
 } from "../backend/audio-timing.mjs";
-import { formatFPS } from "./presentation";
 import { draw, envelope } from "./alignWave";
 import { useAlignPlayer } from "./useAlignPlayer";
 import {
@@ -159,6 +158,11 @@ export function AlignDialog({
       validFrames &&
       Number.isFinite(computedShift) &&
       Math.abs(computedShift) <= 24 * 3600);
+  const frameError = !validFrames
+    ? "error.ALIGN_SHIFT_FRAMES_INVALID"
+    : Number.isFinite(computedShift) && Math.abs(computedShift) > 24 * 3600
+      ? "error.ALIGN_SHIFT_RANGE_INVALID"
+      : null;
   const frameSeconds = 1 / (parseFrameRate(referenceInfo?.fpsText)?.fps || 30);
   // From the playhead (or `from`), the target shifted by `shift`.
   const play = (from = playhead, atShift = shift) =>
@@ -252,6 +256,18 @@ export function AlignDialog({
       offset +
         dir * (step === "frame" ? frameSeconds : Number(step)) * (big ? 10 : 1),
     );
+  }
+  function setFrameValue(next: string) {
+    setFrameInput(next);
+    if (playing) {
+      const value = effectiveAudioOffset(
+        offset,
+        Number(next),
+        referenceInfo?.fpsText,
+      );
+      if (Number.isFinite(value)) play(playhead, value);
+      else stop();
+    }
   }
   const timeAt = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -669,59 +685,51 @@ export function AlignDialog({
                   disabled={!!busy || !referenceInfo}
                   aria-invalid={!validShift && !!referenceInfo}
                   aria-describedby={
-                    !validShift && referenceInfo
-                      ? "align-audio-shift-hint align-audio-shift-error"
-                      : "align-audio-shift-hint"
+                    [
+                      referenceInfo?.fallback && "align-audio-shift-hint",
+                      frameError && "align-audio-shift-error",
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || undefined
                   }
                   title={referenceInfo?.fpsText}
-                  onChange={(event) => {
-                    setFrameInput(event.target.value);
-                    if (playing) {
-                      const value = effectiveAudioOffset(
-                        offset,
-                        Number(event.target.value),
-                        referenceInfo?.fpsText,
-                      );
-                      if (Number.isFinite(value)) play(playhead, value);
-                      else stop();
-                    }
-                  }}
+                  onChange={(event) => setFrameValue(event.target.value)}
                 />
+                <Button
+                  aria-label={t("align.shiftEarlier")}
+                  title={t("align.shiftEarlier")}
+                  disabled={!!busy || !referenceInfo || !validFrames}
+                  onClick={() => setFrameValue(String(frames - 1))}
+                >
+                  ←
+                </Button>
+                <Button
+                  aria-label={t("align.shiftLater")}
+                  title={t("align.shiftLater")}
+                  disabled={!!busy || !referenceInfo || !validFrames}
+                  onClick={() => setFrameValue(String(frames + 1))}
+                >
+                  →
+                </Button>
               </div>
             )}
           </div>
-          {frameShift && (
+          {frameShift && (referenceInfo?.fallback || frameError) && (
             <div className="align-shift-feedback">
-              <p id="align-audio-shift-hint" className="hint">
-                {referenceInfo
-                  ? t(
-                      referenceInfo.fallback
-                        ? "align.shiftAudioFallback"
-                        : "align.shiftVideoRate",
-                      { fps: formatFPS(referenceInfo.fpsText) },
-                    )
-                  : t("align.shiftAwaitReference")}
-              </p>
-              {!validFrames && (
+              {referenceInfo?.fallback && (
+                <p id="align-audio-shift-hint" className="hint">
+                  {t("align.shiftAudioFallback")}
+                </p>
+              )}
+              {frameError && (
                 <p
                   id="align-audio-shift-error"
                   className="inline-error"
                   role="alert"
                 >
-                  {t("error.ALIGN_SHIFT_FRAMES_INVALID")}
+                  {t(frameError)}
                 </p>
               )}
-              {validFrames &&
-                Number.isFinite(computedShift) &&
-                Math.abs(computedShift) > 24 * 3600 && (
-                  <p
-                    id="align-audio-shift-error"
-                    className="inline-error"
-                    role="alert"
-                  >
-                    {t("error.ALIGN_SHIFT_RANGE_INVALID")}
-                  </p>
-                )}
             </div>
           )}
           {withTrim && (

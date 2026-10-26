@@ -314,6 +314,14 @@ try {
     await expect(
       dialog.getByText(/参考仅有音频，按 30 FPS 计算/),
     ).toBeVisible();
+    await dialog
+      .getByRole("button", { name: "音频提前 1 帧", exact: true })
+      .click();
+    await expect(dialog.locator("#align-audio-shift")).toHaveValue("1");
+    await dialog
+      .getByRole("button", { name: "音频延后 1 帧", exact: true })
+      .click();
+    await expect(dialog.locator("#align-audio-shift")).toHaveValue("2");
     await page.evaluate(() => window.alignLocale.choose("en-XA"));
     dialog = page.getByRole("dialog", {
       name: labels["align.title"],

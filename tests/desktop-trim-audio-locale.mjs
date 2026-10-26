@@ -159,6 +159,23 @@ try {
   const frames = page.locator("#align-audio-shift");
   await expect(frames).toBeEnabled();
   await expect(frames).toHaveAttribute("title", "30000/1001");
+  await expect(page.locator("#align-audio-shift-hint")).toHaveCount(0);
+  await dialog
+    .getByRole("button", { name: "音频提前 1 帧", exact: true })
+    .click();
+  await expect(frames).toHaveValue("-1");
+  await dialog
+    .getByRole("button", { name: "音频延后 1 帧", exact: true })
+    .click();
+  await expect(frames).toHaveValue("0");
+  await frames.fill("1.5");
+  await expect(
+    dialog.getByRole("button", { name: "音频提前 1 帧", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByRole("button", { name: "应用", exact: true }),
+  ).toBeDisabled();
+  await frames.fill("0");
   await expect(dialog.getByText(/目标开头多出 1\.25\d\d 秒/)).toBeVisible();
   await frames.fill("4");
   await app.evaluate(({ BrowserWindow }) => {
