@@ -373,6 +373,12 @@ try {
   // A sparse tail makes cancellation observable before EOF without creating
   // a large media fixture or changing the user's files.
   let cancelledStream;
+  const free = Buffer.alloc(8);
+  free.writeUInt32BE(64 << 20);
+  free.write("free", 4);
+  const append = fs.openSync(input, "r+");
+  fs.writeSync(append, free, 0, free.length, size);
+  fs.closeSync(append);
   fs.truncateSync(input, size + (64 << 20));
   try {
     await app.evaluate((_, source) => {
@@ -393,10 +399,12 @@ try {
       };
     }, input);
     const bytes = await app.evaluate(async ({ net }, url) => {
-      const response = await net.fetch(url),
+      const control = new AbortController();
+      const response = await net.fetch(url, { signal: control.signal }),
         reader = response.body.getReader();
       const first = await reader.read();
-      await reader.cancel();
+      control.abort();
+      await reader.cancel().catch(() => {});
       return first.value.length;
     }, stream);
     assert.ok(bytes > 0);
@@ -409,6 +417,41 @@ try {
       globalThis.trimStreamChecks.at(-1),
     );
     assert.ok(cancelledStream.bytesRead < size + (64 << 20));
+    await page.evaluate((clips) => {
+      window.alignLocale.choose("zh-CN");
+      window.alignLocale.setTrimClips([
+        { ...clips[0], from: 0, to: clips[0].frames },
+      ]);
+    }, actualClips);
+    await expect(play()).toBeEnabled();
+    await video.evaluate((node) => {
+      node.muted = true;
+      window.largeTrimVideo = node;
+    });
+    await play().click();
+    await expect
+      .poll(() =>
+        video.evaluate((node) => !node.paused && node.currentTime > 0.1),
+      )
+      .toBe(true);
+    await page.evaluate(() => window.alignLocale.setTrimClips([]));
+    await expect(video).toHaveCount(0);
+    assert.equal(
+      await page.evaluate(
+        () =>
+          window.largeTrimVideo.paused &&
+          !window.largeTrimVideo.getAttribute("src") &&
+          window.largeTrimVideo.readyState === 0,
+      ),
+      true,
+    );
+    await expect
+      .poll(() =>
+        app.evaluate(() =>
+          globalThis.trimStreamChecks.every((item) => item.closed),
+        ),
+      )
+      .toBe(true);
   } finally {
     fs.truncateSync(input, size);
   }
@@ -456,7 +499,8 @@ try {
           "leave-release",
           "revocation",
           "playing-locale-preserved",
-          "consumer-cancel-closes-file",
+          "request-abort-closes-file",
+          "large-source-unmount-closes-streams",
         ],
       },
       null,
