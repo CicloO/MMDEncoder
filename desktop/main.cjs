@@ -18,6 +18,7 @@ const {
   PROJECT_PAGES,
 } = require("../backend/update.cjs");
 const { createUpdater } = require("../backend/selfupdate.cjs");
+const { appError } = require("../backend/errors.cjs");
 let win,
   service,
   updater,
@@ -380,7 +381,8 @@ else {
           return {
             ...updateInfo,
             canInstall: !!updateInfo.assets && !blocked,
-            installBlocked: blocked,
+            installBlocked: blocked?.message || "",
+            installBlockedData: blocked,
           };
         }
         if (action === "appUpdateStatus") return { ...updater.state };
@@ -391,9 +393,7 @@ else {
         if (action === "installAppUpdate") {
           const s = service.getState();
           if (s.running || s.trim?.running || s.detecting || s.tools?.busy)
-            throw new Error(
-              "请等待当前压制、剪辑导出、检测或工具安装结束后再更新",
-            );
+            throw appError("UPDATE_BUSY");
           updater.install();
           quitting = true;
           service.dispose();

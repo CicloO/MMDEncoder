@@ -204,6 +204,33 @@ try {
     page.getByRole("dialog", { name: pseudo["about.title"], exact: true }),
   ).toBeVisible();
   const layouts = [];
+  await app.evaluate(() => {
+    global.testUpdate = {
+      current: "1.6.1",
+      latest: "9.9.0",
+      newer: true,
+      url: "https://github.com/CicloO/MMDEncoder/releases/tag/v9.9.0",
+      assets: { size: 4096 },
+    };
+  });
+  const checked = await page.evaluate(() =>
+    window.encoder.invokeResult("checkAppUpdate"),
+  );
+  assert.equal(checked.canInstall, false);
+  assert.equal(checked.installBlockedData.code, "UPDATE_NOT_PORTABLE");
+  await page
+    .getByRole("button", { name: pseudo["about.check"], exact: true })
+    .click();
+  await expect(
+    page.getByText(pseudo["error.UPDATE_NOT_PORTABLE"], { exact: true }),
+  ).toBeVisible();
+  await changed.selectOption("zh-CN");
+  await expect(
+    page.getByText(checked.installBlocked, { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "界面语言 · Language", exact: true })
+    .selectOption("en-XA");
   for (const width of [1360, 650]) {
     await app.evaluate(
       ({ BrowserWindow }, width) =>
@@ -292,6 +319,8 @@ try {
           "system-selection-uses-policy-resolution",
           "failed-save-preserves-locale",
           "language-section-at-two-formal-locales",
+          "actual-update-IPC-keeps-install-block-descriptor",
+          "update-block-refreshes-without-another-check",
         ],
       },
       null,

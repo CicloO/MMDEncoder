@@ -5,6 +5,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
+const { appError, serializeError } = require("../backend/errors.cjs");
 require("./isolate.cjs");
 const root = path.resolve(import.meta.dirname, "..");
 const dir = fs.mkdtempSync(path.join(root, "verification/i18n/about-"));
@@ -158,6 +159,34 @@ try {
   await expect(page.getByRole("alert")).toContainText(
     "Foreign diagnostic stays exact",
   );
+  const failure = serializeError(
+    appError("UPDATE_EXTRACT_FAILED", { detail: "7-Zip ERROR: 舞台{a}.zip" }),
+  );
+  await page.evaluate(
+    (errorData) =>
+      window.aboutFixture.progress({
+        phase: "failed",
+        received: 1536,
+        total: 4096,
+        error: errorData.message,
+        errorData,
+      }),
+    JSON.parse(JSON.stringify(failure)),
+  );
+  for (const locale of ["en-XA", "zh-CN", "en-XA"]) {
+    await page.evaluate((locale) => window.aboutFixture.choose(locale), locale);
+    const expected = await page.evaluate(
+      ({ locale, detail }) =>
+        locale === "en-XA"
+          ? window.aboutFixture.pseudo["error.UPDATE_EXTRACT_FAILED"].replace(
+              "{detail}",
+              detail,
+            )
+          : "解压失败：" + detail,
+      { locale, detail: failure.params.detail },
+    );
+    await expect(page.getByRole("alert")).toContainText(expected);
+  }
   fs.writeFileSync(
     path.join(dir, "result.json"),
     JSON.stringify(
@@ -171,6 +200,7 @@ try {
           "new-version-manual-install",
           "locale-preserves-dialog-progress-and-actions",
           "foreign-update-diagnostic-stays-exact",
+          "coded-update-error-reformats-and-preserves-extractor-diagnostic",
         ],
         calls: await page.evaluate(() => window.aboutFixture.calls()),
       },

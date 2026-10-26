@@ -5,6 +5,7 @@ const REPO = "CicloO/MMDEncoder";
 const RELEASES_URL = `https://github.com/${REPO}/releases`;
 const DOWNLOAD_PREFIX = RELEASES_URL + "/download/";
 const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
+const { appError } = require("./errors.cjs");
 function parse(version) {
   const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(version).trim());
   return m ? m.slice(1, 4).map(Number) : null;
@@ -46,10 +47,14 @@ async function checkForUpdate(current, fetchImpl = fetch) {
   });
   if (response.status === 404)
     return { current, latest: "", newer: false, url: RELEASES_URL };
-  if (!response.ok) throw Error("GitHub 返回 " + response.status);
+  if (!response.ok)
+    throw appError("UPDATE_HTTP_STATUS", { status: response.status });
   const release = await response.json();
   const latest = String(release.tag_name || "").replace(/^v/i, "");
-  if (!parse(latest)) throw Error("无法识别的发行版本号：" + release.tag_name);
+  if (!parse(latest))
+    throw appError("UPDATE_VERSION_INVALID", {
+      version: String(release.tag_name || ""),
+    });
   const url = String(release.html_url || "");
   return {
     current,

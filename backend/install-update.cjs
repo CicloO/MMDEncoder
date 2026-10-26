@@ -8,6 +8,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { appError, sourceText } = require("./errors.cjs");
 
 // The process entry and importable operation share this transaction owner.
 async function installUpdate(job) {
@@ -34,12 +35,12 @@ async function installUpdate(job) {
     }
   }
   // Files of a just-closed app can stay locked for a moment; retry ~20 s.
-  async function retry(action, what) {
+  async function retry(action, code, file) {
     for (let i = 0; ; i++) {
       try {
         return action();
       } catch (e) {
-        if (i >= 40) throw Error(`${what}失败（文件可能被占用）：${e.message}`);
+        if (i >= 40) throw appError(code, { file, detail: e.message });
         await sleep(500);
       }
     }
@@ -59,20 +60,23 @@ async function installUpdate(job) {
         stdio: "ignore",
         env,
       });
-      child.on("error", (e) => write("无法自动重新打开软件：" + e.message));
+      child.on("error", (e) =>
+        write(sourceText("update.log.relaunchFailed", { detail: e.message })),
+      );
       child.unref();
     } catch (e) {
-      write("无法自动重新打开软件：" + e.message);
+      write(sourceText("update.log.relaunchFailed", { detail: e.message }));
     }
   }
 
   async function main() {
-    if (!appDir || !newDir || !backup || !log) throw Error("缺少更新参数");
-    write("开始更新：" + appDir);
+    if (!appDir || !newDir || !backup || !log)
+      throw appError("UPDATE_JOB_INVALID");
+    write(sourceText("update.log.started", { path: appDir }));
     const deadline = Date.now() + 120000;
     while (pid && alive(pid)) {
       if (Date.now() > deadline) {
-        write("等待软件退出超时，未做任何修改");
+        write(sourceText("update.log.waitTimeout"));
         return;
       }
       await sleep(300);
@@ -86,7 +90,8 @@ async function installUpdate(job) {
       for (const name of names(appDir)) {
         await retry(
           () => fs.renameSync(path.join(appDir, name), path.join(backup, name)),
-          "移动旧文件 " + name,
+          "UPDATE_MOVE_FAILED",
+          name,
         );
         moved.push(name);
       }
@@ -99,17 +104,18 @@ async function installUpdate(job) {
               errorOnExist: true,
               force: false,
             }),
-          "放入新文件 " + name,
+          "UPDATE_PLACE_FAILED",
+          name,
         );
       }
-      write("更新完成");
+      write(sourceText("update.log.completed"));
       try {
         fs.rmSync(backup, { recursive: true, force: true });
       } catch (e) {
-        write("旧文件稍后清理：" + e.message);
+        write(sourceText("update.log.cleanupDeferred", { detail: e.message }));
       }
     } catch (e) {
-      write("更新失败，正在还原旧版本：" + e.message);
+      write(sourceText("update.log.restoring", { detail: e.message }));
       try {
         // Only what this run put in place is removed; old files only ever moved
         // to the backup folder and now move back.
@@ -119,17 +125,25 @@ async function installUpdate(job) {
           await retry(
             () =>
               fs.renameSync(path.join(backup, name), path.join(appDir, name)),
-            "还原 " + name,
+            "UPDATE_RESTORE_FAILED",
+            name,
           );
         fs.rmSync(backup, { recursive: true, force: true });
-        write("已还原旧版本");
+        write(sourceText("update.log.restored"));
       } catch (r) {
-        write("还原失败，旧文件保存在：" + backup + "；" + r.message);
+        write(
+          sourceText("update.log.restoreFailed", {
+            path: backup,
+            detail: r.message,
+          }),
+        );
       }
     }
     start();
   }
-  return main().catch((e) => write("更新出错：" + e.message));
+  return main().catch((e) =>
+    write(sourceText("update.log.failed", { detail: e.message })),
+  );
 }
 
 if (require.main === module)

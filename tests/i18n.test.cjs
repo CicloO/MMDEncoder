@@ -9,6 +9,50 @@ const {
 const { registerAction } = require("../desktop/actions.cjs");
 const { load } = require("./load-typescript.cjs");
 
+test("update errors survive IPC and reformat without translating external diagnostics", async () => {
+  const { checkForUpdate } = require("../backend/update.cjs");
+  const { serializeError } = require("../backend/errors.cjs");
+  const i18n = load("src/i18n.ts");
+  let handler;
+  registerAction(
+    {
+      handle: (_name, fn) => {
+        handler = fn;
+      },
+    },
+    () => checkForUpdate("1.6.1", async () => ({ status: 503, ok: false })),
+  );
+  const result = JSON.parse(JSON.stringify(await handler()));
+  assert.deepEqual(result.__mmdError, {
+    code: "UPDATE_HTTP_STATUS",
+    params: { status: 503 },
+    message: "GitHub 返回 503",
+  });
+  const detail = "ERROR EACCES: 舞台{a}.zip\n7-Zip unexpected end";
+  const extraction = JSON.parse(
+    JSON.stringify(
+      serializeError(appError("UPDATE_EXTRACT_FAILED", { detail })),
+    ),
+  );
+  const foreign = { message: detail, code: "ECONNRESET", params: {} };
+  i18n.localeRuntime.registerCatalog("en-XA", {
+    "error.UPDATE_HTTP_STATUS": "⟦ HTTP {status} ··· ⟧",
+    "error.UPDATE_EXTRACT_FAILED": "⟦ Extract ··· ⟧ {detail}",
+  });
+  for (const locale of ["zh-CN", "en-XA", "unsupported", "en-XA"]) {
+    i18n.setLocale(locale);
+    assert.equal(
+      i18n.errorMessage(result.__mmdError),
+      locale === "en-XA" ? "⟦ HTTP 503 ··· ⟧" : "GitHub 返回 503",
+    );
+    assert.equal(
+      i18n.errorMessage(extraction),
+      (locale === "en-XA" ? "⟦ Extract ··· ⟧ " : "解压失败：") + detail,
+    );
+    assert.equal(i18n.errorMessage(foreign), detail);
+  }
+});
+
 test("alignment cancellation uses its stable code and preserves unrelated diagnostics", () => {
   const { isCancelled } = load("src/alignRequests.ts", {
     "./ipc": { invoke: async () => {} },

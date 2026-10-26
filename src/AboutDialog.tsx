@@ -25,14 +25,14 @@ export type UpdateCheck = {
   errorData?: ErrorData;
   canInstall?: boolean;
   installBlocked?: string;
-  installBlockedData?: ErrorData;
+  installBlockedData?: ErrorData | null;
 };
 export type AppUpdate = {
   phase: string;
   received: number;
   total: number;
   error: string;
-  errorData?: ErrorData;
+  errorData?: ErrorData | null;
 };
 
 export function AboutDialog({
