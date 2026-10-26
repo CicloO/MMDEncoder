@@ -89,7 +89,11 @@ export function TrimEditor({
     id: "",
     phase: "loading",
   });
-  const phase = playback.id === ready.id ? playback.phase : "loading";
+  const phase = ready.videoStartTime
+    ? "unavailable"
+    : playback.id === ready.id
+      ? playback.phase
+      : "loading";
   const native = phase === "ready" || phase === "playing";
   const playing = phase === "playing";
   const loadVideo = phase !== "unavailable";
@@ -237,7 +241,11 @@ export function TrimEditor({
       </div>
       {phase === "unavailable" && (
         <p className="hint" role="status">
-          {text("trim.previewUnavailable")}
+          {text(
+            ready.videoStartTime
+              ? "trim.previewTimingUnavailable"
+              : "trim.previewUnavailable",
+          )}
         </p>
       )}
       {mmdFrames && (

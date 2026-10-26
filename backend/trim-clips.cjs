@@ -139,6 +139,10 @@ function createTrimClips({
             ? restoreError(idx.reasonData)
             : Error(idx.reason);
         trimIndexes.set(clip.id, idx);
+        const videoStartTime =
+          idx.frames[0]?.pts && idx.timeBase
+            ? (idx.frames[0].pts * idx.timeBase.num) / idx.timeBase.den
+            : 0;
         const safe = idx.frames.filter((f) => f.safe).map((f) => f.frame);
         Object.assign(clip, {
           status: "ready",
@@ -146,6 +150,7 @@ function createTrimClips({
           width: idx.width,
           height: idx.height,
           fps: idx.fps,
+          ...(videoStartTime ? { videoStartTime } : {}),
           frames: idx.frames.length,
           // Every frame, or the list of frames a cut may start at.
           cuts: safe.length === idx.frames.length ? "all" : safe,

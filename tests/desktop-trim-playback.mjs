@@ -13,6 +13,7 @@ const dir = fs.mkdtempSync(path.join(root, "verification/i18n/trim-playback-"));
 const { ff } = require("./engines.cjs");
 const input = path.join(dir, "User 片段 # 50% ' sample.mp4");
 const prores = path.join(dir, "User ProRes.mov");
+const shifted = path.join(dir, "User shifted timestamps.mp4");
 const make = (file, args) =>
   execFileSync(ff, [
     "-v",
@@ -37,6 +38,17 @@ make(input, [
   "0",
 ]);
 make(prores, ["-c:v", "prores_ks", "-profile:v", "1"]);
+execFileSync(ff, [
+  "-v",
+  "error",
+  "-i",
+  input,
+  "-c",
+  "copy",
+  "-output_ts_offset",
+  "2",
+  shifted,
+]);
 const fixtureDir = path.join(dir, "fixture-dist");
 await build({
   root,
@@ -76,14 +88,14 @@ try {
   await page.getByRole("button", { name: "无损剪辑", exact: true }).click();
   await page.evaluate(
     (paths) => window.encoder.invoke("trimAdd", { paths }),
-    [input, prores],
+    [input, prores, shifted],
   );
   const state = () =>
     page.evaluate(async () => (await window.encoder.invoke("state")).trim);
   await expect
     .poll(
       async () =>
-        (await state()).clips.length === 2 &&
+        (await state()).clips.length === 3 &&
         (await state()).clips.every((c) => c.status === "ready"),
     )
     .toBe(true);
@@ -263,6 +275,34 @@ try {
   await expect
     .poll(() => page.locator(".trim-preview img").getAttribute("src"))
     .not.toBe(oldImage);
+
+  await page
+    .locator(".job-select")
+    .filter({ hasText: path.basename(shifted) })
+    .click();
+  await expect(
+    page.getByText("此文件无法准确定位播放位置，使用逐帧预览。", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  assert.equal(
+    (await state()).clips.find((clip) => clip.path === shifted).videoStartTime,
+    2,
+  );
+  await expect(page.locator(".trim-preview video")).toHaveCount(0);
+  await expect(page.locator(".trim-preview img")).toHaveAttribute(
+    "src",
+    /^data:image\/jpeg;base64,/,
+  );
+  await expect(slider).toHaveValue("0");
+  const shiftedImage = await page
+    .locator(".trim-preview img")
+    .getAttribute("src");
+  await page.getByRole("button", { name: "下一帧", exact: true }).click();
+  await expect(slider).toHaveValue("1");
+  await expect
+    .poll(() => page.locator(".trim-preview img").getAttribute("src"))
+    .not.toBe(shiftedImage);
 
   await page
     .locator(".job-select")
@@ -495,6 +535,7 @@ try {
           "stop-at-out",
           "manual-seek",
           "prores-fallback",
+          "nonzero-timestamp-frame-fallback",
           "switch-release",
           "leave-release",
           "revocation",

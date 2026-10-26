@@ -984,6 +984,7 @@
   "trim.play": "播放",
   "trim.pause": "暂停",
   "trim.previewUnavailable": "此文件无法直接播放，使用逐帧预览。",
+  "trim.previewTimingUnavailable": "此文件无法准确定位播放位置，使用逐帧预览。",
   "trim.edit": "编辑片段",
   "trim.reveal": "打开位置",
   "trim.currentFrame": "当前帧",
