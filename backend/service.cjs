@@ -11,7 +11,7 @@ const trim = require("./trim.cjs");
 const { createTools, DEFAULT_ROOT } = require("./tools.cjs");
 const mmdExport = require("./mmd-export.cjs");
 const { syncConfig } = require("./mmd-config.cjs");
-const { testSelection } = require("./mmd-test-action.cjs");
+const { appError, serializeError, restoreError } = require("./errors.cjs");
 const mmdPlugin = require("./mmd-plugin.cjs");
 const { createFileDetails } = require("./file-details.cjs");
 const { referenceTiming, streamDuration } = require("./audio-timing.mjs");
@@ -314,15 +314,24 @@ function createService({
   // Encode a short synthetic clip exactly as an MMD export would.
   async function testMmdExport() {
     syncMmdExport();
-    await testSelection({
-      error: state.mmd.error,
-      errorData: state.mmd.errorData,
-      presetId: state.mmd.presetId,
-      children,
-      onResult: (result) => {
-        state.mmd.test = result;
-      },
-    });
+    if (state.mmd.error)
+      throw state.mmd.errorData
+        ? restoreError(state.mmd.errorData)
+        : Error(state.mmd.error);
+    if (!state.mmd.presetId) throw appError("MMD_PRESET_REQUIRED");
+    try {
+      state.mmd.test = await require("./mmd-test.cjs").testExport(
+        undefined,
+        children,
+      );
+    } catch (e) {
+      state.mmd.test = {
+        ok: false,
+        at: new Date().toISOString(),
+        ...serializeError(e),
+      };
+      throw e;
+    }
   }
   try {
     const saved = settingsStore.read();
