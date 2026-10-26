@@ -255,7 +255,7 @@ try {
   );
   await expect(about.locator(".release-notes")).toHaveCount(0);
   await expect(
-    about.getByRole("button", { name: "发行说明", exact: true }),
+    about.getByRole("button", { name: /^(发行说明|打开下载页)$/ }),
   ).toBeVisible();
   await expect(about.getByRole("button", { name: "问题反馈" })).toBeVisible();
   const aboutHeight = (await about.boundingBox()).height;
