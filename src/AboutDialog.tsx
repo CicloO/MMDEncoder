@@ -9,7 +9,8 @@ import {
 } from "lucide-react";
 import { Button, Modal } from "./components";
 import { formatSize } from "./presentation";
-import { t as text } from "./i18n";
+import { t as text, errorMessage, type ErrorData } from "./i18n";
+import { invoke } from "./ipc";
 
 export type UpdateCheck = {
   checking: boolean;
@@ -18,14 +19,17 @@ export type UpdateCheck = {
   newer?: boolean;
   url?: string;
   error?: string;
+  errorData?: ErrorData;
   canInstall?: boolean;
   installBlocked?: string;
+  installBlockedData?: ErrorData;
 };
 export type AppUpdate = {
   phase: string;
   received: number;
   total: number;
   error: string;
+  errorData?: ErrorData;
 };
 
 export function AboutDialog({
@@ -55,8 +59,7 @@ export function AboutDialog({
   });
   useEffect(() => {
     if (open && window.encoder)
-      window.encoder
-        .invoke("aboutInfo")
+      invoke("aboutInfo")
         .then(setInfo)
         .catch(() => {});
   }, [open]);
@@ -64,23 +67,27 @@ export function AboutDialog({
     appUpdate.phase,
   );
   const status = update.checking
-    ? "正在检查更新…"
-    : update.error
-      ? "检查更新失败：" + update.error
+    ? text("about.checking")
+    : update.error || update.errorData
+      ? text("about.checkFailed", {
+          detail: errorMessage(update.errorData || update.error),
+        })
       : update.newer
-        ? `发现新版本 ${update.latest}`
+        ? text("about.updateAvailable", { version: update.latest ?? "" })
         : update.current
           ? update.latest
-            ? "已是最新版本"
-            : "项目尚未发布版本"
-          : "尚未检查更新";
-  const tone = update.error ? "danger" : update.newer ? "new" : "";
+            ? text("about.upToDate")
+            : text("about.noReleases")
+          : text("about.notChecked");
+  const tone =
+    update.error || update.errorData ? "danger" : update.newer ? "new" : "";
+  const updateError = errorMessage(appUpdate.errorData || appUpdate.error);
   return (
     <Modal
       open={open}
       onClose={onClose}
       fixedHeight
-      title="关于"
+      title={text("about.title")}
       description={text("about.description")}
     >
       <div className="about-hero">
@@ -91,10 +98,10 @@ export function AboutDialog({
           <p className="about-name">
             MMD<span>Encoder</span>
           </p>
-          <p className="about-tagline">让每一帧，恰到好处。</p>
+          <p className="about-tagline">{text("about.tagline")}</p>
         </div>
         <p className="about-version">
-          <span>版本</span>
+          <span>{text("about.version")}</span>
           <strong>{info.version}</strong>
         </p>
       </div>
@@ -102,7 +109,7 @@ export function AboutDialog({
 
       <section
         className="modal-section"
-        aria-label="软件更新"
+        aria-label={text("about.softwareUpdate")}
         aria-busy={update.checking}
       >
         <div className="status-row">
@@ -113,7 +120,7 @@ export function AboutDialog({
           <div className="row-actions">
             <Button disabled={update.checking || working} onClick={onCheck}>
               <RefreshCw size={15} />
-              检查更新
+              {text("about.check")}
             </Button>
             {update.newer && update.canInstall && (
               <Button
@@ -124,12 +131,12 @@ export function AboutDialog({
               >
                 <ArrowDownToLine size={15} />
                 {appUpdate.phase === "ready"
-                  ? "重启并完成更新"
+                  ? text("about.restart")
                   : appUpdate.phase === "downloading"
-                    ? "正在下载…"
+                    ? text("about.downloading")
                     : appUpdate.phase === "extracting"
-                      ? "正在解压…"
-                      : "下载并更新"}
+                      ? text("about.extracting")
+                      : text("about.download")}
               </Button>
             )}
             <Button
@@ -143,43 +150,51 @@ export function AboutDialog({
               }
             >
               <ExternalLink size={15} />
-              {update.newer ? "打开下载页" : text("about.releases")}
+              {text(update.newer ? "about.downloadPage" : "about.releases")}
             </Button>
           </div>
         </div>
         {update.newer && (
           <p
-            className={appUpdate.error ? "inline-error" : "hint"}
-            role={appUpdate.error ? "alert" : undefined}
+            className={updateError ? "inline-error" : "hint"}
+            role={updateError ? "alert" : undefined}
           >
-            {appUpdate.error
-              ? "更新失败：" + appUpdate.error
+            {updateError
+              ? text("about.updateFailed", { detail: updateError })
               : appUpdate.phase === "downloading"
-                ? `已下载 ${formatSize(appUpdate.received)}${appUpdate.total ? " / " + formatSize(appUpdate.total) : ""}`
+                ? text(
+                    appUpdate.total
+                      ? "about.downloadedKnown"
+                      : "about.downloaded",
+                    {
+                      received: formatSize(appUpdate.received),
+                      total: formatSize(appUpdate.total),
+                    },
+                  )
                 : appUpdate.phase === "ready"
-                  ? blocked ||
-                    "新版本已下载并通过校验。点“重启并完成更新”后软件会关闭，替换程序文件后自动重新打开；设置、预设和日志（data 文件夹）保留不动。"
+                  ? blocked || text("about.readyHint")
                   : update.canInstall
-                    ? "下载后先校验 SHA-256，再替换程序文件；data 文件夹保留不动，替换失败会自动还原旧版本。"
-                    : update.installBlocked ||
-                      "这个版本没有可自动安装的压缩包，请打开下载页手动更新。"}
+                    ? text("about.downloadHint")
+                    : errorMessage(
+                        update.installBlockedData || update.installBlocked,
+                      ) || text("about.manualHint")}
           </p>
         )}
       </section>
 
-      <section className="modal-section" aria-label="作者与支持">
-        <h3>作者与支持</h3>
+      <section className="modal-section" aria-label={text("about.support")}>
+        <h3>{text("about.support")}</h3>
         <dl className="about-facts">
           <div>
-            <dt>作者</dt>
+            <dt>{text("about.author")}</dt>
             <dd>CicloO</dd>
           </div>
           <div>
-            <dt>协作</dt>
-            <dd>Claude、ChatGPT、DeepSeek</dd>
+            <dt>{text("about.collaboration")}</dt>
+            <dd>{text("about.collaborators")}</dd>
           </div>
           <div>
-            <dt>许可证</dt>
+            <dt>{text("about.license")}</dt>
             <dd>
               <button
                 type="button"
@@ -191,34 +206,31 @@ export function AboutDialog({
             </dd>
           </div>
           <div>
-            <dt>第三方组件</dt>
+            <dt>{text("about.thirdParty")}</dt>
             <dd>
               <button
                 type="button"
                 className="text-link"
                 onClick={() => action("openProjectPage", { page: "notices" })}
               >
-                FFmpeg、NVEncC、ArtCNN 等的声明
+                {text("about.notices")}
               </button>
             </dd>
           </div>
         </dl>
-        <p className="hint">
-          遇到问题请在 GitHub
-          提交反馈，写明操作步骤，并附上任务的“实际命令与日志”或日志文件夹里的文件。
-        </p>
+        <p className="hint">{text("about.feedbackHint")}</p>
         <div className="row-actions">
           <Button onClick={() => action("openProjectPage", { page: "home" })}>
             <ExternalLink size={15} />
-            项目主页
+            {text("about.home")}
           </Button>
           <Button onClick={() => action("openProjectPage", { page: "issues" })}>
             <MessageSquareWarning size={15} />
-            问题反馈
+            {text("about.feedback")}
           </Button>
           <Button onClick={() => action("openDataFolder")}>
             <FolderOpen size={15} />
-            配置与日志
+            {text("about.data")}
           </Button>
         </div>
       </section>

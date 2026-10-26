@@ -99,6 +99,64 @@ try {
   await expect(
     dialog.getByRole("button", { name: "打开下载页", exact: true }),
   ).toBeEnabled();
+  await page.evaluate(() => {
+    window.aboutFixture.change({
+      checking: false,
+      current: "1.6.1",
+      latest: "9.9.0",
+      newer: true,
+      canInstall: true,
+    });
+    window.aboutFixture.progress({
+      phase: "downloading",
+      received: 1536,
+      total: 4096,
+      error: "",
+    });
+    window.aboutNode = document.querySelector('[role="dialog"]');
+  });
+  const actionsBefore = await page.evaluate(() => window.aboutFixture.calls());
+  for (const locale of ["en-XA", "unsupported", "zh-CN"]) {
+    await page.evaluate((locale) => window.aboutFixture.choose(locale), locale);
+    const expected = await page.evaluate(
+      (locale) =>
+        locale === "en-XA"
+          ? window.aboutFixture.pseudo["about.downloading"]
+          : "正在下载…",
+      locale,
+    );
+    await expect(page.locator(".about-status")).toContainText("9.9.0");
+    await expect(
+      page
+        .locator('[role="dialog"]')
+        .getByRole("button", { name: expected, exact: true }),
+    ).toBeDisabled();
+    assert.equal(
+      await page.evaluate(
+        () => window.aboutNode === document.querySelector('[role="dialog"]'),
+      ),
+      true,
+    );
+    assert.deepEqual(
+      await page.evaluate(() => window.aboutFixture.calls()),
+      actionsBefore,
+    );
+  }
+  await page.evaluate(() =>
+    window.aboutFixture.progress({
+      phase: "failed",
+      received: 1536,
+      total: 4096,
+      error: "Foreign diagnostic stays exact",
+    }),
+  );
+  await expect(page.getByRole("alert")).toContainText(
+    "Foreign diagnostic stays exact",
+  );
+  await page.evaluate(() => window.aboutFixture.choose("en-XA"));
+  await expect(page.getByRole("alert")).toContainText(
+    "Foreign diagnostic stays exact",
+  );
   fs.writeFileSync(
     path.join(dir, "result.json"),
     JSON.stringify(
@@ -109,6 +167,8 @@ try {
           "current-release-page",
           "new-version-auto-install",
           "new-version-manual-install",
+          "locale-preserves-dialog-progress-and-actions",
+          "foreign-update-diagnostic-stays-exact",
         ],
         calls: await page.evaluate(() => window.aboutFixture.calls()),
       },

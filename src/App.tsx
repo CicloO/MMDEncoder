@@ -24,7 +24,7 @@ import { MediaDetails } from "./MediaDetails";
 import { EncodeFooter } from "./EncodeFooter";
 import { VideoFeedback } from "./VideoFeedback";
 import { VideoSettings } from "./VideoSettings";
-import { AboutDialog } from "./AboutDialog";
+import { AboutDialog, type UpdateCheck } from "./AboutDialog";
 import { VideoSettingsPanel } from "./VideoSettingsPanel";
 import { PresetList } from "./PresetList";
 import { MmdExportDialog, useMmdExport } from "./MmdExportDialog";
@@ -126,16 +126,11 @@ export default function App() {
     saveChain = useRef(Promise.resolve()),
     autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [update, setUpdate] = useState<{
-    checking: boolean;
-    current?: string;
-    latest?: string;
-    newer?: boolean;
-    url?: string;
-    error?: string;
-    canInstall?: boolean;
-    installBlocked?: string;
-  }>({ checking: false });
+  const [update, setUpdate] = useState<UpdateCheck>({ checking: false });
+  const aboutLabel = `${t("about.open")} · Language`;
+  const aboutTitle = update.newer
+    ? t("about.openUpdate", { label: aboutLabel, version: update.latest ?? "" })
+    : aboutLabel;
   // In-place update progress, mirrored from the main process.
   const [appUpdate, setAppUpdate] = useState({
     phase: "idle",
@@ -171,20 +166,24 @@ export default function App() {
     }
   }
   async function checkUpdate(quiet = false) {
-    setUpdate((u) => ({ ...u, checking: true, error: "" }));
+    setUpdate((u) => ({
+      ...u,
+      checking: true,
+      error: "",
+      errorData: undefined,
+    }));
     try {
       const r = await invoke("checkAppUpdate");
       setUpdate({ checking: false, ...r });
-      if (r.newer) notify(`发现新版本 ${r.latest}，可在右上角“关于”中更新`);
+      if (r.newer)
+        notify(notification("UPDATE_AVAILABLE", { version: r.latest }));
     } catch (e) {
-      const message = (e as Error).message.replace(
-        /^Error invoking remote method '[^']+': (?:Error: )?/,
-        "",
-      );
+      const detail = serializeError(e);
       setUpdate((u) => ({
         ...u,
         checking: false,
-        error: quiet ? "" : message,
+        error: quiet ? "" : detail.message,
+        errorData: quiet ? undefined : detail,
       }));
     }
   }
@@ -692,10 +691,8 @@ export default function App() {
           </Button>
           <Button
             className="about-button"
-            title={update.newer ? `关于 · 新版本 ${update.latest}` : "关于"}
-            aria-label={
-              update.newer ? `关于，有新版本 ${update.latest}` : "关于"
-            }
+            title={aboutTitle}
+            aria-label={aboutTitle}
             onClick={() => setModal("about")}
           >
             <Settings2 size={18} />
@@ -1113,9 +1110,7 @@ export default function App() {
         update={update}
         appUpdate={appUpdate}
         blocked={
-          busy || state.running || state.trim?.running
-            ? "请等待当前压制或剪辑导出结束后再更新"
-            : ""
+          busy || state.running || state.trim?.running ? t("about.busy") : ""
         }
         onCheck={() => void checkUpdate()}
         onDownload={() => void downloadUpdate()}

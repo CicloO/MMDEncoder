@@ -1,0 +1,183 @@
+// Actual App + LocaleRoot with test-only registry and update-server adapters.
+import { _electron as electron, expect } from "@playwright/test";
+import { build } from "vite";
+import fs from "node:fs";
+import path from "node:path";
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+require("./isolate.cjs");
+const root = path.resolve(import.meta.dirname, ".."),
+  dir = fs.mkdtempSync(path.join(root, "verification/i18n/about-app-locale-")),
+  outDir = path.join(dir, "fixture-dist");
+const registry = {
+  ...require("../locales/registry.json"),
+  locales: [
+    ...require("../locales/registry.json").locales,
+    { id: "en-XA", name: "Test English", file: "test-only.json" },
+  ],
+};
+const registryFile = path.join(dir, "registry.json");
+fs.writeFileSync(registryFile, JSON.stringify(registry));
+await build({
+  root,
+  base: "./",
+  resolve: {
+    alias: [
+      {
+        find: /^(?:\.\.\/)+locales\/registry\.json$/,
+        replacement: registryFile,
+      },
+    ],
+  },
+  build: {
+    outDir,
+    rollupOptions: { input: path.join(root, "tests/fixtures/i18n/app.html") },
+  },
+});
+fs.writeFileSync(
+  path.join(dir, "package.json"),
+  JSON.stringify({
+    name: "mmd-encoder",
+    version: require("../package.json").version,
+    main: "main.cjs",
+  }),
+);
+fs.writeFileSync(
+  path.join(dir, "main.cjs"),
+  `
+const {createRequire}=require('node:module');const native=createRequire(${JSON.stringify(path.join(root, "desktop/main.cjs"))});
+const service=native('../backend/service.cjs'),create=service.createService;service.createService=options=>create({...options,localeRegistry:${JSON.stringify(registry)}});
+const updates=native('../backend/update.cjs');global.testUpdate={current:'1.6.1',latest:'1.6.1',newer:false,url:updates.RELEASES_URL};updates.checkForUpdate=async()=>global.testUpdate;
+const {ipcMain}=native('electron'),handle=ipcMain.handle.bind(ipcMain);global.testCalls={};ipcMain.handle=(channel,listener)=>handle(channel,(event,action,...args)=>{global.testCalls[action]=(global.testCalls[action]||0)+1;return listener(event,action,...args);});
+native('./main.cjs');
+`,
+);
+const launch = () =>
+  electron.launch({
+    executablePath: require("electron"),
+    args: [dir],
+    env: {
+      ...process.env,
+      MMD_ENCODER_TEST: "1",
+      MMD_ENCODER_DATA: path.join(dir, "data"),
+      MMD_ENCODER_TOOLS_ROOT: path.join(dir, "no-encoding-tools"),
+    },
+    timeout: 60000,
+  });
+let app = await launch();
+async function dismissSetup(page) {
+  const setup = page.getByRole("dialog", { name: "编码引擎", exact: true });
+  await expect(setup).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(setup).toBeHidden();
+}
+try {
+  const page = await app.firstWindow();
+  await dismissSetup(page);
+  await page.getByRole("heading", { name: "视频队列" }).waitFor();
+  await app.evaluate(
+    async ({ BrowserWindow }, file) => {
+      const w = BrowserWindow.getAllWindows()[0];
+      w.showInactive();
+      w.setSize(1360, 1000);
+      await w.loadFile(file);
+    },
+    path.join(outDir, "tests/fixtures/i18n/app.html"),
+  );
+  const opener = page.getByRole("button", {
+    name: "关于与语言 · Language",
+    exact: true,
+  });
+  await dismissSetup(page);
+  await expect(opener).toBeVisible();
+  await opener.click();
+  await expect(
+    page.getByRole("dialog", { name: "关于", exact: true }),
+  ).toBeVisible();
+  const before = await app.evaluate(() => global.testCalls.aboutInfo || 0);
+  await page.evaluate(() => {
+    window.aboutNode = document.querySelector('[role="dialog"]');
+    return window.encoder.invokeResult("setLocale", { locale: "en-XA" });
+  });
+  const pseudo = await page.evaluate(() => window.appAboutFixture.pseudo);
+  await expect(
+    page.getByRole("dialog", { name: pseudo["about.title"], exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: pseudo["about.open"] + " · Language",
+      exact: true,
+      includeHidden: true,
+    }),
+  ).toHaveCount(1);
+  assert.equal(
+    await page.evaluate(
+      () => window.aboutNode === document.querySelector('[role="dialog"]'),
+    ),
+    true,
+  );
+  assert.equal(
+    await app.evaluate(() => global.testCalls.aboutInfo || 0),
+    before,
+  );
+  await app.close();
+  app = await launch();
+  const restarted = await app.firstWindow();
+  await dismissSetup(restarted);
+  await restarted.getByRole("heading", { name: "视频队列" }).waitFor();
+  await app.evaluate(
+    async ({ BrowserWindow }, file) =>
+      BrowserWindow.getAllWindows()[0].loadFile(file),
+    path.join(outDir, "tests/fixtures/i18n/app.html"),
+  );
+  await dismissSetup(restarted);
+  await expect(
+    restarted.getByRole("button", {
+      name: pseudo["about.open"] + " · Language",
+      exact: true,
+    }),
+  ).toBeVisible();
+  assert.equal(
+    (await restarted.evaluate(() => window.encoder.invokeResult("state")))
+      .preferences.locale,
+    "en-XA",
+  );
+  fs.writeFileSync(
+    path.join(dir, "result.json"),
+    JSON.stringify(
+      {
+        registry,
+        testOnly: true,
+        aboutQueries: before,
+        checks: [
+          "app-and-dialog-refresh",
+          "literal-Language-marker",
+          "dialog-not-remounted",
+          "no-repeated-about-query",
+          "preference-survives-restart",
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+  console.log("Actual App about locale and persistence PASS", dir);
+} catch (error) {
+  const page = await app.firstWindow();
+  fs.writeFileSync(
+    path.join(dir, "failure-state.json"),
+    JSON.stringify(
+      {
+        error: String(error.stack || error),
+        text: await page.locator("body").innerText(),
+        calls: await app.evaluate(() => global.testCalls),
+      },
+      null,
+      2,
+    ),
+  );
+  throw error;
+} finally {
+  await app.close();
+}
