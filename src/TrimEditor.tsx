@@ -14,6 +14,11 @@ import { clock, seconds, mmdFrame } from "./trimCoordinates";
 import type { TrimClip } from "./types";
 import { t as text, localeRuntime, errorMessage } from "./i18n";
 
+// Seek inside the frame: media clocks truncate fractional seconds and some
+// containers round PTS to milliseconds. Keep the exported trim clock unchanged.
+const playbackTime = (clip: TrimClip, frame: number) =>
+  (clip.videoStartTime ?? 0) + seconds(clip, frame + 0.5);
+
 // JPEGs are used while native preview loads, or as its format fallback.
 function useTrimPreview(
   id: string | undefined,
@@ -84,19 +89,21 @@ export function TrimEditor({
   pct: (frame: number) => string;
 }) {
   const video = useRef<HTMLVideoElement>(null);
-  type Phase = "loading" | "ready" | "playing" | "unavailable";
+  type Phase =
+    "loading" | "ready" | "playing" | "unavailable" | "timing-unavailable";
   const [playback, setPlayback] = useState<{ id: string; phase: Phase }>({
     id: "",
     phase: "loading",
   });
-  const phase = ready.videoStartTime
-    ? "unavailable"
-    : playback.id === ready.id
-      ? playback.phase
-      : "loading";
+  const phase =
+    (ready.videoStartTime ?? 0) < 0
+      ? "timing-unavailable"
+      : playback.id === ready.id
+        ? playback.phase
+        : "loading";
   const native = phase === "ready" || phase === "playing";
   const playing = phase === "playing";
-  const loadVideo = phase !== "unavailable";
+  const loadVideo = phase !== "unavailable" && phase !== "timing-unavailable";
   const image = useTrimPreview(ready.id, frame, readFrame, !native);
   const latest = useRef({ ready, frame, move });
   latest.current = { ready, frame, move };
@@ -114,7 +121,7 @@ export function TrimEditor({
   useEffect(() => {
     const element = video.current;
     if (!element || !native || playing) return;
-    const time = seconds(ready, frame);
+    const time = playbackTime(ready, frame);
     if (Math.abs(element.currentTime - time) > 0.000001)
       element.currentTime = time;
   }, [ready.id, frame, native, playing]);
@@ -131,11 +138,13 @@ export function TrimEditor({
       const clip = current.ready;
       const end = clip.to ?? clip.frames ?? 1;
       const at = Math.floor(
-        element.currentTime * (clip.fps!.num / clip.fps!.den) + 0.0001,
+        (element.currentTime - (clip.videoStartTime ?? 0)) *
+          (clip.fps!.num / clip.fps!.den) +
+          0.0001,
       );
       if (at >= end || element.ended) {
         element.pause();
-        element.currentTime = seconds(clip, end - 1);
+        element.currentTime = playbackTime(clip, end - 1);
         current.move(end - 1);
         setPhase("ready");
         return;
@@ -159,7 +168,7 @@ export function TrimEditor({
     if (playing) return element.pause();
     const start =
       frame >= (ready.to ?? ready.frames ?? 1) ? (ready.from ?? 0) : frame;
-    element.currentTime = seconds(ready, start);
+    element.currentTime = playbackTime(ready, start);
     move(start);
     try {
       await element.play();
@@ -212,6 +221,15 @@ export function TrimEditor({
             aria-label={text("trim.videoPreview")}
             onLoadedData={() => setPhase("ready")}
             onPlay={() => setPhase("playing")}
+            onSeeked={(event) => {
+              const element = event.currentTarget;
+              if (
+                element.paused &&
+                Math.abs(element.currentTime - playbackTime(ready, frame)) >
+                  seconds(ready, 0.25)
+              )
+                setPhase("timing-unavailable");
+            }}
             onPause={() =>
               setPlayback((current) =>
                 current.id === ready.id && current.phase === "playing"
@@ -223,7 +241,7 @@ export function TrimEditor({
               const end = Math.max(0, (ready.to ?? ready.frames ?? 1) - 1);
               move(end);
               if (video.current)
-                video.current.currentTime = seconds(ready, end);
+                video.current.currentTime = playbackTime(ready, end);
               setPhase("ready");
             }}
             onError={() => setPhase("unavailable")}
@@ -239,10 +257,10 @@ export function TrimEditor({
             <LoaderCircle size={22} className="spin" />
           ))}
       </div>
-      {phase === "unavailable" && (
+      {!loadVideo && (
         <p className="hint" role="status">
           {text(
-            ready.videoStartTime
+            phase === "timing-unavailable"
               ? "trim.previewTimingUnavailable"
               : "trim.previewUnavailable",
           )}

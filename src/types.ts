@@ -137,7 +137,7 @@ export type TrimClip = {
   width?: number;
   height?: number;
   fps?: { num: number; den: number };
-  // Nonzero first-video PTS; native media cannot use the zero-based trim clock.
+  // Nonzero first-video PTS maps native playback to the zero-based trim clock.
   videoStartTime?: number;
   frames?: number;
   // Frames a cut may start at, or "all" when every frame can.

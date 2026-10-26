@@ -4,6 +4,7 @@ import { build } from "vite";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
@@ -14,6 +15,7 @@ const { ff } = require("./engines.cjs");
 const input = path.join(dir, "User 片段 # 50% ' sample.mp4");
 const prores = path.join(dir, "User ProRes.mov");
 const shifted = path.join(dir, "User shifted timestamps.mp4");
+const shiftedMkv = path.join(dir, "User shifted timestamps.mkv");
 const make = (file, args) =>
   execFileSync(ff, [
     "-v",
@@ -48,6 +50,17 @@ execFileSync(ff, [
   "-output_ts_offset",
   "2",
   shifted,
+]);
+execFileSync(ff, [
+  "-v",
+  "error",
+  "-i",
+  input,
+  "-c",
+  "copy",
+  "-output_ts_offset",
+  "2",
+  shiftedMkv,
 ]);
 const fixtureDir = path.join(dir, "fixture-dist");
 await build({
@@ -88,14 +101,14 @@ try {
   await page.getByRole("button", { name: "无损剪辑", exact: true }).click();
   await page.evaluate(
     (paths) => window.encoder.invoke("trimAdd", { paths }),
-    [input, prores, shifted],
+    [input, prores, shifted, shiftedMkv],
   );
   const state = () =>
     page.evaluate(async () => (await window.encoder.invoke("state")).trim);
   await expect
     .poll(
       async () =>
-        (await state()).clips.length === 3 &&
+        (await state()).clips.length === 4 &&
         (await state()).clips.every((c) => c.status === "ready"),
     )
     .toBe(true);
@@ -187,7 +200,7 @@ try {
   await expect(slider).toHaveValue("31");
   await expect
     .poll(() => video.evaluate((node) => node.currentTime))
-    .toBeCloseTo((31 * 1001) / 30000, 4);
+    .toBeCloseTo((31.5 * 1001) / 30000, 4);
   const calls = await app.evaluate(() => globalThis.trimJpegReads);
   const saved = (await state()).clips.map(({ id, from, to, fps }) => ({
     id,
@@ -219,7 +232,7 @@ try {
   await expect(slider).toHaveValue("59");
   await expect
     .poll(() => video.evaluate((node) => node.currentTime))
-    .toBeCloseTo((59 * 1001) / 30000, 4);
+    .toBeCloseTo((59.5 * 1001) / 30000, 4);
   assert.equal(
     await app.evaluate(() => globalThis.trimJpegReads),
     calls,
@@ -245,7 +258,49 @@ try {
   const stopped = Number(await slider.inputValue());
   await expect
     .poll(() => video.evaluate((node) => node.currentTime))
-    .toBeCloseTo((stopped * 1001) / 30000, 4);
+    .toBeCloseTo(((stopped + 0.5) * 1001) / 30000, 4);
+
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].showInactive();
+  });
+  const sampleFrames = [0, 1, 31, 100, 179];
+  async function captureFrame(frame, offset, label) {
+    await page.locator("#trim-in").fill(String(frame));
+    await page.locator("#trim-in").press("Enter");
+    await expect(slider).toHaveValue(String(frame));
+    await expect.poll(() => video.evaluate((v) => v.seeking)).toBe(false);
+    await expect
+      .poll(() => video.evaluate((v) => v.currentTime))
+      .toBeCloseTo(offset + ((frame + 0.5) * 1001) / 30000, 4);
+    await page.locator(".trim-preview").scrollIntoViewIfNeeded();
+    const rect = await video.boundingBox();
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    const shot = await app.evaluate(
+      async ({ BrowserWindow }, rect) =>
+        (await BrowserWindow.getAllWindows()[0].webContents.capturePage(rect))
+          .toPNG()
+          .toString("base64"),
+      Object.fromEntries(
+        Object.entries(rect).map(([key, value]) => [key, Math.round(value)]),
+      ),
+    );
+    const png = Buffer.from(shot, "base64");
+    fs.writeFileSync(path.join(dir, `${label}-${frame}.png`), png);
+    return crypto.createHash("sha256").update(png).digest("hex");
+  }
+  const baseline = [];
+  for (const frame of sampleFrames)
+    baseline.push(await captureFrame(frame, 0, "original"));
+  assert.notEqual(baseline[0], baseline[1], "frame 1 must not show frame 0");
+  await page.evaluate(
+    (id) => window.encoder.invoke("trimSet", { id, from: 30, to: 60 }),
+    id,
+  );
   await video.evaluate((node) => {
     window.oldTrimVideo = node;
   });
@@ -280,29 +335,83 @@ try {
     .locator(".job-select")
     .filter({ hasText: path.basename(shifted) })
     .click();
+  await expect(play()).toBeEnabled();
+  assert.equal(
+    (await state()).clips.find((clip) => clip.path === shifted).videoStartTime,
+    2,
+  );
+  const timestampSamples = [];
+  for (const frame of sampleFrames.slice(0, -1)) {
+    const hash = await captureFrame(frame, 2, "shifted-mp4");
+    assert.equal(hash, baseline[sampleFrames.indexOf(frame)]);
+    timestampSamples.push({ format: "mp4", frame, hash });
+  }
+  const shiftedId = (await state()).clips.find(
+    (clip) => clip.path === shifted,
+  ).id;
+  await page.evaluate(
+    (id) => window.encoder.invoke("trimSet", { id, from: 30, to: 60 }),
+    shiftedId,
+  );
+  await captureFrame(31, 2, "shifted-mp4-play");
+  await video.evaluate((v) => {
+    v.muted = true;
+  });
+  await play().click();
+  await expect
+    .poll(() => video.evaluate((v) => !v.paused && v.currentTime > 3.2))
+    .toBe(true);
+  await page.getByRole("button", { name: "暂停", exact: true }).click();
+  const shiftedPaused = Number(await slider.inputValue());
+  assert.ok(shiftedPaused >= 35 && shiftedPaused < 60);
+  await play().click();
+  await expect(slider).toHaveValue("59");
+  await expect
+    .poll(() =>
+      video.evaluate(
+        (v) =>
+          v.paused &&
+          Math.abs(v.currentTime - (2 + (59.5 * 1001) / 30000)) < 0.0001,
+      ),
+    )
+    .toBe(true);
+
+  // Some MP4 durations remain truncated by Chromium. Do not display an
+  // earlier frame under the requested frame number when seeking to their tail.
+  await page.locator("#trim-in").fill("179");
+  await page.locator("#trim-in").press("Enter");
   await expect(
     page.getByText("此文件无法准确定位播放位置，使用逐帧预览。", {
       exact: true,
     }),
   ).toBeVisible();
-  assert.equal(
-    (await state()).clips.find((clip) => clip.path === shifted).videoStartTime,
-    2,
-  );
-  await expect(page.locator(".trim-preview video")).toHaveCount(0);
+  await expect(video).toHaveCount(0);
   await expect(page.locator(".trim-preview img")).toHaveAttribute(
     "src",
     /^data:image\/jpeg;base64,/,
   );
-  await expect(slider).toHaveValue("0");
-  const shiftedImage = await page
-    .locator(".trim-preview img")
-    .getAttribute("src");
-  await page.getByRole("button", { name: "下一帧", exact: true }).click();
-  await expect(slider).toHaveValue("1");
-  await expect
-    .poll(() => page.locator(".trim-preview img").getAttribute("src"))
-    .not.toBe(shiftedImage);
+  await expect(slider).toHaveValue("179");
+  await expect(play()).toBeDisabled();
+  const jpeg = Buffer.from(
+    (await page.locator(".trim-preview img").getAttribute("src")).split(",")[1],
+    "base64",
+  );
+  const shiftedJpeg = await page.evaluate(
+    ({ id, frame }) => window.encoder.invoke("trimFrame", { id, frame }),
+    { id: shiftedId, frame: 179 },
+  );
+  assert.deepEqual(jpeg, Buffer.from(shiftedJpeg.split(",")[1], "base64"));
+
+  await page
+    .locator(".job-select")
+    .filter({ hasText: path.basename(shiftedMkv) })
+    .click();
+  await expect(play()).toBeEnabled();
+  for (const frame of sampleFrames) {
+    const hash = await captureFrame(frame, 2, "shifted-mkv");
+    assert.equal(hash, baseline[sampleFrames.indexOf(frame)]);
+    timestampSamples.push({ format: "mkv", frame, hash });
+  }
 
   await page
     .locator(".job-select")
@@ -526,6 +635,7 @@ try {
         lastFrame: 59,
         pausedFrame,
         jpegReads: calls,
+        timestampSamples,
         cancelledStream,
         checks: [
           "range-and-head",
@@ -535,7 +645,9 @@ try {
           "stop-at-out",
           "manual-seek",
           "prores-fallback",
-          "nonzero-timestamp-frame-fallback",
+          "nonzero-timestamp-coordinate-playback",
+          "frame-image-equality",
+          "truncated-native-duration-frame-fallback",
           "switch-release",
           "leave-release",
           "revocation",
