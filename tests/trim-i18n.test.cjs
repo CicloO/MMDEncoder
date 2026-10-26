@@ -3,6 +3,58 @@ const assert = require("node:assert/strict");
 const { load } = require("./load-typescript.cjs");
 const { appError, serializeError } = require("../backend/errors.cjs");
 
+test("trim replacement timing keeps waveform precision, actual fractional frames and one clip start", () => {
+  const i18n = load("src/i18n.ts");
+  const { replacementOffset } = load("src/trimCoordinates.ts", {
+    "./i18n": i18n,
+  });
+  for (const num of [30000, 24000]) {
+    for (const from of [0, 17]) {
+      for (const shift of [0, 2, -3]) {
+        const clip = { fps: { num, den: 1001 }, from, mmdStart: 400 };
+        const result = replacementOffset(clip, 0.0123456, shift);
+        const expected = (from * 1001) / num + 0.0123456 - (shift * 1001) / num;
+        assert.ok(Math.abs(result - expected) < 1e-12);
+        assert.equal(
+          replacementOffset({ ...clip, mmdStart: 999 }, 0.0123456, shift),
+          result,
+        );
+      }
+    }
+  }
+});
+
+test("trim options discard old session audio and offset values while retaining output preferences", () => {
+  const i18n = load("src/i18n.ts");
+  const { loadOptions, DEFAULT_OPTIONS } = load("src/trimOptions.ts", {
+    "./i18n": i18n,
+  });
+  global.localStorage = {
+    getItem: () =>
+      JSON.stringify({
+        audioFile: "Old user.wav",
+        offset: "1000",
+        audioMode: "replace",
+        mmdFrames: true,
+        kbps: 192,
+        outputDir: "H:/User out",
+      }),
+  };
+  try {
+    const options = loadOptions();
+    for (const key of ["offset", "audioFile"]) {
+      assert.equal(key in options, false);
+      assert.equal(key in DEFAULT_OPTIONS, false);
+    }
+    assert.equal(options.audioMode, "reencode");
+    assert.equal(options.mmdFrames, true);
+    assert.equal(options.kbps, 192);
+    assert.equal(options.outputDir, "H:/User out");
+  } finally {
+    delete global.localStorage;
+  }
+});
+
 test("trim labels and plural forms refresh without changing stored options or technical values", () => {
   const i18n = load("src/i18n.ts");
   const options = load("src/trimOptions.ts", { "./i18n": i18n });

@@ -108,17 +108,23 @@ test("auto-alignment and media error wrappers keep nested errors for later forma
     i18n.errorMessage(wrapped),
     "无法读取文件信息：自动对齐失败：音频太短，至少需要 1 秒",
   );
-  const { autoAlign, offsetText } = load("src/autoAlign.ts", {
+  const { offsetText } = load("src/autoAlign.ts", { "./i18n": i18n });
+  const { createAlignmentTasks } = load("src/alignmentTasks.ts", {
     "./i18n": i18n,
-    "./ipc": {
-      invoke: async () => {
-        throw Object.assign(new Error(cause.message), cause);
-      },
+    "./alignRequests": { isCancelled: (e) => e?.code === "ALIGN_CANCELLED" },
+  });
+  const tasks = createAlignmentTasks({
+    prefix: "test",
+    changed: () => {},
+    request: async () => {
+      throw Object.assign(new Error(cause.message), cause);
     },
   });
-  const note = await autoAlign("video", "audio", async () =>
-    assert.fail("failed alignment must not apply"),
-  );
+  const note = await tasks
+    .begin("failed")
+    .run("video", "audio", async () =>
+      assert.fail("failed alignment must not apply"),
+    );
   assert.equal(note.code, "AUTO_ALIGN_FAILED");
   assert.deepEqual(note.params.error, cause);
   i18n.localeRuntime.registerCatalog("en-XA", {
@@ -150,15 +156,18 @@ test("auto-alignment and media error wrappers keep nested errors for later forma
     "Expanded not applied: Foreign diagnostic stays exact",
   );
   assert.equal(offsetText(-1.25), "-1.250 expanded seconds");
-  const low = load("src/autoAlign.ts", {
-    "./i18n": i18n,
-    "./ipc": { invoke: async () => ({ reliable: false, offset: 12 }) },
+  const low = createAlignmentTasks({
+    prefix: "test",
+    changed: () => {},
+    request: async () => ({ reliable: false, offset: 12 }),
   });
   assert.equal(
     (
-      await low.autoAlign("video", "audio", async () =>
-        assert.fail("unreliable result must not apply"),
-      )
+      await low
+        .begin("low")
+        .run("video", "audio", async () =>
+          assert.fail("unreliable result must not apply"),
+        )
     ).code,
     "AUTO_ALIGN_LOW_CONFIDENCE",
   );

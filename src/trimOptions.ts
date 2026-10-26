@@ -4,8 +4,6 @@ export type Options = {
   audioMode: string;
   audioCodec: string;
   kbps: number;
-  audioFile: string;
-  offset: string;
   // Seconds of fade in at the start and out at the end of the whole result.
   fade: number;
   mmdFrames: boolean;
@@ -16,8 +14,6 @@ export const DEFAULT_OPTIONS: Options = {
   audioMode: "reencode",
   audioCodec: "aac",
   kbps: 320,
-  audioFile: "",
-  offset: "0",
   fade: 0,
   mmdFrames: false,
   location: "source",

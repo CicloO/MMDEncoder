@@ -1,9 +1,24 @@
 import { localeRuntime } from "./i18n";
 import type { TrimClip } from "./types";
+import { effectiveAudioOffset } from "../backend/audio-timing.mjs";
 
 // Frame <-> time on a clip's rational frame rate.
 export const seconds = (c: TrimClip, frame: number) =>
   c.fps ? (frame * c.fps.den) / c.fps.num : 0;
+
+// The waveform uses the whole source. Apply the first exported clip's
+// start once, after its independent actual-frame audio shift.
+export const replacementOffset = (
+  clip: TrimClip,
+  waveOffset: number,
+  shiftFrames: number,
+) =>
+  seconds(clip, clip.from ?? 0) +
+  effectiveAudioOffset(
+    waveOffset,
+    shiftFrames,
+    clip.fps && `${clip.fps.num}/${clip.fps.den}`,
+  );
 export function clock(sec: number) {
   const ms = Math.round(sec * 1000);
   const h = Math.floor(ms / 3600000),

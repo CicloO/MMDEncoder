@@ -14,7 +14,8 @@ fs.mkdirSync(work, { recursive: true });
 const testDir = fs.mkdtempSync(path.join(work, "align-ui-"));
 const { ff } = require("./engines.cjs");
 const { align } = require("../backend/align.cjs");
-const run = (args) => execFileSync(ff, ["-v", "error", ...args]);
+const run = (args) =>
+  execFileSync(ff, ["-v", "error", ...args], { maxBuffer: 1 << 26 });
 const song = path.join(testDir, "原曲.flac");
 run([
   "-f",
@@ -380,35 +381,210 @@ try {
     (await state()).jobs.find((j) => j.id === silentId).audioShiftFrames,
     3,
   );
-  // Trim page: 起点偏移 filled in from the first clip's sound, and the same
-  // dialog to look at it (the picker still answers with the song).
+  // Trim: new audio matches automatically; waveform and actual-frame shift
+  // stay independent, including a nonzero clip start and MMD display units.
+  const trimReference = path.join(testDir, "trim reference.mp4");
+  run([
+    "-i",
+    render,
+    "-c:v",
+    "libx264",
+    "-g",
+    "1",
+    "-preset",
+    "ultrafast",
+    "-c:a",
+    "copy",
+    trimReference,
+  ]);
   await page.getByRole("button", { name: "无损剪辑", exact: true }).click();
   await page.evaluate(
     (p) => window.encoder.invoke("trimAdd", { paths: [p] }),
-    render,
+    trimReference,
   );
   await expect(page.locator(".trim-tick").first()).toBeVisible({
     timeout: 30000,
   });
   await page.locator("#trim-audio").selectOption("replace");
   await page.getByRole("button", { name: "选择音频" }).click();
-  await page.getByRole("button", { name: "自动填写" }).click();
-  const field = page.locator("#trim-offset");
-  const frames = (await page.getByText("起点偏移 · MMD 帧").count()) > 0;
+  const trimButton = page.getByRole("button", {
+    name: "音频对齐",
+    exact: true,
+  });
   await expect
-    .poll(async () => Number(await field.inputValue()), { timeout: 60000 })
-    .toBeCloseTo(frames ? 75 : 2.5, frames ? 0 : 2);
-  await page.getByRole("button", { name: "音频对齐" }).click();
+    .poll(
+      () =>
+        page.evaluate(() =>
+          window.alignmentMotion
+            .flat()
+            .some((item) => item.button === "音频对齐"),
+        ),
+      { timeout: 60000 },
+    )
+    .toBe(true);
+  await expect(trimButton).toHaveAttribute("aria-busy", "false", {
+    timeout: 60000,
+  });
+  await expect(page.locator("#trim-offset")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "自动填写", exact: true }),
+  ).toHaveCount(0);
+  await trimButton.click();
   const trimDialog = page.getByRole("dialog", { name: "音频对齐" });
   await expect(trimDialog.getByText(/视频自带的声音/)).toBeVisible();
   await expect(trimDialog.getByText(/目标开头多出 2\.50\d\d 秒/)).toBeVisible({
     timeout: 30000,
   });
+  const trimShift = trimDialog.getByLabel("音频偏移（帧）", { exact: true });
+  await expect(trimShift).toHaveAttribute("title", "30000/1001");
+  await trimShift.fill("2");
   await trimDialog.getByRole("button", { name: "应用" }).click();
   await expect(trimDialog).toBeHidden();
-  assert.ok(
-    Math.abs(Number(await field.inputValue()) - (frames ? 75 : 2.5)) <
-      (frames ? 1 : 0.01),
+  await trimButton.click();
+  await expect(trimShift).toBeEnabled();
+  await expect(trimShift).toHaveValue("2");
+  await trimDialog
+    .getByRole("button", { name: "自动对齐", exact: true })
+    .click();
+  await expect(trimShift).toBeEnabled({ timeout: 60000 });
+  await expect(trimShift).toHaveValue("2");
+  await trimShift.fill("-3");
+  await trimDialog.getByRole("button", { name: "取消", exact: true }).click();
+  await trimButton.click();
+  await expect(trimShift).toBeEnabled();
+  await expect(trimShift).toHaveValue("2");
+  await trimDialog
+    .getByRole("button", { name: "清除对齐", exact: true })
+    .click();
+  await expect(trimDialog).toBeHidden();
+
+  const trimId = (await state()).trim.clips[0].id;
+  await page.evaluate(
+    (id) => window.encoder.invoke("trimSet", { id, from: 17, to: 65 }),
+    trimId,
+  );
+  await expect.poll(async () => (await state()).trim.clips[0].from).toBe(17);
+  await page.getByRole("checkbox", { name: /按 MMD 帧号输入/ }).check();
+  await page.locator("#trim-audio-codec").selectOption("pcm");
+  const sourcePcm = run([
+    "-i",
+    song,
+    "-af",
+    "aformat=sample_fmts=fltp:channel_layouts=stereo",
+    "-c:a",
+    "pcm_s16le",
+    "-f",
+    "s16le",
+    "-",
+  ]);
+  const count = Math.round(((48 * 1001) / 30000) * 44100);
+  for (const shift of [0, 2, -3]) {
+    await trimButton.click();
+    await expect(trimShift).toBeEnabled();
+    await trimShift.fill(String(shift));
+    await trimDialog.getByRole("button", { name: "应用", exact: true }).click();
+    await expect(trimDialog).toBeHidden();
+    await expect
+      .poll(
+        async () => {
+          const s = await state();
+          return !s.detecting && !s.tools.busy && !s.enhancements.busy;
+        },
+        { timeout: 60000 },
+      )
+      .toBe(true);
+    const previous = (await state()).trim.output;
+    await page.getByRole("button", { name: "导出", exact: true }).click();
+    await expect
+      .poll(
+        async () => {
+          const t = (await state()).trim;
+          return (
+            !t.running &&
+            t.output !== previous &&
+            t.stage?.stage === "trim_completed"
+          );
+        },
+        { timeout: 60000 },
+      )
+      .toBe(true);
+    const output = (await state()).trim.output;
+    const actual = run([
+      "-i",
+      output,
+      "-map",
+      "0:a:0",
+      "-c:a",
+      "pcm_s16le",
+      "-f",
+      "s16le",
+      "-",
+    ]);
+    const expected = Buffer.alloc(count * 4),
+      at = Math.round((((17 - shift) * 1001) / 30000) * 44100);
+    sourcePcm.copy(expected, 0, at * 4, (at + count) * 4);
+    assert.equal(
+      actual.length,
+      expected.length,
+      `trim shift ${shift}: sample count`,
+    );
+    assert.ok(
+      actual.equals(expected),
+      `trim shift ${shift}: source start once, actual FPS and sample content`,
+    );
+  }
+  const savedTrim = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("mmd-trim-options")),
+  );
+  assert.equal("offset" in savedTrim, false);
+  assert.equal("audioFile" in savedTrim, false);
+  await app.evaluate(({ dialog }) => {
+    dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] });
+  });
+  await page.getByRole("button", { name: "选择音频" }).click();
+  await trimButton.click();
+  await expect(trimShift).toBeEnabled();
+  await expect(trimShift).toHaveValue("-3");
+  await trimDialog.getByRole("button", { name: "取消", exact: true }).click();
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = async () => ({
+      canceled: false,
+      filePaths: [file],
+    });
+  }, song);
+  const previousTrimMotion = await page.evaluate(
+    () =>
+      window.alignmentMotion.flat().filter((item) => item.button === "音频对齐")
+        .length,
+  );
+  await page.getByRole("button", { name: "选择音频" }).click();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            window.alignmentMotion
+              .flat()
+              .filter((item) => item.button === "音频对齐").length,
+        ),
+      { timeout: 60000 },
+    )
+    .toBeGreaterThan(previousTrimMotion);
+  await expect(trimButton).toHaveAttribute("aria-busy", "false", {
+    timeout: 60000,
+  });
+  await trimButton.click();
+  await expect(trimShift).toBeEnabled();
+  await expect(trimShift).toHaveValue("0");
+  await expect(trimDialog.getByText(/目标开头多出 2\.50\d\d 秒/)).toBeVisible({
+    timeout: 30000,
+  });
+  await page.screenshot({
+    path: path.join(evidence, "i18n/b4-trim-audio-dialog.png"),
+  });
+  await trimDialog.getByRole("button", { name: "取消", exact: true }).click();
+  console.log(
+    "Trim automatic alignment, independent fractional-frame shift, cancel/reset and 3 sample-exact desktop exports PASS",
   );
   console.log("Desktop align PASS");
   fs.writeFileSync(

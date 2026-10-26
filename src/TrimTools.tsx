@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useDragSort } from "./components";
-import { autoAlign } from "./autoAlign";
+import { createReplacementFlow, type AudioTarget } from "./audioReplacement";
+import { useAlignmentTasks } from "./useAlignmentTasks";
+import { AUDIO_EXT } from "./mediaOptions";
 import {
   t as textLabel,
   summaryMessage,
@@ -16,7 +18,12 @@ import { TrimSettings } from "./TrimSettings";
 import { TrimFooter } from "./TrimFooter";
 import { useTrimPreview } from "./useTrimPreview";
 import { OPTIONS_KEY, loadOptions, type Options } from "./trimOptions";
-import { seconds, parsePosition, mmdFrame } from "./trimCoordinates";
+import {
+  seconds,
+  parsePosition,
+  mmdFrame,
+  replacementOffset,
+} from "./trimCoordinates";
 import type { State } from "./types";
 
 export function TrimTools({
@@ -65,7 +72,12 @@ export function TrimTools({
   useEffect(() => {
     if (!dropped) return;
     onDropHandled?.();
-    if (!t.running) void run("trimAdd", { paths: dropped.paths });
+    if (!t.running) {
+      const files = dropped.paths.filter((path) => !AUDIO_EXT.test(path));
+      if (files.length) void run("trimAdd", { paths: files });
+      const audioFile = dropped.paths.find((path) => AUDIO_EXT.test(path));
+      if (audioFile) chooseAudio(audioFile);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dropped?.seq]);
 
@@ -149,35 +161,83 @@ export function TrimTools({
   }
 
   const exportable = clips.filter((c) => c.status === "ready" && !c.empty);
-  // 音频对齐 for the replacement audio: where the first clip's start falls
-  // in the audio, from the clip's own sound (one clip, or clips in order
-  // from one take, line up throughout).
-  const [aligning, setAligning] = useState(false);
-  // The first clip's start in its own file (seconds): 起点偏移 counts the
-  // audio from there, the alignment from the file's start.
-  const clipStart = () => {
-    const first = exportable[0];
-    return first?.fps ? (first.from ?? 0) / (first.fps.num / first.fps.den) : 0;
-  };
-  const setOffsetSeconds = (at: number) =>
-    set("offset", o.mmdFrames ? String(Math.round(at * 30)) : at.toFixed(3));
+  const first = exportable[0];
+  // Replacement audio and both offsets belong to this trim session.
+  const [audio, setAudio] = useState({
+    file: "",
+    reference: "",
+    offset: 0,
+    shiftFrames: 0,
+    selection: 0,
+  });
   const [alignOpen, setAlignOpen] = useState(false);
-  async function fillOffset() {
-    const first = exportable[0];
-    if (!first || !o.audioFile || !first.fps) return;
-    setAligning(true);
+  const alignment = useAlignmentTasks(
+    "trim",
+    first && audio.file && o.audioMode === "replace"
+      ? [{ id: first.path, target: audio.file }]
+      : [],
+  );
+  const aligning = !!first && alignment.active.has(first.path);
+  function chooseAudio(file: string) {
+    setAlignOpen(false);
     setError("");
-    const note = await autoAlign(first.path, o.audioFile, async (offset) =>
-      setOffsetSeconds(offset + clipStart()),
-    );
-    setAligning(false);
-    if (note)
-      setError(
-        note.code === "AUTO_ALIGN_LOW_CONFIDENCE"
-          ? notification("AUTO_ALIGN_LOW_CONFIDENCE_TRIM")
-          : note,
-      );
+    setAudio((current) => ({
+      file,
+      reference: "",
+      offset: 0,
+      shiftFrames: 0,
+      selection: current.selection + 1,
+    }));
+    set("audioMode", "replace");
   }
+  // Also handles audio chosen before a clip was ready. Changing the clip's
+  // in point does not rerun the whole-source match or round its result.
+  useEffect(() => {
+    if (!first?.fps || !audio.file || o.audioMode !== "replace") return;
+    setError("");
+    setAlignOpen(false);
+    const target: AudioTarget = {
+      id: first.path,
+      path: first.path,
+      hasAudio: true,
+      isSequence: false,
+    };
+    const replace = createReplacementFlow<AudioTarget, void>({
+      tasks: alignment,
+      replace: async (row) => {
+        setAudio((current) =>
+          current.reference === row.path
+            ? current
+            : {
+                ...current,
+                reference: row.path,
+                offset: 0,
+                shiftFrames: 0,
+              },
+        );
+        return { result: undefined, target: row };
+      },
+      applyOffset: async (row, file, offset) =>
+        setAudio((current) =>
+          current.file === file && current.reference === row.path
+            ? { ...current, offset }
+            : current,
+        ),
+      notify: (note) =>
+        setError(
+          note.code === "AUTO_ALIGN_LOW_CONFIDENCE"
+            ? notification("AUTO_ALIGN_LOW_CONFIDENCE_TRIM")
+            : note,
+        ),
+    });
+    void replace(target, audio.file);
+    return () => {
+      void alignment.cancel(target.id);
+    };
+    // These are the replacement identity; matching never depends on its
+    // resulting offset, display units, locale, range or other options.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [first?.path, audio.selection, o.audioMode]);
   const totalFrames = exportable.reduce(
     (a, c) => a + ((c.to ?? 0) - (c.from ?? 0)),
     0,
@@ -190,12 +250,8 @@ export function TrimTools({
     !t.running &&
     exportable.length > 0 &&
     !clips.some((c) => c.status === "indexing") &&
-    (o.audioMode !== "replace" || !!o.audioFile) &&
+    (o.audioMode !== "replace" || (!!audio.file && !aligning)) &&
     (o.location !== "custom" || !!o.outputDir);
-  const offsetSeconds = () => {
-    const n = Number(o.offset) || 0;
-    return o.mmdFrames ? n / 30 : n;
-  };
 
   // Position on the slider: frame 0 at the thumb's leftmost centre, the
   // last frame at its rightmost (the marks layer is inset by half a thumb).
@@ -212,7 +268,7 @@ export function TrimTools({
   }
   async function pickAudio() {
     const file = await run("pickMedia", {});
-    if (typeof file === "string") set("audioFile", file);
+    if (typeof file === "string") chooseAudio(file);
   }
   async function pickFolder() {
     const dir = await run("pickDirectory", {
@@ -226,8 +282,10 @@ export function TrimTools({
         mode: o.audioMode,
         codec: o.audioCodec,
         kbps: o.kbps,
-        file: o.audioFile,
-        offset: offsetSeconds(),
+        file: audio.file,
+        offset: first
+          ? replacementOffset(first, audio.offset, audio.shiftFrames)
+          : 0,
         fade: o.fade ?? 0,
       },
       location: o.location,
@@ -295,12 +353,15 @@ export function TrimTools({
                 : errorMessage(error || t.errorData || t.error)
             }
             aligning={aligning}
+            audioFile={audio.file}
             hasExportable={!!exportable.length}
             set={set}
             onSmart={(smart) => run("trimSmart", { smart })}
             onPickAudio={pickAudio}
-            onAlign={() => setAlignOpen(true)}
-            fillOffset={fillOffset}
+            onAlign={() => {
+              if (first) void alignment.cancel(first.path);
+              setAlignOpen(true);
+            }}
             onPickFolder={pickFolder}
           />
         </main>
@@ -323,21 +384,33 @@ export function TrimTools({
         onExport={exportTrim}
       />
       <AlignDialog
-        open={alignOpen && !!o.audioFile && !!exportable.length}
+        open={alignOpen && !!audio.file && !!first}
         call={call}
         onClose={() => setAlignOpen(false)}
-        targetPath={o.audioFile}
-        fixedReference={exportable[0]?.path}
-        initial={
-          Number(o.offset)
-            ? { offset: offsetSeconds() - clipStart() }
+        frameShift
+        targetPath={audio.file}
+        fixedReference={first?.path}
+        initial={{ offset: audio.offset, shiftFrames: audio.shiftFrames }}
+        description={textLabel("trim.alignDescription", {
+          name: first?.name || "",
+        })}
+        onApply={async (a) =>
+          setAudio((current) => ({
+            ...current,
+            offset: a.offset,
+            shiftFrames: a.shiftFrames || 0,
+          }))
+        }
+        onClear={
+          audio.offset || audio.shiftFrames
+            ? async () =>
+                setAudio((current) => ({
+                  ...current,
+                  offset: 0,
+                  shiftFrames: 0,
+                }))
             : undefined
         }
-        description={textLabel("trim.alignDescription", {
-          name: exportable[0]?.name || "",
-        })}
-        onApply={async (a) => setOffsetSeconds(a.offset + clipStart())}
-        onClear={Number(o.offset) ? async () => set("offset", "0") : undefined}
       />
     </>
   );

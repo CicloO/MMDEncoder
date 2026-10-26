@@ -1,5 +1,6 @@
-import { AudioLines, Wand2, FolderOpen, SlidersHorizontal } from "lucide-react";
-import { Button, Field, Select } from "./components";
+import { FolderOpen, SlidersHorizontal } from "lucide-react";
+import { Button, Select } from "./components";
+import { AlignmentIcon } from "./AlignmentIcon";
 import { t as text, localeRuntime } from "./i18n";
 import { fadeOptions } from "./presentation";
 import {
@@ -14,12 +15,12 @@ export function TrimSettings({
   smart,
   error,
   aligning,
+  audioFile,
   hasExportable,
   set,
   onSmart,
   onPickAudio,
   onAlign,
-  fillOffset,
   onPickFolder,
 }: {
   o: Options;
@@ -27,12 +28,12 @@ export function TrimSettings({
   smart: boolean;
   error: string;
   aligning: boolean;
+  audioFile: string;
   hasExportable: boolean;
   set: <K extends keyof Options>(key: K, value: Options[K]) => void;
   onSmart: (value: boolean) => unknown;
   onPickAudio: () => unknown;
   onAlign: () => void;
-  fillOffset: () => unknown;
   onPickFolder: () => unknown;
 }) {
   return (
@@ -95,48 +96,20 @@ export function TrimSettings({
                   <FolderOpen size={15} />
                   {text("trim.chooseAudio")}
                 </Button>
-                <span className="path-text" title={o.audioFile}>
-                  {o.audioFile || text("trim.notChosen")}
+                <span className="path-text" title={audioFile}>
+                  {audioFile || text("trim.notChosen")}
                 </span>
+                <Button
+                  variant="ghost icon"
+                  aria-label={text("trim.align")}
+                  aria-busy={aligning}
+                  title={text("trim.alignHint")}
+                  disabled={running || !audioFile || !hasExportable}
+                  onClick={() => onAlign()}
+                >
+                  <AlignmentIcon active={aligning} />
+                </Button>
               </div>
-              <Field
-                id="trim-offset"
-                label={
-                  o.mmdFrames
-                    ? text("trim.offsetMmd")
-                    : text("trim.offsetSeconds")
-                }
-                hint={text("trim.offsetHint")}
-              >
-                <div className="path-picker">
-                  <input
-                    id="trim-offset"
-                    inputMode="decimal"
-                    value={o.offset}
-                    disabled={running}
-                    onChange={(e) => set("offset", e.target.value)}
-                  />
-                  <Button
-                    disabled={
-                      running || !o.audioFile || !hasExportable || !!aligning
-                    }
-                    title={text("trim.autoFillHint")}
-                    onClick={fillOffset}
-                  >
-                    <Wand2 size={15} />
-                    {aligning ? text("trim.aligning") : text("trim.autoFill")}
-                  </Button>
-                  <Button
-                    variant="ghost icon"
-                    aria-label={text("trim.align")}
-                    title={text("trim.alignHint")}
-                    disabled={running || !o.audioFile || !hasExportable}
-                    onClick={() => onAlign()}
-                  >
-                    <AudioLines size={16} />
-                  </Button>
-                </div>
-              </Field>
             </>
           )}
           {o.audioMode !== "none" && (
