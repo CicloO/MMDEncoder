@@ -7,8 +7,14 @@ import {
 } from "lucide-react";
 import { Button } from "./components";
 import { clock } from "./trimCoordinates";
-import { AUDIO_MODES, AUDIO_CODECS, LOCATIONS } from "./trimOptions";
-import { stageMessage, type StageDescriptor } from "./i18n";
+import { LOCATIONS } from "./trimOptions";
+import {
+  t as text,
+  localeRuntime,
+  type MessageKey,
+  stageMessage,
+  type StageDescriptor,
+} from "./i18n";
 export function TrimFooter({
   clipCount,
   totalFrames,
@@ -40,47 +46,67 @@ export function TrimFooter({
   onCancel: () => unknown;
   onExport: () => unknown;
 }) {
+  const n = (v: number) => localeRuntime.number(v);
   return (
     <footer className="output-strip">
       <div className="output-icon">
         <ArrowDownToLine size={23} />
       </div>
       <div className="output-summary">
-        <span className="eyebrow">预计结果</span>
+        <span className="eyebrow">{text("trim.expected")}</span>
         <strong>
-          {clipCount ? `${clipCount} 段` : "添加片段"} <ArrowRight size={15} />
+          {clipCount
+            ? text("trim.segmentCount", {
+                count: clipCount,
+                value: n(clipCount),
+              })
+            : text("trim.addClips")}{" "}
+          <ArrowRight size={15} />
           <span>
-            {totalFrames} 帧 · {clock(totalSeconds)}
+            {text("trim.outputDuration", {
+              count: totalFrames,
+              frames: n(totalFrames),
+              time: clock(totalSeconds),
+            })}
           </span>
         </strong>
         <span className="output-facts">
-          视频 → 直接复制
-          <i /> 音频 → {AUDIO_MODES[audioMode].split("（")[0]}
+          {text("trim.outputVideo")}
+          <i />{" "}
+          {text("trim.outputAudio", {
+            audio: text(("trim.audioSummary." + audioMode) as MessageKey),
+          })}
           {audioMode !== "none" &&
-            ` · ${AUDIO_CODECS[audioCodec].split(" ·")[0]}`}
-          <i /> 位置 → {LOCATIONS[location]}
+            text("trim.outputCodec", {
+              codec: text(("trim.codecSummary." + audioCodec) as MessageKey),
+            })}
+          <i />{" "}
+          {text("trim.outputLocation", { location: LOCATIONS()[location] })}
         </span>
         <span className="output-path" title={output}>
           {running
-            ? `${stageMessage(stage || "")} · ${progress}%`
+            ? text("trim.progress", {
+                stage: stageMessage(stage || ""),
+                progress: n(progress),
+              })
             : output
-              ? `已保存：${output}`
+              ? text("trim.saved", { path: output })
               : typeof stage === "object" && stage.stage === "trim_cancelled"
                 ? stageMessage(stage)
-                : "保存为“第一个片段名_trimmed”，不覆盖已有文件"}
+                : text("trim.outputName")}
         </span>
       </div>
       <div className="run-actions">
         {output && !running && (
           <Button variant="ghost" onClick={onReveal}>
             <FolderOpen size={15} />
-            打开位置
+            {text("trim.reveal")}
           </Button>
         )}
         {running ? (
           <Button variant="stop" onClick={onCancel}>
             <Square size={16} />
-            取消导出
+            {text("trim.cancel")}
           </Button>
         ) : (
           <Button
@@ -89,7 +115,7 @@ export function TrimFooter({
             onClick={onExport}
           >
             <Play size={17} />
-            导出
+            {text("trim.export")}
           </Button>
         )}
       </div>

@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { useDragSort } from "./components";
 import { autoAlign } from "./autoAlign";
 import {
-  t as text,
+  t as textLabel,
   summaryMessage,
+  notification,
   errorMessage,
   type ErrorData,
 } from "./i18n";
@@ -107,11 +108,18 @@ export function TrimTools({
   function applyText(which: "in" | "out") {
     if (!ready) return;
     const text = which === "in" ? inText : outText;
-    if (which === "out" && /^(end|结尾)$/i.test(text.trim()))
+    if (
+      which === "out" &&
+      (/^end$/i.test(text.trim()) || text.trim() === textLabel("trim.end"))
+    )
       return setRange(ready.from ?? 0, "end");
     const f = parsePosition(text, ready, o.mmdFrames);
     if (f === null)
-      return setError("请输入帧号或时间（如 1234 或 00:00:41.133）");
+      return setError({
+        code: "TRIM_POSITION_INVALID",
+        params: {},
+        message: textLabel("error.TRIM_POSITION_INVALID"),
+      });
     if (which === "in")
       setRange(f, ready.to === ready.frames ? "end" : (ready.to ?? 0));
     else setRange(ready.from ?? 0, f);
@@ -166,8 +174,8 @@ export function TrimTools({
     if (note)
       setError(
         note.code === "AUTO_ALIGN_LOW_CONFIDENCE"
-          ? text("message.AUTO_ALIGN_LOW_CONFIDENCE_TRIM")
-          : summaryMessage(note),
+          ? notification("AUTO_ALIGN_LOW_CONFIDENCE_TRIM")
+          : note,
       );
   }
   const totalFrames = exportable.reduce(
@@ -207,7 +215,9 @@ export function TrimTools({
     if (typeof file === "string") set("audioFile", file);
   }
   async function pickFolder() {
-    const dir = await run("pickDirectory", { title: "选择输出文件夹" });
+    const dir = await run("pickDirectory", {
+      title: textLabel("trim.chooseOutputFolder"),
+    });
     if (dir) set("outputDir", dir);
   }
   function exportTrim() {
@@ -229,7 +239,10 @@ export function TrimTools({
     <>
       <div className="page-scroll">
         <main className="workspace">
-          <section className="queue-column" aria-label="片段">
+          <section
+            className="queue-column"
+            aria-label={textLabel("trim.clips")}
+          >
             <TrimQueue
               clips={clips}
               selectedId={selected?.id}
@@ -272,7 +285,15 @@ export function TrimTools({
             o={o}
             running={t.running}
             smart={t.smart}
-            error={errorMessage(error || t.errorData || t.error)}
+            error={
+              typeof error === "object" && error.code?.startsWith("AUTO_ALIGN_")
+                ? summaryMessage({
+                    code: error.code,
+                    params: error.params,
+                    message: error.message,
+                  })
+                : errorMessage(error || t.errorData || t.error)
+            }
             aligning={aligning}
             hasExportable={!!exportable.length}
             set={set}
@@ -311,7 +332,9 @@ export function TrimTools({
             ? { offset: offsetSeconds() - clipStart() }
             : undefined
         }
-        description={`把替换音频对齐到“${exportable[0]?.name || ""}”自带的声音；应用后填入起点偏移（按第一个片段的起点换算）。`}
+        description={textLabel("trim.alignDescription", {
+          name: exportable[0]?.name || "",
+        })}
         onApply={async (a) => setOffsetSeconds(a.offset + clipStart())}
         onClear={Number(o.offset) ? async () => set("offset", "0") : undefined}
       />

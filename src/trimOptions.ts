@@ -1,3 +1,4 @@
+import { t as text } from "./i18n";
 export const OPTIONS_KEY = "mmd-trim-options";
 export type Options = {
   audioMode: string;
@@ -22,21 +23,21 @@ export const DEFAULT_OPTIONS: Options = {
   location: "source",
   outputDir: "",
 };
-export const AUDIO_MODES: Record<string, string> = {
-  reencode: "保留原音频（重新编码，精确到采样点）",
-  replace: "替换为外部音频",
-  none: "无音频",
-};
-export const AUDIO_CODECS: Record<string, string> = {
-  aac: "AAC",
-  flac: "FLAC · 无损",
-  pcm: "PCM 16-bit · 无损（MOV / MKV）",
-};
-export const LOCATIONS: Record<string, string> = {
-  source: "与第一个片段同目录",
-  encoded: "其目录下的 Encoded 子文件夹",
-  custom: "自定义文件夹",
-};
+export const AUDIO_MODES = (): Record<string, string> => ({
+  reencode: text("trim.audioMode.reencode"),
+  replace: text("trim.audioMode.replace"),
+  none: text("trim.audioMode.none"),
+});
+export const AUDIO_CODECS = (): Record<string, string> => ({
+  aac: text("trim.codec.aac"),
+  flac: text("trim.codec.flac"),
+  pcm: text("trim.codec.pcm"),
+});
+export const LOCATIONS = (): Record<string, string> => ({
+  source: text("trim.location.source"),
+  encoded: text("trim.location.encoded"),
+  custom: text("trim.location.custom"),
+});
 // Choices are remembered between sessions, but not a replacement audio
 // file or its offset: they belong to the clips of that session.
 export function loadOptions(): Options {

@@ -11,7 +11,7 @@ import {
 import { Button, useDragSort } from "./components";
 import { clock, seconds } from "./trimCoordinates";
 import type { TrimClip } from "./types";
-import { errorMessage } from "./i18n";
+import { t as text, localeRuntime, errorMessage } from "./i18n";
 export function TrimQueue({
   clips,
   selectedId,
@@ -33,6 +33,7 @@ export function TrimQueue({
   onAdd: () => unknown;
   onClear: () => unknown;
 }) {
+  const n = (v: number | undefined) => localeRuntime.number(v ?? 0);
   const row = (c: TrimClip, i: number) => (
     <li
       key={c.id}
@@ -46,15 +47,21 @@ export function TrimQueue({
       >
         <span className="file-tile">
           <FileVideo size={23} />
-          <small>{i + 1}</small>
+          <small>{n(i + 1)}</small>
         </span>
         <span className="job-copy">
           <strong title={c.path}>{c.name}</strong>
           <span className="job-sub">
             {c.status === "ready"
-              ? `第 ${c.from}–${c.to === c.frames ? "结尾" : c.to} 帧 · ${(c.to ?? 0) - (c.from ?? 0)} 帧 · ${clock(seconds(c, (c.to ?? 0) - (c.from ?? 0)))}`
+              ? text("trim.rangeSummary", {
+                  from: n(c.from),
+                  to: c.to === c.frames ? text("trim.end") : n(c.to),
+                  count: (c.to ?? 0) - (c.from ?? 0),
+                  value: n((c.to ?? 0) - (c.from ?? 0)),
+                  time: clock(seconds(c, (c.to ?? 0) - (c.from ?? 0))),
+                })
               : c.status === "indexing"
-                ? "正在读取关键帧…"
+                ? text("trim.indexing")
                 : errorMessage(c.errorData || c.error || "")}
           </span>
           <span
@@ -65,19 +72,30 @@ export function TrimQueue({
             )}
             {c.status === "ready"
               ? c.empty
-                ? "吸附后片段为空"
-                : `${c.codec?.toUpperCase()} · ${c.width}×${c.height} · ${c.cuts === "all" ? "逐帧可切" : `${(c.cuts as number[]).length} 个可切位置`}`
+                ? text("trim.emptyRangeSnapped")
+                : text("trim.videoFacts", {
+                    codec: c.codec?.toUpperCase() || "",
+                    width: n(c.width),
+                    height: n(c.height),
+                    cuts:
+                      c.cuts === "all"
+                        ? text("trim.allFrames")
+                        : text("trim.cutCount", {
+                            count: (c.cuts as number[]).length,
+                            value: n((c.cuts as number[]).length),
+                          }),
+                  })
               : c.status === "indexing"
-                ? "读取中"
-                : "不能无损裁切"}
+                ? text("trim.reading")
+                : text("trim.invalid")}
           </span>
         </span>
       </button>
       {c.status === "ready" && (
         <Button
           variant="ghost icon"
-          aria-label={`再切一段 ${c.name}`}
-          title="再切一段：同一文件的另一段"
+          aria-label={text("trim.duplicate", { name: c.name })}
+          title={text("trim.duplicateHint")}
           disabled={running}
           onClick={() => onDuplicate(c.id)}
         >
@@ -86,8 +104,8 @@ export function TrimQueue({
       )}
       <Button
         variant="ghost icon"
-        aria-label={`移除 ${c.name}`}
-        title="从列表移除"
+        aria-label={text("trim.remove", { name: c.name })}
+        title={text("trim.removeHint")}
         disabled={running}
         onClick={() => onRemove(c.id)}
       >
@@ -100,27 +118,28 @@ export function TrimQueue({
     <>
       <div className="section-heading">
         <div>
-          <span className="eyebrow">工作区</span>
+          <span className="eyebrow">{text("trim.workspace")}</span>
           <h2>
-            片段 <span className="count">{clips.length}</span>
+            {text("trim.clips")}{" "}
+            <span className="count">{n(clips.length)}</span>
           </h2>
         </div>
         <Button variant="primary" disabled={running} onClick={onAdd}>
           <Plus size={17} />
-          添加视频
+          {text("trim.add")}
         </Button>
       </div>
       <div className="queue-panel">
         <div className="queue-toolbar">
           <span>
-            <Scissors size={15} /> 按顺序首尾相接
+            <Scissors size={15} /> {text("trim.joinOrder")}
           </span>
           <Button
             variant="ghost"
             disabled={!clips.length || running}
             onClick={onClear}
           >
-            清空
+            {text("trim.clear")}
           </Button>
         </div>
         {!clips.length ? (
@@ -129,15 +148,15 @@ export function TrimQueue({
               <Film size={42} />
               <div className="frame-ticks" />
             </div>
-            <h3>把要剪的视频放进来</h3>
+            <h3>{text("trim.emptyTitle")}</h3>
             <p>
-              视频逐包复制、不重新压制，画质完全不变
+              {text("trim.emptyCopy")}
               <br />
-              入点和出点会吸附到能无损切开的位置。
+              {text("trim.emptyRange")}
             </p>
             <Button onClick={onAdd}>
               <FolderOpen size={17} />
-              选择视频
+              {text("trim.chooseVideo")}
             </Button>
             <small>H.264 · HEVC · ProRes · UtVideo · FFV1</small>
           </div>

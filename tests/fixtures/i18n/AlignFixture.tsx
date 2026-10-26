@@ -4,6 +4,7 @@ import { AlignDialog, type Alignment } from "../../../src/AlignDialog";
 import { FileMeta } from "../../../src/FileMeta";
 import { MediaDetails } from "../../../src/MediaDetails";
 import { MediaFixture } from "./MediaFixture";
+import { TrimFixture, trimSnapshot } from "./TrimFixture";
 import { Modal } from "../../../src/components";
 import type { MediaMeta } from "../../../src/types";
 import { LocaleRoot } from "../../../src/LocaleRoot";
@@ -26,6 +27,7 @@ let open = (_options: Options) => {};
 let applied: Alignment | null = null;
 let showMetadata = (_value: { meta: MediaMeta; details: any }) => {};
 let showMedia = () => {};
+let showTrim = () => {};
 function Fixture() {
   const [options, setOptions] = useState<Options | null>(null);
   const [metadata, setMetadata] = useState<{
@@ -33,10 +35,13 @@ function Fixture() {
     details: any;
   } | null>(null);
   const [media, setMedia] = useState(false);
+  const [trim, setTrim] = useState(false);
   showMedia = () => setMedia(true);
+  showTrim = () => setTrim(true);
   open = setOptions;
   showMetadata = setMetadata;
   if (media) return <MediaFixture />;
+  if (trim) return <TrimFixture />;
   return (
     <main>
       <button onClick={() => {}}>Alignment fixture focus target</button>
@@ -77,6 +82,8 @@ function Fixture() {
   choose: localeRuntime.setLocale,
   pseudo,
   showMedia: () => showMedia(),
+  showTrim: () => showTrim(),
+  trimSnapshot,
   showMetadata: (value: { meta: MediaMeta; details: any }) =>
     showMetadata(value),
 };

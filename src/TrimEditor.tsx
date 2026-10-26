@@ -9,7 +9,7 @@ import {
 import { Button, Field } from "./components";
 import { clock, seconds, mmdFrame } from "./trimCoordinates";
 import type { TrimClip } from "./types";
-import { errorMessage } from "./i18n";
+import { t as text, localeRuntime, errorMessage } from "./i18n";
 export function TrimEditor({
   ready,
   frame,
@@ -53,35 +53,39 @@ export function TrimEditor({
   applyText: (which: "in" | "out") => unknown;
   pct: (frame: number) => string;
 }) {
+  const n = (v: number | undefined) => localeRuntime.number(v ?? 0);
   return (
     <section
       className="detail-card trim-editor"
-      aria-label="片段编辑"
+      aria-label={text("trim.editor")}
       tabIndex={0}
       onKeyDown={onKey}
     >
       <div className="detail-title">
-        <span className="eyebrow">编辑片段</span>
+        <span className="eyebrow">{text("trim.edit")}</span>
         <div className="detail-actions">
           <Button variant="ghost" onClick={onReveal}>
             <FolderOpen size={14} />
-            打开位置
+            {text("trim.reveal")}
           </Button>
         </div>
       </div>
       <h3 title={ready.path}>{ready.name}</h3>
       <div className="trim-preview">
         {image ? (
-          <img src={image} alt={`第 ${frame} 帧`} />
+          <img
+            src={image}
+            alt={text("trim.framePosition", { frame: n(frame) })}
+          />
         ) : (
           <LoaderCircle size={22} className="spin" />
         )}
       </div>
       {mmdFrames && (
         <div className="file-pick mmd-start">
-          <span>视频第 0 帧 = MMD 第</span>
+          <span>{text("trim.mmdOriginPrefix")}</span>
           <input
-            aria-label="视频第 0 帧对应的 MMD 帧"
+            aria-label={text("trim.mmdOriginLabel")}
             inputMode="numeric"
             key={ready.id + ":" + ready.mmdStart}
             defaultValue={String(ready.mmdStart ?? 0)}
@@ -95,24 +99,27 @@ export function TrimEditor({
             }
           />
           <span className="hint">
-            帧
+            {text("trim.frameUnit")}
             {ready.mmdStartFrom === "tag"
-              ? "（来自 MMDEncoder 导出时记录的信息）"
+              ? text("trim.originTag")
               : ready.mmdStartFrom === "name"
-                ? "（来自文件名里的帧范围）"
+                ? text("trim.originName")
                 : ready.mmdStartFrom === "manual"
-                  ? "（手动填写）"
-                  : "（没有识别到，按 0 计算，可以手动填写）"}
+                  ? text("trim.originManual")
+                  : text("trim.originUnknown")}
           </span>
         </div>
       )}
       <div className="trim-position">
         <strong>
-          第 {frame} 帧{mmdFrames && ` · MMD 第 ${mmdFrame(ready, frame)} 帧`}
+          {text(mmdFrames ? "trim.framePositionMmd" : "trim.framePosition", {
+            frame: n(frame),
+            mmd: n(mmdFrame(ready, frame)),
+          })}
         </strong>
         <span>{clock(seconds(ready, frame))}</span>
         {(ready.cuts === "all" || cuts?.includes(frame)) && (
-          <span className="cut-badge">可切</span>
+          <span className="cut-badge">{text("trim.cuttable")}</span>
         )}
       </div>
       <div className="trim-track">
@@ -133,8 +140,8 @@ export function TrimEditor({
         </div>
         <input
           type="range"
-          aria-label="当前帧"
-          aria-valuetext={`第 ${frame} 帧`}
+          aria-label={text("trim.currentFrame")}
+          aria-valuetext={text("trim.framePosition", { frame: n(frame) })}
           min={0}
           max={(ready.frames || 1) - 1}
           value={frame}
@@ -148,32 +155,32 @@ export function TrimEditor({
       <div className="trim-buttons">
         <Button
           variant="ghost icon"
-          aria-label="上一个可切位置"
-          title="上一个可切位置（↑）"
+          aria-label={text("trim.previousCut")}
+          title={text("trim.previousCutHint")}
           onClick={() => jump(-1)}
         >
           <ChevronFirst size={16} />
         </Button>
         <Button
           variant="ghost icon"
-          aria-label="上一帧"
-          title="上一帧（←）"
+          aria-label={text("trim.previousFrame")}
+          title={text("trim.previousFrameHint")}
           onClick={() => move(frame - 1)}
         >
           <ChevronLeft size={16} />
         </Button>
         <Button
           variant="ghost icon"
-          aria-label="下一帧"
-          title="下一帧（→）"
+          aria-label={text("trim.nextFrame")}
+          title={text("trim.nextFrameHint")}
           onClick={() => move(frame + 1)}
         >
           <ChevronRight size={16} />
         </Button>
         <Button
           variant="ghost icon"
-          aria-label="下一个可切位置"
-          title="下一个可切位置（↓）"
+          aria-label={text("trim.nextCut")}
+          title={text("trim.nextCutHint")}
           onClick={() => jump(1)}
         >
           <ChevronLast size={16} />
@@ -185,20 +192,20 @@ export function TrimEditor({
             setRange(frame, ready.to === ready.frames ? "end" : (ready.to ?? 0))
           }
         >
-          设为入点
+          {text("trim.setIn")}
         </Button>
         <Button
           disabled={running}
           title="O"
           onClick={() => setRange(ready.from ?? 0, frame)}
         >
-          设为出点
+          {text("trim.setOut")}
         </Button>
       </div>
       <div className="form-row">
         <Field
           id="trim-in"
-          label={mmdFrames ? "入点 · MMD 帧号或时间" : "入点 · 帧号或时间"}
+          label={mmdFrames ? text("trim.inMmd") : text("trim.inFrame")}
         >
           <input
             id="trim-in"
@@ -209,7 +216,7 @@ export function TrimEditor({
             onKeyDown={(e) => e.key === "Enter" && applyText("in")}
           />
         </Field>
-        <Field id="trim-out" label="出点（不含这一帧；end 为结尾）">
+        <Field id="trim-out" label={text("trim.out")}>
           <input
             id="trim-out"
             value={outText}
@@ -221,22 +228,39 @@ export function TrimEditor({
         </Field>
       </div>
       <p className="hint">
-        实际：第 {ready.from} –{" "}
-        {ready.to === ready.frames ? "结尾" : `${ready.to}`} 帧，共{" "}
-        {(ready.to ?? 0) - (ready.from ?? 0)} 帧（
-        {clock(seconds(ready, (ready.to ?? 0) - (ready.from ?? 0)))}）
+        {text("trim.actualRange", {
+          from: n(ready.from),
+          to: ready.to === ready.frames ? text("trim.end") : n(ready.to),
+          count: (ready.to ?? 0) - (ready.from ?? 0),
+          value: n((ready.to ?? 0) - (ready.from ?? 0)),
+          time: clock(seconds(ready, (ready.to ?? 0) - (ready.from ?? 0))),
+        })}
         {ready.requested &&
           (ready.requested.from !== ready.from ||
             (ready.requested.to !== ready.to && ready.to !== ready.frames)) &&
-          `。已吸附到最近的可切位置（输入 ${ready.requested.from} – ${ready.requested.to}）`}
-        。
+          text("trim.snappedRange", {
+            from: n(ready.requested.from),
+            to: n(ready.requested.to),
+          })}
+        {text("trim.sentenceEnd")}
         {ready.cuts === "all"
-          ? "这个文件每一帧都可以切。"
-          : `可切位置共 ${cuts?.length} 处${cuts && cuts.length > 1 ? `，约每 ${Math.round((ready.frames || 0) / cuts.length)} 帧一处` : "（只能从开头切）"}。`}
+          ? text("trim.allFramesHint")
+          : text(
+              cuts && cuts.length > 1 ? "trim.cutSpacing" : "trim.cutStartOnly",
+              {
+                count: cuts?.length || 0,
+                value: n(cuts?.length),
+                interval: n(
+                  Math.round((ready.frames || 0) / (cuts?.length || 1)),
+                ),
+              },
+            )}
         {smart &&
           ready.cuts !== "all" &&
           (ready.smartBlocker
-            ? ` 这个文件不能智能剪切：${errorMessage(ready.smartBlocker)}，仍吸附到可切位置。`
+            ? text("trim.smartBlocked", {
+                reason: errorMessage(ready.smartBlocker),
+              })
             : (() => {
                 const list = (ready.cuts as number[]) || [];
                 const from = ready.from ?? 0,
@@ -247,17 +271,30 @@ export function TrimEditor({
                     ? to
                     : ([...list].reverse().find((x) => x <= to) ?? 0);
                 if (a >= b)
-                  return ` 智能剪切：这一段第 ${from}–${to - 1} 帧全部重新编码。`;
+                  return text("trim.smartAll", {
+                    from: n(from),
+                    to: n(to - 1),
+                  });
                 const parts = [
-                  from < a ? `第 ${from}–${a - 1} 帧` : "",
-                  b < to ? `第 ${b}–${to - 1} 帧` : "",
+                  from < a
+                    ? text("trim.smartRange", { from: n(from), to: n(a - 1) })
+                    : "",
+                  b < to
+                    ? text("trim.smartRange", { from: n(b), to: n(to - 1) })
+                    : "",
                 ].filter(Boolean);
                 return parts.length
-                  ? ` 智能剪切：${parts.join("、")}重新编码，其余直接复制。`
-                  : " 智能剪切：切点正好在关键帧上，全部直接复制。";
+                  ? text("trim.smartEdges", {
+                      ranges: parts.join(text("trim.rangeSeparator")),
+                    })
+                  : text("trim.smartCopy");
               })())}
         {ready.refused?.length
-          ? ` 其他关键帧不能切：${ready.refused.map(errorMessage).join("；")}。`
+          ? text("trim.refused", {
+              reasons: ready.refused
+                .map(errorMessage)
+                .join(text("trim.listSeparator")),
+            })
           : ""}
       </p>
     </section>
