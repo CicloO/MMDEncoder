@@ -416,6 +416,21 @@ try {
     JSON.stringify(await page.evaluate(() => window.alignmentMotion), null, 2),
   );
   passed = true;
+} catch (error) {
+  const page = await app.firstWindow();
+  fs.writeFileSync(
+    path.join(testDir, "failure-state.json"),
+    JSON.stringify(
+      await page.evaluate(async () => ({
+        state: await window.encoder.invoke("state"),
+        text: document.body.innerText,
+      })),
+      null,
+      2,
+    ),
+  );
+  await page.screenshot({ path: path.join(testDir, "failure.png") });
+  throw error;
 } finally {
   await app.close();
   if (passed) fs.rmSync(testDir, { recursive: true, force: true });
