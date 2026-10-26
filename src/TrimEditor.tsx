@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronFirst,
   ChevronLast,
@@ -10,10 +11,33 @@ import { Button, Field } from "./components";
 import { clock, seconds, mmdFrame } from "./trimCoordinates";
 import type { TrimClip } from "./types";
 import { t as text, localeRuntime, errorMessage } from "./i18n";
+
+// Owns the original JPEG request debounce and newest-response check only.
+function useTrimPreview(
+  id: string | undefined,
+  frame: number,
+  readFrame: (id: string, frame: number) => Promise<string>,
+) {
+  const [image, setImage] = useState("");
+  const request = useRef(0);
+  useEffect(() => {
+    if (!id) return setImage("");
+    const n = ++request.current;
+    const timer = setTimeout(() => {
+      readFrame(id, frame)
+        .then((src) => n === request.current && src && setImage(src))
+        .catch(() => {});
+    }, 120);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, frame]);
+  return image;
+}
+
 export function TrimEditor({
   ready,
   frame,
-  image,
+  readFrame,
   running,
   smart,
   mmdFrames,
@@ -34,7 +58,7 @@ export function TrimEditor({
 }: {
   ready: TrimClip;
   frame: number;
-  image: string;
+  readFrame: (id: string, frame: number) => Promise<string>;
   running: boolean;
   smart: boolean;
   mmdFrames: boolean;
@@ -53,6 +77,7 @@ export function TrimEditor({
   applyText: (which: "in" | "out") => unknown;
   pct: (frame: number) => string;
 }) {
+  const image = useTrimPreview(ready.id, frame, readFrame);
   const n = (v: number | undefined) => localeRuntime.number(v ?? 0);
   return (
     <section

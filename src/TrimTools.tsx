@@ -16,7 +16,6 @@ import { TrimQueue } from "./TrimQueue";
 import { TrimEditor } from "./TrimEditor";
 import { TrimSettings } from "./TrimSettings";
 import { TrimFooter } from "./TrimFooter";
-import { useTrimPreview } from "./useTrimPreview";
 import { OPTIONS_KEY, loadOptions, type Options } from "./trimOptions";
 import {
   seconds,
@@ -81,9 +80,6 @@ export function TrimTools({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dropped?.seq]);
 
-  const image = useTrimPreview(ready?.id, frame, (id, frame) =>
-    call("trimFrame", { id, frame }),
-  );
   // Range fields follow the clip's snapped range.
   useEffect(() => {
     if (!ready) return;
@@ -316,7 +312,7 @@ export function TrimTools({
               <TrimEditor
                 ready={ready}
                 frame={frame}
-                image={image}
+                readFrame={(id, frame) => call("trimFrame", { id, frame })}
                 running={t.running}
                 smart={t.smart}
                 mmdFrames={o.mmdFrames}
