@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, FolderOpen, Minus, Pause, Play, Plus } from "lucide-react";
-import { Button, Field, Modal } from "./components";
+import { Button, Modal } from "./components";
 import { AlignmentIcon } from "./AlignmentIcon";
 import {
   effectiveAudioOffset,
@@ -655,56 +655,74 @@ export function AlignDialog({
                 →
               </Button>
             </div>
+            {frameShift && (
+              <div className="align-group">
+                <label className="align-row-label" htmlFor="align-audio-shift">
+                  {t("align.shiftFrames")}
+                </label>
+                <input
+                  id="align-audio-shift"
+                  className="align-shift-input"
+                  type="number"
+                  step="1"
+                  value={frameInput}
+                  disabled={!!busy || !referenceInfo}
+                  aria-invalid={!validShift && !!referenceInfo}
+                  aria-describedby={
+                    !validShift && referenceInfo
+                      ? "align-audio-shift-hint align-audio-shift-error"
+                      : "align-audio-shift-hint"
+                  }
+                  title={referenceInfo?.fpsText}
+                  onChange={(event) => {
+                    setFrameInput(event.target.value);
+                    if (playing) {
+                      const value = effectiveAudioOffset(
+                        offset,
+                        Number(event.target.value),
+                        referenceInfo?.fpsText,
+                      );
+                      if (Number.isFinite(value)) play(playhead, value);
+                      else stop();
+                    }
+                  }}
+                />
+              </div>
+            )}
           </div>
           {frameShift && (
-            <Field
-              id="align-audio-shift"
-              label={t("align.shiftFrames")}
-              hint={
-                referenceInfo
+            <div className="align-shift-feedback">
+              <p id="align-audio-shift-hint" className="hint">
+                {referenceInfo
                   ? t(
                       referenceInfo.fallback
                         ? "align.shiftAudioFallback"
                         : "align.shiftVideoRate",
                       { fps: formatFPS(referenceInfo.fpsText) },
                     )
-                  : t("align.shiftAwaitReference")
-              }
-            >
-              <input
-                id="align-audio-shift"
-                type="number"
-                step="1"
-                value={frameInput}
-                disabled={!!busy || !referenceInfo}
-                aria-invalid={!validShift && !!referenceInfo}
-                title={referenceInfo?.fpsText}
-                onChange={(event) => {
-                  setFrameInput(event.target.value);
-                  if (playing) {
-                    const value = effectiveAudioOffset(
-                      offset,
-                      Number(event.target.value),
-                      referenceInfo?.fpsText,
-                    );
-                    if (Number.isFinite(value)) play(playhead, value);
-                    else stop();
-                  }
-                }}
-              />
+                  : t("align.shiftAwaitReference")}
+              </p>
               {!validFrames && (
-                <p className="inline-error" role="alert">
+                <p
+                  id="align-audio-shift-error"
+                  className="inline-error"
+                  role="alert"
+                >
                   {t("error.ALIGN_SHIFT_FRAMES_INVALID")}
                 </p>
               )}
               {validFrames &&
                 Number.isFinite(computedShift) &&
                 Math.abs(computedShift) > 24 * 3600 && (
-                  <p className="inline-error" role="alert">
+                  <p
+                    id="align-audio-shift-error"
+                    className="inline-error"
+                    role="alert"
+                  >
                     {t("error.ALIGN_SHIFT_RANGE_INVALID")}
                   </p>
                 )}
-            </Field>
+            </div>
           )}
           {withTrim && (
             <label className="checkbox-row">

@@ -161,6 +161,50 @@ try {
   await expect(frames).toHaveAttribute("title", "30000/1001");
   await expect(dialog.getByText(/目标开头多出 1\.25\d\d 秒/)).toBeVisible();
   await frames.fill("4");
+  await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    w.setMinimumSize(0, 0);
+    w.setSize(1360, 1000);
+    w.showInactive();
+  });
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+  const layout = await dialog.evaluate((node) => {
+    const step = node.querySelector("#align-step"),
+      shift = node.querySelector("#align-audio-shift");
+    const row = step.closest(".align-row"),
+      zoom = row.querySelector("button");
+    const box = (el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    };
+    return {
+      sameRow: shift.closest(".align-row") === row,
+      step: box(step),
+      shift: box(shift),
+      zoom: box(zoom),
+      labelFont: getComputedStyle(
+        node.querySelector('label[for="align-audio-shift"]'),
+      ).font,
+      nudgeFont: getComputedStyle(node.querySelector('label[for="align-step"]'))
+        .font,
+    };
+  });
+  assert.equal(layout.sameRow, true);
+  assert.equal(layout.labelFont, layout.nudgeFont);
+  assert.ok(Math.abs(layout.shift.y - layout.step.y) <= 1);
+  assert.ok(Math.abs(layout.shift.height - layout.step.height) <= 1);
+  assert.ok(Math.abs(layout.shift.height - layout.zoom.height) <= 1);
+  assert.ok(layout.shift.width <= 120);
+  fs.writeFileSync(
+    path.join(dir, "inline-layout.json"),
+    JSON.stringify(layout, null, 2),
+  );
+  await capture(path.join(dir, "inline-zh-1360.png"));
   const before = await page.evaluate(() => window.alignLocale.trimSnapshot());
   for (const locale of ["en-XA", "en-XB", "unsupported", "zh-CN"]) {
     await page.evaluate((locale) => window.alignLocale.choose(locale), locale);
@@ -193,11 +237,16 @@ try {
     const measure = await dialog.evaluate((node) => ({
       width: node.clientWidth,
       scroll: node.scrollWidth,
+      input: node
+        .querySelector("#align-audio-shift")
+        .getBoundingClientRect()
+        .toJSON(),
     }));
     assert.ok(
       measure.scroll <= measure.width,
       JSON.stringify({ width, measure }),
     );
+    assert.ok(measure.input.width <= 120);
     await capture(path.join(dir, `expanded-${width}.png`));
   }
   await page.evaluate(() => window.alignLocale.choose("zh-CN"));

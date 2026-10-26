@@ -2165,6 +2165,16 @@ html[data-theme="light"] {
 .align-row .align-group {
   align-items: center;
 }
+.align-row .button {
+  min-height: 38px;
+}
+.align-group .align-shift-input {
+  width: 112px;
+  flex: 0 0 112px;
+}
+.align-shift-feedback .hint {
+  margin: 0;
+}
 .align-row-label {
   font-size: 12px;
   font-weight: 600;
