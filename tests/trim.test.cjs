@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 const { ff, fp } = require("./engines.cjs");
 const trim = require("../backend/trim.cjs");
 const { check } = require("../scripts/trim-check.cjs");
@@ -29,6 +30,7 @@ test(
   async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trim-frame-pcm-"));
     assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir()));
+    let passed = false;
     try {
       const sources = [];
       for (const rate of [44100, 48000]) {
@@ -117,8 +119,9 @@ test(
                   audio: { mode: "replace", codec: "pcm", file, offset },
                 },
               );
-              const actual = (
-                await trim.run(ff, [
+              const actual = execFileSync(
+                ff,
+                [
                   "-v",
                   "error",
                   "-i",
@@ -130,9 +133,25 @@ test(
                   "-f",
                   "s16le",
                   "-",
-                ])
-              ).stdout;
+                ],
+                { maxBuffer: 1 << 24 },
+              );
               const label = `${num}/${den} ${rate}Hz from=${from} shift=${shift} samples=${pcm.length / 4}`;
+              if (actual.length !== expected.length)
+                console.log(
+                  JSON.stringify({
+                    dir,
+                    output,
+                    fps: idx.fps,
+                    timeBase: idx.timeBase,
+                    start: idx.frames[from],
+                    end: idx.frames[from + 48],
+                    offset,
+                    rate,
+                    count,
+                    actualSamples: actual.length / 4,
+                  }),
+                );
               assert.equal(
                 actual.length,
                 expected.length,
@@ -148,8 +167,10 @@ test(
       }
       assert.equal(cases, 48);
       console.log(`Actual trim replacement PCM cases: ${cases}`);
+      passed = true;
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      if (passed) fs.rmSync(dir, { recursive: true, force: true });
+      else console.log(`Trim PCM failure evidence: ${dir}`);
     }
   },
 );
