@@ -5,11 +5,10 @@ const {
   dialog,
   clipboard,
   shell,
-  net,
   protocol,
 } = require("electron");
 const path = require("node:path");
-const { pathToFileURL } = require("node:url");
+const { Readable } = require("node:stream");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const { createService } = require("../backend/service.cjs");
@@ -114,11 +113,63 @@ else {
           if (!id || url.pathname !== `/${encodeURIComponent(id)}`)
             return new Response(null, { status: 404 });
           const file = await service.invoke("trimPreviewSource", { id });
-          return await net.fetch(pathToFileURL(file).href, {
-            method: request.method,
-            headers: request.headers,
-            signal: request.signal,
-          });
+          const stat = await fs.stat(file);
+          if (!stat.isFile()) return new Response(null, { status: 404 });
+          const headers = {
+            "Content-Type":
+              {
+                ".mp4": "video/mp4",
+                ".m4v": "video/mp4",
+                ".mov": "video/quicktime",
+                ".mkv": "video/x-matroska",
+                ".avi": "video/x-msvideo",
+                ".webm": "video/webm",
+                ".ts": "video/mp2t",
+                ".m2ts": "video/mp2t",
+              }[path.extname(file).toLowerCase()] || "application/octet-stream",
+            "Accept-Ranges": "bytes",
+            "Content-Length": String(stat.size),
+            "Cache-Control": "no-store",
+          };
+          if (request.method === "HEAD") return new Response(null, { headers });
+          let start = 0,
+            end = stat.size - 1,
+            status = 200;
+          const range = request.headers.get("range");
+          if (range) {
+            const match = /^bytes=(\d*)-(\d*)$/i.exec(range);
+            if (match && (match[1] || match[2])) {
+              start = match[1]
+                ? Number(match[1])
+                : Math.max(0, stat.size - Number(match[2]));
+              end =
+                match[1] && match[2] ? Math.min(Number(match[2]), end) : end;
+            }
+            if (
+              !match ||
+              (!match[1] && !Number(match[2])) ||
+              !Number.isSafeInteger(start) ||
+              !Number.isSafeInteger(end) ||
+              start > end ||
+              start >= stat.size
+            )
+              return new Response(null, {
+                status: 416,
+                headers: { "Content-Range": `bytes */${stat.size}` },
+              });
+            status = 206;
+            headers["Content-Range"] = `bytes ${start}-${end}/${stat.size}`;
+            headers["Content-Length"] = String(end - start + 1);
+          }
+          if (!stat.size) return new Response(null, { status, headers });
+          const stream = fsSync.createReadStream(file, { start, end });
+          const abort = () => stream.destroy();
+          request.signal.addEventListener("abort", abort, { once: true });
+          stream.once("close", () =>
+            request.signal.removeEventListener("abort", abort),
+          );
+          if (request.signal.aborted) abort();
+          return new Response(Readable.toWeb(stream), { status, headers });
         } catch {
           return new Response(null, { status: 404 });
         }

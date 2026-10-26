@@ -98,9 +98,36 @@ try {
     fs.readFileSync(input).subarray(100, 164),
   );
   assert.match(range.headers["content-range"], /^bytes 100-163\//);
+  const size = fs.statSync(input).size;
+  const suffix = await request(stream, { headers: { Range: "bytes=-16" } });
+  assert.equal(suffix.status, 206);
+  assert.deepEqual(
+    Buffer.from(suffix.body, "base64"),
+    fs.readFileSync(input).subarray(-16),
+  );
+  const tail = await request(stream, {
+    headers: { Range: `bytes=${size - 8}-` },
+  });
+  assert.equal(tail.status, 206);
+  assert.deepEqual(
+    Buffer.from(tail.body, "base64"),
+    fs.readFileSync(input).subarray(-8),
+  );
+  for (const value of [
+    `bytes=${size}-`,
+    "bytes=-0",
+    "bytes=10-2",
+    "bytes=bad",
+    "bytes=0-1,5-6",
+  ]) {
+    const response = await request(stream, { headers: { Range: value } });
+    assert.equal(response.status, 416);
+    assert.equal(response.headers["content-range"], `bytes */${size}`);
+  }
   const head = await request(stream, { method: "HEAD" });
   assert.equal(head.status, 200);
   assert.equal(head.body, "");
+  assert.equal(Number(head.headers["content-length"]), size);
   for (const url of [
     "mmd-preview://other/" + id,
     stream + "?path=" + encodeURIComponent(prores),
