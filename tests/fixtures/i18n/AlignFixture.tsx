@@ -23,6 +23,9 @@ type Options = {
 };
 const pseudo = pseudoCatalog(source);
 localeRuntime.registerCatalog("en-XA", pseudo);
+const missing = { ...pseudo };
+delete missing["trim.originTag"];
+localeRuntime.registerCatalog("en-XB", missing);
 let open = (_options: Options) => {};
 let applied: Alignment | null = null;
 let showMetadata = (_value: { meta: MediaMeta; details: any }) => {};

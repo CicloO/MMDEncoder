@@ -87,9 +87,9 @@ try {
   }));
   const labels = await page.evaluate(() => window.alignLocale.pseudo);
   const measurements = [];
-  for (const locale of ["en-XA", "zh-CN", "unsupported", "en-XA"]) {
+  for (const locale of ["en-XA", "en-XB", "zh-CN", "unsupported", "en-XA"]) {
     await page.evaluate((locale) => window.alignLocale.choose(locale), locale);
-    const expanded = locale === "en-XA";
+    const expanded = locale.startsWith("en-X");
     await expect(
       page.getByRole("heading", {
         name: expanded ? labels["trim.exportSettings"] : "导出设置",
@@ -111,6 +111,11 @@ try {
       page.getByText("Foreign diagnostic stays exact", { exact: true }),
     ).toBeVisible();
     await expect(page.locator(".trim-editor h3")).toHaveText("User 原片.mp4");
+    await expect(page.locator(".mmd-start .hint")).toContainText(
+      locale === "en-XA"
+        ? labels["trim.originTag"]
+        : "（来自 MMDEncoder 导出时记录的信息）",
+    );
     await expect(
       page.locator(".path-text[title='C:/User 目标文件夹']"),
     ).toHaveText("C:/User 目标文件夹");
