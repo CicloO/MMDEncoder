@@ -1,4 +1,6 @@
 {
+  "about.description": "版本与更新、界面语言、作者与支持。",
+  "about.releases": "发行说明",
   "app.title": "MMDEncoder · 视频压制",
   "common.close": "关闭",
   "background.label": "背景颜色",

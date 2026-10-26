@@ -246,14 +246,17 @@ try {
   const axe = await new AxeBuilder({ page }).setLegacyMode().analyze();
   assert.deepEqual(axe.violations, []);
   checks.push("media narrow viewport and accessibility");
-  // 关于: version, this version's notes, support links; updates no
+  // About: version, release page and support links; updates no
   // longer live in the engine dialog.
   await page.getByRole("button", { name: /关于/ }).click();
   const about = page.getByRole("dialog", { name: "关于" });
   await expect(about.locator(".about-version strong")).toHaveText(
     require("../package.json").version,
   );
-  await expect(about.locator(".release-notes h4").first()).toBeVisible();
+  await expect(about.locator(".release-notes")).toHaveCount(0);
+  await expect(
+    about.getByRole("button", { name: "发行说明", exact: true }),
+  ).toBeVisible();
   await expect(about.getByRole("button", { name: "问题反馈" })).toBeVisible();
   const aboutHeight = (await about.boundingBox()).height;
   await screenshot(app, "about-fixed.png");
@@ -272,7 +275,7 @@ try {
   );
   await expect(page.getByRole("region", { name: "软件更新" })).toHaveCount(0);
   await page.keyboard.press("Escape");
-  checks.push("about dialog: version, changelog, support, accessibility");
+  checks.push("about dialog: version, release page, support, accessibility");
   await page.getByRole("button", { name: "视频压制", exact: true }).click();
   await page.getByRole("button", { name: "超分补帧", exact: true }).click();
   await page.selectOption("#upscaler", "artcnn");

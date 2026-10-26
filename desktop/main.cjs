@@ -16,7 +16,6 @@ const {
   checkForUpdate,
   RELEASES_URL,
   PROJECT_PAGES,
-  changelogSection,
 } = require("../backend/update.cjs");
 const { createUpdater } = require("../backend/selfupdate.cjs");
 let win,
@@ -402,18 +401,7 @@ else {
           return null;
         }
         if (action === "aboutInfo") {
-          // The packaged app has CHANGELOG.md beside the exe.
-          const file = app.isPackaged
-            ? path.join(base, "CHANGELOG.md")
-            : path.join(base, "docs", "CHANGELOG.md");
-          let notes = "";
-          try {
-            notes = changelogSection(
-              await fs.readFile(file, "utf8"),
-              app.getVersion(),
-            );
-          } catch {}
-          return { version: app.getVersion(), notes };
+          return { version: app.getVersion() };
         }
         if (action === "openProjectPage") {
           const url = PROJECT_PAGES[payload?.page];

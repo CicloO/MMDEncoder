@@ -58,22 +58,8 @@ async function checkForUpdate(current, fetchImpl = fetch) {
     url: url.startsWith(RELEASES_URL + "/") ? url : RELEASES_URL,
     name: release.name || "",
     publishedAt: release.published_at || "",
-    // The release notes (Markdown), shown in the About dialog.
-    notes: String(release.body || "").slice(0, 20000),
     assets: assetsFor(release, latest),
   };
-}
-// The section of CHANGELOG.md for one version ("# 1.5.1" up to the next
-// version heading), or "" when it is not there.
-function changelogSection(text, version) {
-  const lines = String(text).split(/\r?\n/);
-  const start = lines.findIndex((l) => l.trim() === "# " + version);
-  if (start < 0) return "";
-  const end = lines.findIndex((l, i) => i > start && /^# /.test(l));
-  return lines
-    .slice(start + 1, end < 0 ? undefined : end)
-    .join("\n")
-    .trim();
 }
 // Project pages the app may open (fixed, never from page content).
 const PROJECT_PAGES = {
@@ -82,7 +68,6 @@ const PROJECT_PAGES = {
   issues: `https://github.com/${REPO}/issues`,
   license: `https://github.com/${REPO}/blob/main/LICENSE`,
   notices: `https://github.com/${REPO}/blob/main/docs/THIRD-PARTY-NOTICES.md`,
-  changelog: `https://github.com/${REPO}/blob/main/docs/CHANGELOG.md`,
 };
 module.exports = {
   RELEASES_URL,
@@ -90,5 +75,4 @@ module.exports = {
   newer,
   checkForUpdate,
   assetsFor,
-  changelogSection,
 };

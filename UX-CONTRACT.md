@@ -51,6 +51,8 @@ Empty queue invites file selection or drop. Probe errors stay on the item. Encod
 
 Modal dialogs are Radix-owned, labelled with title/description, Escape supported and focus restored. Delete preset confirmation initially focuses Cancel. Save errors keep dialog/input. Notice live region is polite, persistent field/job errors stay inline. Every interactive control uses native button/input/select semantics and visible focus, labelled icons and disabled states.
 
+About shows version/update and author/support sections without a bundled version changelog or Markdown renderer. The release-description link belongs to software updates: it opens Releases without a newer version and the validated download page when an update exists. Brand/support and the shared fixed dialog height remain unchanged. The repository changelog stays maintained; portable builds do not copy it.
+
 App has one natural document scroll owner; queue page bounds dataset and log panel has internal scroll. Sticky action strip must not cover final form fields. Test narrow width, long paths, keyboard and reduced motion. Windows native select popup visual behavior accepted explicitly.
 
 Tool management is owned by backend/tools.cjs with the existing engine modal. Initial setup prompts only after locating managed tools; an installed offline version stays usable without network checks. Check/update are explicit actions. Download progress uses actual byte counts; unknown totals stay unknown. Errors persist and provide Retry. Active tasks and RTX verification exclude updates; staged releases activate only after validation, keeping old versions.

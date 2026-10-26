@@ -1345,50 +1345,6 @@ textarea {
 .about-status.danger .status-dot {
   background: var(--color-danger);
 }
-.about-notes {
-  display: grid;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-background);
-}
-.release-notes {
-  max-height: 280px;
-  overflow: auto;
-  font-size: 13px;
-  line-height: 1.7;
-  padding-right: 6px;
-}
-.release-notes:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-.release-notes h4 {
-  margin: 10px 0 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-muted);
-  letter-spacing: 1px;
-}
-.release-notes h4:first-child {
-  margin-top: 0;
-}
-.release-notes ul {
-  margin: 0;
-  padding-left: 18px;
-}
-.release-notes li + li {
-  margin-top: 4px;
-}
-.release-notes ul ul {
-  margin-top: 4px;
-  color: var(--color-muted);
-}
-.release-notes code {
-  font: 12px var(--font-mono);
-}
 .about-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1767,11 +1723,6 @@ html[data-theme="light"] {
 .engine-list {
   max-height: 180px;
 }
-.release-notes {
-  height: 156px;
-  max-height: 156px;
-  scrollbar-gutter: stable;
-}
 
 /* 超分补帧: two titled groups (放大 / 补帧) and the RTX check box. */
 /* Fields bring their own bottom margin, so the group adds no gap. */
@@ -1860,30 +1811,9 @@ html[data-theme="light"] {
 .modal-fixed:not(:has(.preset-list, .engine-list)) .modal-body > :last-child {
   margin-top: auto;
 }
-/* About: the release notes take the height the dialog has to spare and
-   shrink with it, like the lists in the other header dialogs. */
+/* About shares the body height of the fixed header dialogs. */
 .modal-fixed .modal-body:has(.about-hero) {
   flex: 1 1 auto;
-}
-.modal-fixed .modal-body:has(.about-hero) > section[aria-label="本版更新日志"] {
-  flex: 1 1 auto;
-  /* Never shorter than its heading plus the notes' minimum, so the next
-     section cannot slide over it; below that the dialog scrolls instead. */
-  min-height: 160px;
-  display: flex;
-  flex-direction: column;
-}
-.modal-fixed
-  .modal-body:has(.about-hero)
-  > section[aria-label="本版更新日志"]
-  > .status-row {
-  flex-shrink: 0;
-}
-.modal-fixed .modal-body:has(.about-hero) .release-notes {
-  flex: 1 1 auto;
-  height: auto;
-  min-height: 96px;
-  max-height: none;
 }
 
 /* Page tabs: one strip under the header that ends the fixed top area with a
