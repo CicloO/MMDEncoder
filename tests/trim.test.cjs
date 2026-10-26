@@ -532,7 +532,11 @@ test(
           path.join(dir, "no.mp4"),
           { smart: true },
         ),
-        /没有记录编码参数/,
+        (error) => {
+          assert.equal(error.code, "TRIM_SMART_TAG_REQUIRED");
+          assert.equal(error.params.name, "plain.mp4");
+          return true;
+        },
       );
       assert.equal(fs.existsSync(path.join(dir, "no.mp4")), false);
     } finally {

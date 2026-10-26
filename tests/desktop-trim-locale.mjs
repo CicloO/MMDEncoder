@@ -131,12 +131,10 @@ try {
           requestAnimationFrame(() => requestAnimationFrame(resolve)),
         ),
     );
-    const measured = await page
-      .locator(".page-scroll")
-      .evaluate((node) => ({
-        width: node.clientWidth,
-        scroll: node.scrollWidth,
-      }));
+    const measured = await page.locator(".page-scroll").evaluate((node) => ({
+      width: node.clientWidth,
+      scroll: node.scrollWidth,
+    }));
     assert.ok(
       measured.scroll <= measured.width,
       JSON.stringify({ width, measured }),
