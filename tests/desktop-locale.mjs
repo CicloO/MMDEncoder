@@ -282,7 +282,7 @@ try {
   );
   await expect(
     longDialog.locator('option[value="test-preset-policy"]'),
-  ).toBeDisabled();
+  ).toBeEnabled();
   await expect(
     longDialog.locator('option[value="test-preset-policy"]'),
   ).toContainText("User name 用户名称");
@@ -292,6 +292,12 @@ try {
   await expect(
     longDialog.getByLabel(labels["mmd.mask"], { exact: true }),
   ).toBeVisible();
+  await longDialog
+    .locator("#mmd-export-preset")
+    .selectOption("test-preset-policy");
+  await expect(longDialog.locator("#mmd-export-preset")).toHaveValue(
+    "test-preset-policy",
+  );
   const box = await longDialog.boundingBox();
   assert.ok(box.x >= 0 && box.x + box.width <= 681);
   await screenshot(path.join(dir, "pseudo-mmd-dialog.png"));
@@ -307,7 +313,10 @@ try {
     page
       .getByRole("dialog", { name: "MMD 导出", exact: true })
       .locator('option[value="test-preset-policy"]'),
-  ).toBeDisabled();
+  ).toBeEnabled();
+  await expect(page.locator("#mmd-export-preset")).toHaveValue(
+    "test-preset-policy",
+  );
   await page.keyboard.press("Escape");
   await page.evaluate(() => window.localeFixture.choose("unknown"));
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");

@@ -7,13 +7,6 @@ import { fadeOptions, presetLabel } from "./presentation";
 import type { State, Preset } from "./types";
 import { t, localeRuntime, errorMessage, summaryMessage } from "./i18n";
 import type { ErrorData, MessageDescriptor, MessageKey } from "./i18n";
-// Presets an MMD export cannot use yet (mirrors backend/mmd-export.cjs).
-function mmdPresetBlocked(p: Preset) {
-  return (
-    p.settings.alphaMode !== "mask" && p.settings.encoder.startsWith("nvencc:")
-  );
-}
-
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
 export function MmdExportDialog({
@@ -168,19 +161,10 @@ export function MmdExportDialog({
           disabled={busy}
           options={[
             { value: "", label: t("mmd.noPreset") },
-            ...presets.map((p) => {
-              const blocked = mmdPresetBlocked(p);
-              return {
-                value: p.id,
-                label: blocked
-                  ? t("mmd.presetWithReason", {
-                      name: presetLabel(p, presets),
-                      reason: t("mmd.presetUnsupported"),
-                    })
-                  : presetLabel(p, presets),
-                disabled: blocked,
-              };
-            }),
+            ...presets.map((p) => ({
+              value: p.id,
+              label: presetLabel(p, presets),
+            })),
           ]}
           onChange={(presetId) => onCall("mmdExportSet", { presetId })}
         />

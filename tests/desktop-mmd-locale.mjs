@@ -147,6 +147,40 @@ for (const restart of [false, true]) {
           .displayName,
         "User 用户 {raw}",
       );
+      await invoke("settings", {
+        patch: { encoder: "nvencc:hevc", preset: "p4" },
+      });
+      await invoke("savePreset", { name: "NVEncC User 用户" });
+      const chosen = (await invoke("state")).presets.find(
+        (p) => p.name === "NVEncC User 用户",
+      );
+      await page.getByRole("button", { name: "MMD 导出", exact: true }).click();
+      const dialog = page.getByRole("dialog", {
+        name: "MMD 导出",
+        exact: true,
+      });
+      await expect(
+        dialog.locator(`option[value="${chosen.id}"]`),
+      ).toBeEnabled();
+      await dialog.locator("#mmd-export-preset").selectOption(chosen.id);
+      await expect
+        .poll(async () => (await invoke("state")).mmd.presetId)
+        .toBe(chosen.id);
+      await dialog
+        .getByRole("button", { name: "测试编码", exact: true })
+        .click();
+      await expect
+        .poll(async () => (await invoke("state")).mmd.test?.ok, {
+          timeout: 60000,
+        })
+        .toBe(true);
+      assert.equal((await invoke("state")).mmd.test.code, "MMD_TEST_PASSED");
+      snapshots.nvenccSelected = snapshot();
+      assert.equal(
+        snapshots.nvenccSelected.presets.find((p) => p.id === chosen.id)
+          .settings.encoder,
+        "nvencc:hevc",
+      );
     }
   } finally {
     await app.close();

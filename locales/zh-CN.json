@@ -90,8 +90,6 @@
   "mmd.settings": "导出设置",
   "mmd.preset": "导出预设",
   "mmd.noPreset": "未选择",
-  "mmd.presetUnsupported": "NVEncC 暂不支持",
-  "mmd.presetWithReason": "{name}（{reason}）",
   "mmd.follow": "分辨率和帧率跟随 MMD",
   "mmd.followHint": "使用 MMD“AVI 输出”的尺寸和帧率。",
   "mmd.suffix": "文件名加 MMD 帧范围",
