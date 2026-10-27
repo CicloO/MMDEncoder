@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button, Field, Modal, useDragSort } from "./components";
 import { PresetList } from "./PresetList";
+import { t, notification } from "./i18n";
 import { presetLabel } from "./presentation";
 import type { createActions } from "./actions";
 import type { MessageDescriptor } from "./i18n";
@@ -9,6 +10,16 @@ import type { State, Settings, Preset } from "./types";
 
 // Every preset shows unless the user hid it with the hide / show button.
 export const presetHidden = (p: Preset) => p.hidden ?? false;
+
+// Retain only name authority for a notice that can outlive a locale change.
+const nameData = (p: Preset) => ({
+  id: p.id,
+  name: p.name,
+  builtin: p.builtin,
+  ...(p.nameKey ? { nameKey: p.nameKey } : {}),
+  ...(p.nameSource ? { nameSource: p.nameSource } : {}),
+  ...(p.nameDisambiguation ? { nameDisambiguation: true } : {}),
+});
 
 // Own the complete preset workflow without owning the shared encoding draft,
 // autosave chain or modal router. Accessors keep reads after awaits live.
@@ -91,7 +102,13 @@ export function usePresetManagement({
       setPresetId(p.id);
       resetCustomFPS();
       setPendingPreset(null);
-      notify(`已应用“${p.name}”`);
+      notify(
+        notification("PRESET_APPLIED", {
+          name: p.name,
+          preset: nameData(p),
+          peers: presets.map(nameData),
+        }),
+      );
     } catch {}
   }
   async function savePreset() {
@@ -111,7 +128,7 @@ export function usePresetManagement({
         r.presets.find((p) => p.name === presetName.trim())?.id || "",
       );
       setModal("");
-      notify("预设已保存");
+      notify(notification("PRESET_SAVED"));
     } catch {
     } finally {
       setBusy(false);
@@ -132,7 +149,13 @@ export function usePresetManagement({
         draft.isOwn() ? { ...s, presetName: activePreset.name } : r.settings,
       );
       setPresetId(activePreset.id);
-      notify(`已保存到“${activePreset.name}”`);
+      notify(
+        notification("PRESET_OVERWRITTEN", {
+          name: activePreset.name,
+          preset: nameData(activePreset),
+          peers: presets.map(nameData),
+        }),
+      );
     } catch {
     } finally {
       setBusy(false);
@@ -155,7 +178,7 @@ export function usePresetManagement({
             : r.settings.presetName,
       });
       setRenameTarget(null);
-      notify("预设名称已更新");
+      notify(notification("PRESET_RENAMED"));
     } catch {
     } finally {
       setBusy(false);
@@ -185,8 +208,8 @@ export function usePresetManagement({
           error={error}
           open={modal === "save"}
           onClose={() => setModal("")}
-          title="保存当前配置"
-          description="把画质、音频和帧率保存为可重复使用的预设。输出目录单独记忆。"
+          title={t("preset.save.title")}
+          description={t("preset.save.description")}
         >
           <form
             noValidate
@@ -195,7 +218,7 @@ export function usePresetManagement({
               void savePreset();
             }}
           >
-            <Field id="preset-name" label="预设名称">
+            <Field id="preset-name" label={t("preset.name")}>
               <input
                 id="preset-name"
                 autoFocus
@@ -203,7 +226,7 @@ export function usePresetManagement({
                 maxLength={80}
                 value={presetName}
                 onChange={(e) => setPresetName(e.target.value)}
-                placeholder="例如：MMD · HEVC 30帧"
+                placeholder={t("preset.nameExample")}
               />
             </Field>
             {error && (
@@ -212,13 +235,13 @@ export function usePresetManagement({
               </p>
             )}
             <div className="modal-actions">
-              <Button onClick={() => setModal("")}>取消</Button>
+              <Button onClick={() => setModal("")}>{t("common.cancel")}</Button>
               <Button
                 variant="primary"
                 disabled={busy || !presetName.trim()}
                 type="submit"
               >
-                保存预设
+                {t("preset.save")}
               </Button>
             </div>
           </form>
@@ -229,8 +252,8 @@ export function usePresetManagement({
           error={error}
           open={modal === "conflicts" && !!presetConflicts?.length}
           onClose={() => setModal("")}
-          title="内置预设已更新"
-          description="新版本改动了下面这些内置预设，而你之前修改过它们。内置预设已换成新版；你的修改可以丢弃，也可以另存为个人预设。关闭这个窗口后，下次打开软件还会再问。"
+          title={t("preset.conflicts.title")}
+          description={t("preset.conflicts.description")}
         >
           <div className="preset-list">
             {presetConflicts?.map((c) => (
@@ -244,14 +267,16 @@ export function usePresetManagement({
                         )
                       : c.builtinName}
                   </strong>
-                  <small>你修改过的版本：{c.name}</small>
+                  <small>
+                    {t("preset.conflicts.edited", { name: c.name })}
+                  </small>
                 </div>
                 <Button
                   onClick={() =>
                     call("resolvePresetConflict", { id: c.id, keep: false })
                   }
                 >
-                  用新版覆盖
+                  {t("preset.conflicts.replace")}
                 </Button>
                 <Button
                   variant="primary"
@@ -259,11 +284,11 @@ export function usePresetManagement({
                     call(
                       "resolvePresetConflict",
                       { id: c.id, keep: true },
-                      "已另存为个人预设",
+                      notification("PRESET_CONFLICT_KEPT"),
                     )
                   }
                 >
-                  保留我的版本
+                  {t("preset.conflicts.keep")}
                 </Button>
               </div>
             ))}
@@ -276,8 +301,8 @@ export function usePresetManagement({
           open={modal === "presets"}
           onClose={() => setModal("")}
           fixedHeight
-          title="预设管理"
-          description="拖动排序；隐藏的预设不出现在预设下拉框里。内置预设也可以改名、更新或删除，随时可以恢复。导入导出只包含个人预设。"
+          title={t("preset.manager.title")}
+          description={t("preset.manager.description")}
         >
           <PresetList
             presets={presets}
@@ -304,24 +329,36 @@ export function usePresetManagement({
           <div className="modal-actions">
             <Button
               onClick={() =>
-                action("importPresetsFile", undefined, "预设已导入")
+                action(
+                  "importPresetsFile",
+                  undefined,
+                  notification("PRESET_IMPORTED"),
+                )
               }
             >
-              导入 JSON
+              {t("preset.import")}
             </Button>
             <Button
               onClick={() =>
-                action("exportPresetsFile", undefined, "预设导出操作已完成")
+                action(
+                  "exportPresetsFile",
+                  undefined,
+                  notification("PRESET_EXPORTED"),
+                )
               }
             >
-              导出预设
+              {t("preset.export")}
             </Button>
             <Button
               onClick={() =>
-                action("restoreBuiltinPresets", undefined, "内置预设已恢复")
+                action(
+                  "restoreBuiltinPresets",
+                  undefined,
+                  notification("PRESET_RESTORED"),
+                )
               }
             >
-              恢复内置预设
+              {t("preset.restore")}
             </Button>
             {activePreset && (
               <Button
@@ -331,7 +368,7 @@ export function usePresetManagement({
                   setModal("save");
                 }}
               >
-                用当前设置更新预设
+                {t("preset.updateCurrent")}
               </Button>
             )}
             <Button
@@ -343,7 +380,7 @@ export function usePresetManagement({
               }}
             >
               <Plus size={15} />
-              新建预设
+              {t("preset.new")}
             </Button>
           </div>
         </Modal>
@@ -353,18 +390,20 @@ export function usePresetManagement({
           error={error}
           open={!!pendingPreset}
           onClose={() => setPendingPreset(null)}
-          title="切换编码预设"
-          description="当前配置有未保存到预设的修改。切换将替换当前编码设置，输出目录保留。"
+          title={t("preset.switch.title")}
+          description={t("preset.switch.description")}
         >
           <div className="modal-actions">
             <Button onClick={() => setPendingPreset(null)} autoFocus>
-              保留当前设置
+              {t("preset.switch.keep")}
             </Button>
             <Button
               variant="primary"
               onClick={() => pendingPreset && applyPreset(pendingPreset)}
             >
-              应用“{pendingPreset ? presetLabel(pendingPreset, presets) : ""}”
+              {t("preset.switch.apply", {
+                name: pendingPreset ? presetLabel(pendingPreset, presets) : "",
+              })}
             </Button>
           </div>
         </Modal>
@@ -374,16 +413,18 @@ export function usePresetManagement({
           error={error}
           open={!!pendingDelete}
           onClose={() => setPendingDelete(null)}
-          title="删除个人预设"
+          title={t("preset.delete.title")}
           description={
             pendingDelete?.builtin
-              ? `删除内置预设“${presetLabel(pendingDelete, presets)}”后，可在预设管理中点“恢复内置预设”找回。`
-              : `删除“${pendingDelete?.name || ""}”后无法恢复。不会影响视频文件。`
+              ? t("preset.delete.builtin", {
+                  name: presetLabel(pendingDelete, presets),
+                })
+              : t("preset.delete.personal", { name: pendingDelete?.name || "" })
           }
         >
           <div className="modal-actions">
             <Button autoFocus onClick={() => setPendingDelete(null)}>
-              取消
+              {t("common.cancel")}
             </Button>
             <Button
               variant="danger"
@@ -391,11 +432,11 @@ export function usePresetManagement({
                 try {
                   await call("deletePreset", { id: pendingDelete?.id });
                   setPendingDelete(null);
-                  notify("预设已删除");
+                  notify(notification("PRESET_DELETED"));
                 } catch {}
               }}
             >
-              删除预设
+              {t("preset.delete")}
             </Button>
           </div>
         </Modal>
@@ -405,8 +446,8 @@ export function usePresetManagement({
           error={error}
           open={!!renameTarget}
           onClose={() => setRenameTarget(null)}
-          title="修改预设名称"
-          description="仅修改名称，已保存的编码参数保持不变。"
+          title={t("preset.rename.title")}
+          description={t("preset.rename.description")}
         >
           <form
             noValidate
@@ -415,7 +456,7 @@ export function usePresetManagement({
               void renamePreset();
             }}
           >
-            <Field id="rename-preset" label="预设名称">
+            <Field id="rename-preset" label={t("preset.name")}>
               <input
                 id="rename-preset"
                 value={presetName}
@@ -424,13 +465,15 @@ export function usePresetManagement({
               />
             </Field>
             <div className="modal-actions">
-              <Button onClick={() => setRenameTarget(null)}>取消</Button>
+              <Button onClick={() => setRenameTarget(null)}>
+                {t("common.cancel")}
+              </Button>
               <Button
                 type="submit"
                 variant="primary"
                 disabled={busy || !presetName.trim()}
               >
-                保存名称
+                {t("preset.rename.save")}
               </Button>
             </div>
           </form>

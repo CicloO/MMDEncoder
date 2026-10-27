@@ -1,7 +1,12 @@
 "use strict";
 const crypto = require("node:crypto");
 const core = require("./core.cjs");
-const { appError, summary, sourceText } = require("./errors.cjs");
+const {
+  appError,
+  summary,
+  sourceText,
+  serializeError,
+} = require("./errors.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function settingsEdited(p) {
   const shipped = core.BUILTINS.find((b) => b.id === p.id);
@@ -72,12 +77,19 @@ function createPresetOperations({ schema, reorder }) {
     try {
       schema(p.settings, true);
     } catch (e) {
-      throw appError("PRESET_SETTINGS_INVALID", { detail: e.message });
+      throw appError("PRESET_SETTINGS_INVALID", {
+        detail: e.message,
+        error: serializeError(e),
+      });
     }
     const s = { ...p.settings, outputMode: "encoded", outputDir: "" };
-    const errors = core.validate(s);
+    const issues = core.validateIssues(s);
+    const errors = [...new Set(issues.map((issue) => issue.message))];
     if (errors.length)
-      throw appError("PRESET_SETTINGS_INVALID", { detail: errors.join("；") });
+      throw appError("PRESET_SETTINGS_INVALID", {
+        detail: errors.join("；"),
+        errors: issues,
+      });
     return {
       id: crypto.randomUUID(),
       name: p.name.trim(),
@@ -160,6 +172,7 @@ function createPresetOperations({ schema, reorder }) {
         model.noticeData = summary("PRESET_UNREADABLE", {
           name: p?.name || sourceText("preset.unnamed"),
           detail: e.message,
+          error: serializeError(e),
         });
         model.notice = model.noticeData.message;
         continue;

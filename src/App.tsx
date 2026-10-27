@@ -616,7 +616,7 @@ export default function App() {
           />
           <Button onClick={() => setModal("presets")}>
             <Bookmark size={16} />
-            预设管理
+            {t("preset.manager.title")}
           </Button>
           <Button onClick={() => setModal("mmd")}>
             <Clapperboard size={16} />

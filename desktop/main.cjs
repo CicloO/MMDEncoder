@@ -19,6 +19,23 @@ const {
 } = require("../backend/update.cjs");
 const { createUpdater } = require("../backend/selfupdate.cjs");
 const { appError } = require("../backend/errors.cjs");
+const { createTranslator } = require("../locales/runtime.mjs");
+const localeRegistry = require("../locales/registry.json");
+const desktopLocale = createTranslator({
+  sourceLocale: localeRegistry.sourceLocale,
+  catalogs: Object.fromEntries(
+    localeRegistry.locales.map((entry) => [
+      entry.id,
+      require(path.resolve(__dirname, "../locales", entry.file)),
+    ]),
+  ),
+});
+// Native pickers use the saved locale at opening; they keep their own text
+// while open. Shared service preferences remain the only locale authority.
+function desktopText(key) {
+  desktopLocale.setLocale(service.getState().locale);
+  return desktopLocale.t(key);
+}
 let win,
   service,
   updater,
@@ -283,30 +300,32 @@ else {
         }
         if (action === "importPresetsFile") {
           const r = await dialog.showOpenDialog(win, {
-            title: "导入预设",
+            title: desktopText("dialog.preset.import"),
             properties: ["openFile"],
-            filters: [{ name: "JSON 预设", extensions: ["json"] }],
+            filters: [
+              { name: desktopText("dialog.preset.json"), extensions: ["json"] },
+            ],
           });
           if (r.canceled) return { cancelled: true };
           let content;
           try {
             content = JSON.parse(await fs.readFile(r.filePaths[0], "utf8"));
           } catch {
-            throw new Error(
-              "无法读取预设 JSON。请检查文件格式，已有预设未被修改。",
-            );
+            throw appError("PRESET_FILE_UNREADABLE");
           }
           if (!Array.isArray(content) && content?.version !== 1)
-            throw new Error("预设文件版本不受支持，请使用版本 1 的预设文件");
+            throw appError("PRESET_FILE_VERSION");
           return service.invoke("importPresets", {
             presets: Array.isArray(content) ? content : content.presets,
           });
         }
         if (action === "exportPresetsFile") {
           const r = await dialog.showSaveDialog(win, {
-            title: "导出预设",
+            title: desktopText("dialog.preset.export"),
             defaultPath: "MMDEncoder-presets.json",
-            filters: [{ name: "JSON 预设", extensions: ["json"] }],
+            filters: [
+              { name: desktopText("dialog.preset.json"), extensions: ["json"] },
+            ],
           });
           if (r.canceled) return { cancelled: true };
           if (r.filePath)
