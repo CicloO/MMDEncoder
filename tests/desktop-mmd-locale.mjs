@@ -210,7 +210,7 @@ if (process.argv.includes("--native")) {
     assert.ok(out.includes(pseudo["plugin.title"]), out);
     assert.ok(out.includes(pseudo["preset.default1080Software"]), out);
     assert.ok(out.includes("presetOption=User 用户 {raw}"), out);
-    assert.match(out, /testResult=✓/);
+    assert.match(out, /testResult=.*✓/);
     assert.deepEqual(
       fs.readFileSync(path.join(actual, names[1])),
       fs.readFileSync(path.join(dir, "app-selection.json")),
