@@ -220,7 +220,38 @@ function createService({
   const unreadable = { presets: [], builtins: {} };
   const presetStorage = { deletedBuiltins, unreadable };
   const presetOperations = createPresetOperations({ schema, reorder });
+  let unbackedSettings = null;
+  function configReadNotice(cause, backup, backupError) {
+    state.noticeData = summary(
+      backupError ? "SETTINGS_BACKUP_FAILED" : "SETTINGS_UNREADABLE",
+      {
+        detail: cause.message,
+        error: serializeError(cause),
+        backup: path.basename(backup),
+        ...(backupError
+          ? {
+              backupDetail: backupError.message,
+              backupError: serializeError(backupError),
+            }
+          : {}),
+      },
+    );
+    state.notice = state.noticeData.message;
+  }
   function persist() {
+    if (unbackedSettings) {
+      const pending = unbackedSettings;
+      try {
+        fs.copyFileSync(pending.file, pending.backup);
+      } catch (error) {
+        throw appError("SETTINGS_BACKUP_FAILED", {
+          detail: error.message,
+          error: serializeError(error),
+        });
+      }
+      unbackedSettings = null;
+      configReadNotice(pending.cause, pending.backup);
+    }
     settingsStore.write({
       version: 1,
       preferences: state.preferences,
@@ -381,12 +412,11 @@ function createService({
       const backup = file + ".unreadable-" + Date.now();
       try {
         fs.copyFileSync(file, backup);
-      } catch {}
-      state.notice =
-        "已忽略无法读取的配置：" +
-        e.message +
-        "；原文件已备份为 " +
-        path.basename(backup);
+        configReadNotice(e, backup);
+      } catch (backupError) {
+        unbackedSettings = { file, backup, cause: e };
+        configReadNotice(e, backup, backupError);
+      }
     }
   }
   const run = createRunner({

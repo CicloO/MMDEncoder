@@ -46,6 +46,7 @@ function formatErrorValue(value: ReturnType<typeof serializeError>): string {
       "VIDEO_ENGINE_FAILED",
       "DETAILS_READ_FAILED",
       "PRESET_SETTINGS_INVALID",
+      "SETTINGS_BACKUP_FAILED",
     ].includes(value.code || "") &&
     value.params.error
   )
@@ -116,12 +117,17 @@ export function summaryMessage(value: MessageDescriptor | string) {
       "ENGINE_DETECTION_CAUSE",
       "RTX_FAILED",
       "PRESET_UNREADABLE",
+      "SETTINGS_UNREADABLE",
+      "SETTINGS_BACKUP_FAILED",
     ].includes(value?.code || "") &&
     value?.params?.error
   )
     return localeRuntime.t(`message.${value.code}`, {
       ...value.params,
       detail: diagnosticErrorMessage(value.params.error),
+      ...(value.params.backupError
+        ? { backupDetail: diagnosticErrorMessage(value.params.backupError) }
+        : {}),
     });
   return (
     formatVideoSummary(localeRuntime, value) ??

@@ -39,6 +39,8 @@ Queue is a paged list, 10 entries per page, single focused item for detail; star
 
 Settings persist atomically and immediately; presets require explicit save, with modified status relative to selected preset. Switching preset while modified uses application dialog. Output location is a remembered global preference and is retained across preset changes. Start freezes settings per job. Disabled start states explain absence of inputs/engine/validation.
 
+An unreadable settings file is backed up before replacement. If that copy fails, the notice reports failure and the original file stays untouched; the existing persistence path retries the same backup before any later settings or preference write. A successful copy allows the normal atomic save and updates the notice with the actual backup name. Both read and copy causes remain structured for locale refresh, and a rejected preference save keeps the previously saved language.
+
 视频队列在结果状态后显示已提交的成品文件名；双文件遮罩显示两项，仅遮罩显示一项，部分完成只展示提交成功的部分。完整路径在悬停提示中，长文件名从中部省略且保留完整可访问文字。计划中的遮罩路径由后端留作重试，不能冒充成品发送给显示层。输出概览位于 page 内，内容由 page-scroll 独立滚动，宽窄窗口和滚动前后都保持底栏贴底；测试工作台必须沿用同一容器结构，诊断通知不得挤占底栏下方空间。
 
 遮罩三选只在分离 / 仅遮罩时出现，默认无损；有损提示说明半透明边缘风险。实际编码器与质量显示来自预览数据，GPU 回退原因进入任务说明和日志，语言刷新不清除选择。视频音频码率没有“默认”项，新设置 / 个人预设为 320 kbps，旧 0 不自动换算；音视频工具的“跟随源文件”0 保留。超分补帧用控件本身的标签说明分组，不增加重复小标题，组间分隔不变。

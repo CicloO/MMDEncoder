@@ -1349,5 +1349,8 @@
   "error.REVEAL_PATH_UNTRUSTED": "只能打开当前任务的文件位置",
   "error.MMD_HISTORY_EMPTY": "还没有 MMD 导出记录",
   "error.MMD_HISTORY_DIRECTORY_MISSING": "上次导出的文件夹已不存在：{path}",
-  "error.VIDEO_COMMAND_INVALID": "{detail}"
+  "error.VIDEO_COMMAND_INVALID": "{detail}",
+  "message.SETTINGS_UNREADABLE": "已忽略无法读取的配置：{detail}；原文件已备份为 {backup}",
+  "message.SETTINGS_BACKUP_FAILED": "已忽略无法读取的配置：{detail}；原文件备份失败：{backupDetail}",
+  "error.SETTINGS_BACKUP_FAILED": "原配置备份失败，本次设置尚未保存：{detail}"
 }
