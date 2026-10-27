@@ -246,6 +246,8 @@ export type State = {
     presetId: string;
     followMmd: boolean;
     audioFade: number;
+    audioShiftFrames: number;
+    audioAutoShift: boolean;
     maskMode: "off" | "with" | "only";
     rangeSuffix?: boolean;
     error: string;

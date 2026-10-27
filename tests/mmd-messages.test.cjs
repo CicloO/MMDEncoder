@@ -35,8 +35,14 @@ test("MMD plan notes and recovery errors preserve codes, raw paths and original 
       message: "MMD 没有提供 Alpha 画面，无法只导出遮罩",
     });
     const plan = mx.plan(runtime, { ...config, maskMode: "with" });
-    assert.deepEqual(plan.notes, ["MMD 没有提供 Alpha 画面，未导出遮罩"]);
-    assert.equal(plan.notesData[0].code, "MMD_MASK_SKIPPED");
+    assert.deepEqual(plan.notes, [
+      "音频偏移 +0 帧 = 设置 +0 + 起点为 1 自动 +0",
+      "MMD 没有提供 Alpha 画面，未导出遮罩",
+    ]);
+    const warning = plan.notesData.find(
+      (data) => data.code === "MMD_MASK_SKIPPED",
+    );
+    assert.ok(warning);
     assert.equal(plan.maskOutput, undefined);
     const id = fs
       .readdirSync(pending)
@@ -55,10 +61,7 @@ test("MMD plan notes and recovery errors preserve codes, raw paths and original 
       "error.MMD_RECOVERY_EMPTY": "⟦ No video: {path} ⟧",
     });
     i18n.setLocale("en-XA");
-    assert.equal(
-      i18n.summaryMessage(plan.notesData[0]),
-      "⟦ Missing Alpha ··· ⟧",
-    );
+    assert.equal(i18n.summaryMessage(warning), "⟦ Missing Alpha ··· ⟧");
     assert.equal(
       i18n.errorMessage(
         serializeError(appError("MMD_RECOVERY_EMPTY", { path: runtime.avi })),

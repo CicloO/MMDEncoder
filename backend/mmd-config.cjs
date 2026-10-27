@@ -28,6 +28,11 @@ const MASK_MODES = ["off", "with", "only"];
 const presetMask = (s) =>
   s?.alphaMode === "mask" ? "only" : s?.alphaMask ? "with" : "off";
 
+function validateAudioShift(frames) {
+  if (!Number.isSafeInteger(frames)) throw appError("MMD_AUDIO_SHIFT_INVALID");
+  return frames;
+}
+
 function writeAtomic(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = file + "." + process.pid + ".tmp";
@@ -44,6 +49,10 @@ function readSelection() {
       followMmd: s.followMmd !== false,
       // Seconds of audio fade-in and fade-out (0 = off).
       audioFade: FADES.includes(s.audioFade) ? s.audioFade : 0,
+      audioShiftFrames: Number.isSafeInteger(s.audioShiftFrames)
+        ? s.audioShiftFrames
+        : 0,
+      audioAutoShift: s.audioAutoShift !== false,
       // "" = the preset decides.
       maskMode: MASK_MODES.includes(s.maskMode) ? s.maskMode : "",
       // Add the MMD frame range to the file name (_0400-0600f).
@@ -59,6 +68,8 @@ function writeSelection({
   presetId = "",
   followMmd = true,
   audioFade = 0,
+  audioShiftFrames = 0,
+  audioAutoShift = true,
   maskMode = "off",
   rangeSuffix = true,
   savedAt,
@@ -67,6 +78,8 @@ function writeSelection({
     presetId,
     followMmd,
     audioFade,
+    audioShiftFrames: validateAudioShift(audioShiftFrames),
+    audioAutoShift: audioAutoShift !== false,
     rangeSuffix: rangeSuffix !== false,
     maskMode: MASK_MODES.includes(maskMode) ? maskMode : "off",
     savedAt: savedAt || new Date().toISOString(),
@@ -85,6 +98,8 @@ function writeConfig({
   presetId = "",
   followMmd = true,
   audioFade = 0,
+  audioShiftFrames = 0,
+  audioAutoShift = true,
   maskMode = "",
   rangeSuffix = true,
   engines,
@@ -101,6 +116,8 @@ function writeConfig({
       presetId: id,
       followMmd,
       audioFade,
+      audioShiftFrames,
+      audioAutoShift,
       maskMode: maskMode || presetMask(settings),
     });
   }
@@ -155,6 +172,8 @@ function readConfig(selection = readSelection()) {
     settings: preset.settings,
     followMmd: selection.followMmd,
     audioFade: selection.audioFade,
+    audioShiftFrames: validateAudioShift(selection.audioShiftFrames ?? 0),
+    audioAutoShift: selection.audioAutoShift !== false,
     maskMode,
     rangeSuffix: selection.rangeSuffix,
   };
@@ -209,6 +228,7 @@ module.exports = {
   FADES,
   MASK_MODES,
   presetMask,
+  validateAudioShift,
   writeAtomic,
   readSelection,
   writeSelection,

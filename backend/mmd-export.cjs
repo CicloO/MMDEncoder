@@ -30,10 +30,25 @@ const {
   writeConfig,
   readConfig,
   unsupported,
+  validateAudioShift,
 } = require("./mmd-config.cjs");
 const historyPath = () => path.join(baseDir(), "exports.jsonl");
 // MMD's timeline runs at 30 fps whatever the export frame rate is.
 const TIMELINE_FPS = 30;
+function audioShift(config, startFrame) {
+  const manual = validateAudioShift(config.audioShiftFrames ?? 0);
+  const automatic = config.audioAutoShift !== false && startFrame === 1 ? 1 : 0;
+  const frames = validateAudioShift(manual + automatic);
+  const signed = (value) => (value >= 0 ? "+" : "") + value;
+  return {
+    frames,
+    data: summary("MMD_AUDIO_SHIFT", {
+      frames: signed(frames),
+      manual: signed(manual),
+      automatic: signed(automatic),
+    }),
+  };
+}
 // Placeholder FOURCC the plugin writes into the AVI instead of real frames.
 const PLACEHOLDER_TAG = "MMDE";
 
@@ -161,6 +176,11 @@ function plan(runtime, config = readConfig()) {
   // video is skipped, not the export.
   const notes = [];
   const notesData = [];
+  const shift = audioShift(config, runtime.startFrame);
+  if (audioArgs(s)) {
+    notes.push(shift.data.message);
+    notesData.push(shift.data);
+  }
   if (maskMode === "only" && !alpha) throw appError("MMD_ALPHA_REQUIRED");
   let mask = maskMode === "with";
   if (mask && !alpha) {
@@ -283,6 +303,8 @@ function plan(runtime, config = readConfig()) {
       settings: { ...s, alphaMask: mask },
       engines: config.engines,
       audioFade: config.audioFade,
+      audioShiftFrames: config.audioShiftFrames ?? 0,
+      audioAutoShift: config.audioAutoShift !== false,
       rangeSuffix: config.rangeSuffix !== false,
     });
     return result;
@@ -472,11 +494,13 @@ async function finish(
   );
   const aviAudio = !!aviInfo?.streams?.some((x) => x.codec_type === "audio");
   let audio = audioArgs(s);
+  const shift = audioShift(config, job.startFrame);
   let source = "none";
   // The source audio stream, for Hi-Res.
   let stream = aviInfo?.streams?.find((x) => x.codec_type === "audio");
   let input = [];
   let trim = "";
+  let first = 0;
   if (audio && aviAudio) {
     source = "avi";
     input = ["-i", job.avi];
@@ -486,27 +510,38 @@ async function finish(
       const info = await probe(config, wav);
       stream = info.streams?.find((x) => x.codec_type === "audio");
       const sr = Number(stream?.sample_rate);
-      const first = Math.round((job.startFrame * sr) / TIMELINE_FPS);
+      first = Math.round((job.startFrame * sr) / TIMELINE_FPS);
       const total = Math.round(Number(info.format?.duration) * sr) || Infinity;
-      if (sr && first >= total) note(log, "MMD_WAV_PAST_END");
-      else if (sr) {
-        // Sample-exact: start = start frame on the 30 fps timeline, length =
-        // frames actually received at the export frame rate.
-        const count = Math.round((job.frames * sr * rate.den) / rate.num);
-        trim = `atrim=start_sample=${first}:end_sample=${first + count},asetpts=PTS-STARTPTS`;
+      if (sr) {
+        if (first >= total) note(log, "MMD_WAV_PAST_END");
         source = "wav";
         input = ["-i", wav];
-        note(log, "MMD_WAV_SOURCE", {
-          path: wav,
-          first,
-          end: first + count,
-          sampleRate: sr,
-        });
       }
     } else note(log, "MMD_AUDIO_MISSING");
   }
   // Optional fade in / out over the clip's audio, at most half its length each.
   const length = (job.frames * rate.den) / rate.num;
+  if (source !== "none") {
+    log(shift.data.message, shift.data);
+    const sr = Number(stream?.sample_rate);
+    if (!sr && shift.frames) throw appError("MMD_AUDIO_RATE_REQUIRED");
+    if (sr && (source === "wav" || shift.frames)) {
+      const samples = Math.round((shift.frames * sr) / TIMELINE_FPS);
+      if (!Number.isSafeInteger(samples))
+        throw appError("MMD_AUDIO_SHIFT_SAMPLE_RANGE");
+      const count = Math.max(0, Math.round(length * sr) - Math.max(0, samples));
+      first += Math.max(0, -samples);
+      trim = `atrim=start_sample=${first}:end_sample=${first + count},asetpts=PTS-STARTPTS`;
+      if (samples > 0 && count) trim += `,adelay=${samples}S:all=1`;
+      if (source === "wav")
+        note(log, "MMD_WAV_SOURCE", {
+          path: input[1],
+          first,
+          end: first + count,
+          sampleRate: sr,
+        });
+    }
+  }
   const fade = Math.min(Number(config.audioFade) || 0, length / 2);
   // The rendered video sets the length: audio that runs out is padded with
   // silence, longer audio is cut (-t below). Never end at the shorter stream,

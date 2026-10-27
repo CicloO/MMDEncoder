@@ -782,9 +782,26 @@ test(
         "audio padded to 3 s, got " + a.duration,
       );
       assert.ok(!fs.existsSync(short.temp));
-      // Starting after the song ends: no audio, every frame kept.
+      // A valid WAV with no remaining samples contributes silence.
       const past = await exportAt("past", 960);
-      assert.equal(past.r.audio, "none");
+      assert.equal(past.r.audio, "wav");
+      assert.ok(past.streams.some((s) => s.codec_type === "audio"));
+      const silence = execFileSync(ff, [
+        "-v",
+        "error",
+        "-i",
+        past.r.output,
+        "-map",
+        "0:a:0",
+        "-f",
+        "s16le",
+        "pipe:1",
+      ]);
+      assert.ok(silence.length > 0);
+      assert.equal(
+        silence.some((byte) => byte !== 0),
+        false,
+      );
       assert.match(past.notes.join("\n"), /超过工程 WAV 的结尾/);
       assert.equal(
         Number(
