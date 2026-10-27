@@ -13,7 +13,7 @@ import {
 import { Button, Modal, useDragSort, PAGE_SIZE } from "./components";
 import { MediaTools } from "./MediaTools";
 import { TrimTools } from "./TrimTools";
-import { EncodeQueue } from "./EncodeQueue";
+import { EncodeQueue, useSoftwareRetry } from "./EncodeQueue";
 import { createAudioReplacement, audioTarget } from "./audioReplacement";
 import { useAlignmentTasks } from "./useAlignmentTasks";
 import { MediaDetails } from "./MediaDetails";
@@ -103,8 +103,7 @@ export default function App() {
     >(),
     [presetId, setPresetId] = useState(""),
     [log, setLog] = useState(""),
-    [customFPS, setCustomFPS] = useState(false),
-    [fallback, setFallback] = useState<Job | null>(null);
+    [customFPS, setCustomFPS] = useState(false);
   const error =
     typeof errorValue !== "string" && "notice" in errorValue
       ? summaryMessage(errorValue.notice)
@@ -297,6 +296,7 @@ export default function App() {
     onNotice: notify,
   });
   const { call, action } = actions;
+  const softwareRetry = useSoftwareRetry(call, error);
   const {
     busy: mmdBusy,
     call: mmdCall,
@@ -717,7 +717,7 @@ export default function App() {
               setModal={setModal}
               setError={setError}
               setTab={setTab}
-              setFallback={setFallback}
+              setFallback={softwareRetry.open}
             />
             <VideoSettingsPanel
               own={!!job?.ownSettings}
@@ -915,39 +915,7 @@ export default function App() {
       </Modal>
       {presetFlow.dialogs.switching}
       {presetFlow.dialogs.deletion}
-      <Modal
-        error={error}
-        open={!!fallback}
-        onClose={() => setFallback(null)}
-        title="改用软件编码重试"
-        description="软件编码速度通常更慢。CQ 与 CRF 不等效，重试将使用软件编码预设，并保留可兼容的输出设置。"
-      >
-        <p>
-          重试参数：
-          {fallback?.settings?.encoder.includes("hevc")
-            ? "HEVC · libx265"
-            : fallback?.settings?.encoder.includes("av1")
-              ? "AV1 · libsvtav1"
-              : "H.264 · libx264"}
-          ，CRF 18，
-          {fallback?.settings?.encoder.includes("av1") ? "预设 6" : "medium"}
-          ；关闭硬件前向分析。分辨率、帧率、音频和位深保持原任务设置；不兼容项会要求调整。
-        </p>
-        <div className="modal-actions">
-          <Button onClick={() => setFallback(null)}>取消</Button>
-          <Button
-            variant="primary"
-            onClick={async () => {
-              try {
-                await call("retry", { id: fallback?.id, software: true });
-                setFallback(null);
-              } catch {}
-            }}
-          >
-            软件编码重试
-          </Button>
-        </div>
-      </Modal>
+      {softwareRetry.dialog}
       {presetFlow.dialogs.rename}
       <Modal
         error={error}

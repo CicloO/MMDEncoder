@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
-import { Button, Select, useDragSort, PAGE_SIZE } from "./components";
+import { Button, Select, Modal, useDragSort, PAGE_SIZE } from "./components";
 import { AlignDialog } from "./AlignDialog";
 import { AlignmentIcon } from "./AlignmentIcon";
 import { sequenceDuration } from "../backend/audio-timing.mjs";
@@ -37,6 +37,7 @@ import {
   targetLabel,
   videoName,
 } from "./presentation";
+import type { RequestCall } from "./actions";
 import type { Job, Settings, State } from "./types";
 
 // Frame rates a PNG sequence can play at (backend SEQUENCE_RATES).
@@ -615,4 +616,48 @@ export function EncodeQueue({
       />
     </section>
   );
+}
+
+// Queue recovery owns its pending task, confirmation and request together.
+// App composes the element at its original portal position.
+export function useSoftwareRetry(call: RequestCall, error: string) {
+  const [fallback, setFallback] = useState<Job | null>(null);
+  return {
+    open: setFallback,
+    dialog: (
+      <Modal
+        error={error}
+        open={!!fallback}
+        onClose={() => setFallback(null)}
+        title="改用软件编码重试"
+        description="软件编码速度通常更慢。CQ 与 CRF 不等效，重试将使用软件编码预设，并保留可兼容的输出设置。"
+      >
+        <p>
+          重试参数：
+          {fallback?.settings?.encoder.includes("hevc")
+            ? "HEVC · libx265"
+            : fallback?.settings?.encoder.includes("av1")
+              ? "AV1 · libsvtav1"
+              : "H.264 · libx264"}
+          ，CRF 18，
+          {fallback?.settings?.encoder.includes("av1") ? "预设 6" : "medium"}
+          ；关闭硬件前向分析。分辨率、帧率、音频和位深保持原任务设置；不兼容项会要求调整。
+        </p>
+        <div className="modal-actions">
+          <Button onClick={() => setFallback(null)}>取消</Button>
+          <Button
+            variant="primary"
+            onClick={async () => {
+              try {
+                await call("retry", { id: fallback?.id, software: true });
+                setFallback(null);
+              } catch {}
+            }}
+          >
+            软件编码重试
+          </Button>
+        </div>
+      </Modal>
+    ),
+  };
 }
