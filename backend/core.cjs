@@ -1,5 +1,6 @@
 "use strict";
 const path = require("node:path");
+const { appError } = require("./errors.cjs");
 const { streamDuration } = require("./audio-timing.mjs");
 const {
   parseFps,
@@ -75,7 +76,7 @@ function outputPaths(
       continue;
     return { output, maskOutput };
   }
-  throw Error("无法分配不重名的输出文件");
+  throw appError("OUTPUT_NAME_EXHAUSTED");
 }
 const { quote, commandText } = require("./command-text.cjs");
 // Audio stream summary. MKV often has no stream bit_rate; mkvmerge writes a
@@ -102,7 +103,7 @@ function metadata(data) {
   const v = data.streams?.find(
     (s) => s.codec_type === "video" && s.disposition?.attached_pic !== 1,
   );
-  if (!v) throw Error("未找到视频轨");
+  if (!v) throw appError("VIDEO_STREAM_MISSING");
   const a = data.streams.find((s) => s.codec_type === "audio");
   const frac = (s) => {
     const [n, d = 1] = String(s || "0")

@@ -1352,5 +1352,13 @@
   "error.VIDEO_COMMAND_INVALID": "{detail}",
   "message.SETTINGS_UNREADABLE": "已忽略无法读取的配置：{detail}；原文件已备份为 {backup}",
   "message.SETTINGS_BACKUP_FAILED": "已忽略无法读取的配置：{detail}；原文件备份失败：{backupDetail}",
-  "error.SETTINGS_BACKUP_FAILED": "原配置备份失败，本次设置尚未保存：{detail}"
+  "error.SETTINGS_BACKUP_FAILED": "原配置备份失败，本次设置尚未保存：{detail}",
+  "message.RTX_INITIAL": "启用后请先验证本机 RTX 功能",
+  "message.EVIDENCE_SAVE_FAILED": "日志或队列记录保存失败：{detail}",
+  "error.SETTINGS_VERSION_UNSUPPORTED": "版本不支持",
+  "error.ORDER_INVALID": "排序数据无效，请重试",
+  "error.RTX_TEST_BUSY": "请等待当前任务结束",
+  "error.SERVICE_ACTION_UNSUPPORTED": "不支持的操作：{action}",
+  "error.OUTPUT_NAME_EXHAUSTED": "无法分配不重名的输出文件",
+  "error.VIDEO_STREAM_MISSING": "未找到视频轨"
 }

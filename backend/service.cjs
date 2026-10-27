@@ -83,7 +83,8 @@ function createService({
       busy: false,
       signature: "",
       verified: false,
-      message: "启用后请先验证本机 RTX 功能",
+      message: sourceText("message.RTX_INITIAL"),
+      messageData: summary("RTX_INITIAL"),
     },
     mediaJobs: [],
     // Lossless trim page: clips in order, each a frame range of a file.
@@ -211,7 +212,12 @@ function createService({
         fs.renameSync(tmp, target);
       }
     } catch (e) {
-      state.notice = "日志或队列记录保存失败：" + e.message;
+      setNotice(
+        summary("EVIDENCE_SAVE_FAILED", {
+          detail: e.message,
+          error: serializeError(e),
+        }),
+      );
     }
   }
   const deletedBuiltins = new Set();
@@ -377,7 +383,7 @@ function createService({
   }
   try {
     const saved = settingsStore.read();
-    if (saved.version !== 1) throw Error("版本不支持");
+    if (saved.version !== 1) throw appError("SETTINGS_VERSION_UNSUPPORTED");
     state.preferences.locale = preferences.normalize(saved.preferences?.locale);
     state.locale = preferences.resolve(state.preferences.locale);
     if (saved.mmdExport && typeof saved.mmdExport === "object") {
@@ -634,9 +640,9 @@ function createService({
       ids.length !== list.length ||
       new Set(ids).size !== ids.length
     )
-      throw Error("排序数据无效，请重试");
+      throw appError("ORDER_INVALID");
     const byId = new Map(list.map((x) => [x.id, x]));
-    if (ids.some((id) => !byId.has(id))) throw Error("排序数据无效，请重试");
+    if (ids.some((id) => !byId.has(id))) throw appError("ORDER_INVALID");
     return ids.map((id) => byId.get(id));
   }
   // Whether anything is using the encoders, the tools or the GPU: encoding
@@ -809,7 +815,7 @@ function createService({
       case "details":
         return readDetails(payload);
       case "testEnhancements": {
-        if (isBusy()) throw Error("请等待当前任务结束");
+        if (isBusy()) throw appError("RTX_TEST_BUSY");
         const s = { ...state.settings, ...schema(payload.settings || {}) };
         await locate();
         await testEnhancements({
@@ -962,7 +968,7 @@ function createService({
         break;
       }
       default:
-        throw Error("不支持的操作：" + action);
+        throw appError("SERVICE_ACTION_UNSUPPORTED", { action });
     }
     emit();
     return uiState(state);

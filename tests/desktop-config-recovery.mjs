@@ -12,7 +12,9 @@ const root = path.resolve(import.meta.dirname, ".."),
   dir = fs.mkdtempSync(path.join(root, "verification/i18n/config-recovery-")),
   data = path.join(dir, "data"),
   file = path.join(data, "settings.json"),
-  raw = "User original unreadable {raw}";
+  raw = process.argv.includes("--version-case")
+    ? JSON.stringify({ version: 999, settings: { user: "User {raw}" } })
+    : "User original unreadable {raw}";
 fs.mkdirSync(data);
 fs.writeFileSync(file, raw);
 const registry = {
@@ -116,6 +118,12 @@ try {
   assert.equal(fs.readFileSync(path.join(data, backups[0]), "utf8"), raw);
   await page.keyboard.press("Escape");
   await expect(page.locator(".toast")).toContainText(backups[0]);
+  if (process.argv.includes("--version-case")) {
+    const pseudo = await page.evaluate(() => window.appAboutFixture.pseudo);
+    await expect(page.locator(".toast")).toContainText(
+      pseudo["error.SETTINGS_VERSION_UNSUPPORTED"],
+    );
+  }
   fs.writeFileSync(
     path.join(dir, "result.json"),
     JSON.stringify(
