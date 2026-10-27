@@ -124,6 +124,7 @@ try {
   await page.evaluate(() =>
     window.encoder.invoke("trimSmart", { smart: true }),
   );
+  await expect(page.getByRole("checkbox", { name: /^智能剪切/ })).toBeChecked();
   await page.mouse.click(ticks[1] + (ticks[2] - ticks[1]) * 0.4, y);
   assert.equal(await value(), 42, "smart preview stays on the requested frame");
   await expect(page.locator("#trim-cut-landing")).toContainText(
