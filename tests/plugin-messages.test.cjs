@@ -134,3 +134,41 @@ test("MMD plan/test helpers keep coded failures and params in their JSON result"
     assert.equal(result.error, result.errorData.message);
   }
 });
+
+test("native snapshots include every error code reachable from MMD command validation", () => {
+  const ts = require("typescript");
+  const needed = new Set([
+    "error.VALIDATION_FAILED",
+    "error.MMD_ALPHA_REQUIRED",
+    "message.MMD_MASK_SKIPPED",
+  ]);
+  for (const file of [
+    "backend/settings-validation.cjs",
+    "backend/filter.cjs",
+    "backend/commands.cjs",
+    "backend/mask-settings.cjs",
+  ]) {
+    const tree = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const visit = (node) => {
+      if (ts.isCallExpression(node)) {
+        const name = node.expression.getText(tree),
+          arg = node.arguments[name === "check" ? 1 : 0];
+        if (
+          ["appError", "validationIssue", "check"].includes(name) &&
+          arg &&
+          ts.isStringLiteral(arg) &&
+          /^[A-Z][A-Z0-9_]+$/.test(arg.text)
+        )
+          needed.add("error." + arg.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(tree);
+  }
+  for (const key of needed) assert.ok(keys.includes(key), key);
+});

@@ -48,5 +48,15 @@ std::wstring PluginMessages::format(const wchar_t* key, const Json& params, cons
 std::wstring PluginMessages::text(const wchar_t* key) const { return format(key, Json{}); }
 std::wstring PluginMessages::result(const Json& data, const wchar_t* prefix, const std::wstring& fallback) const {
   if (data[L"code"].s.empty()) return fallback;
-  return format((std::wstring(prefix) + data[L"code"].s).c_str(), data[L"params"], fallback);
+  Json params = data[L"params"];
+  if (params[L"error"].type == Json::Object) {
+    params.o[L"detail"].type = Json::String;
+    params.o[L"detail"].s = result(params[L"error"], L"error.", params[L"error"][L"message"].s);
+  }
+  std::wstring output = format((std::wstring(prefix) + data[L"code"].s).c_str(), params, fallback);
+  for (const Json& issue : data[L"issues"].a) {
+    const std::wstring line = result(issue, L"error.", issue[L"message"].s);
+    if (!line.empty()) output += (output.empty() ? L"" : L"\n") + line;
+  }
+  return output;
 }

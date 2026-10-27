@@ -1388,5 +1388,18 @@
   "message.MMD_AUDIO_HIRES": "Hi-Res：{from} → {to}",
   "message.MMD_MASK_OUTPUT": "Alpha 遮罩：{path}",
   "message.MMD_RECOVERING": "恢复中断的导出：{frames} 帧",
-  "message.MMD_INTERRUPTED": "有 {count} 个 MMD 导出意外中断，可在“MMD 导出”里补完已导出的部分"
+  "message.MMD_INTERRUPTED": "有 {count} 个 MMD 导出意外中断，可在“MMD 导出”里补完已导出的部分",
+  "plugin.aviMissing": "找不到 MMD 正在写入的 AVI 文件",
+  "plugin.configMissing": "还没有选择导出预设：请在 MMDEncoder 的“预设管理”里选择 MMD 导出预设",
+  "plugin.configIncomplete": "导出设置不完整，请在 MMDEncoder 里重新选择导出预设",
+  "plugin.planMissing": "MMDEncoder 没有返回导出命令：{detail}",
+  "plugin.presetFailed": "无法使用当前导出预设：{detail}",
+  "plugin.pipeFailed": "无法创建管道",
+  "plugin.encoderStartFailed": "无法启动 FFmpeg：{path}",
+  "plugin.frameSizeInvalid": "MMD 送来的画面大小不对",
+  "plugin.encoderExited": "FFmpeg 提前退出，详见 FFmpeg 日志",
+  "plugin.encoderTimeout": "FFmpeg 超过 30 分钟未结束，已停止",
+  "plugin.encoderFailed": "FFmpeg 编码失败（退出码 {exitCode}），详见 FFmpeg 日志",
+  "plugin.finishStartFailed": "无法启动收尾步骤（合成音频、删除占位 AVI）",
+  "plugin.exportFailed": "MMDEncoder 导出失败：\n{detail}\n\n日志：{path}"
 }

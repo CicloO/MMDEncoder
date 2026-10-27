@@ -135,9 +135,14 @@ static void inspectSettings(HWND dialog) {
 
 // A render failure must fail this simulator, not wait for a person to dismiss
 // the plugin's error box. Only inspect our render thread's own MB_OK window.
+static std::wstring renderErrorPrefix() {
+  wchar_t value[4096]{};
+  const DWORD count = GetEnvironmentVariableW(L"MMD_SIM_RENDER_ERROR_PREFIX", value, 4096);
+  return count && count < 4096 ? value : L"MMDEncoder 导出失败：";
+}
 class RenderFailureGuard {
  public:
-  explicit RenderFailureGuard(DWORD thread) : thread_(thread), watcher_([this] {
+  explicit RenderFailureGuard(DWORD thread) : thread_(thread), prefix_(renderErrorPrefix()), watcher_([this] {
     while (!stop_) {
       HWND dialog = nullptr;
       EnumThreadWindows(thread_, [](HWND window, LPARAM data) -> BOOL {
@@ -191,7 +196,7 @@ class RenderFailureGuard {
     }
     // A single-button export error can use IDCANCEL on Windows. Match its
     // known body as well as process/thread/title before dismissing anything.
-    if (text.rfind(L"MMDEncoder 导出失败：", 0) != 0) return;
+    if (text.rfind(prefix_, 0) != 0) return;
     if (!failed_.exchange(true)) {
       int size = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, nullptr, 0, nullptr, nullptr);
       std::string bytes(size, 0);
@@ -202,6 +207,7 @@ class RenderFailureGuard {
     PostMessageW(ok, BM_CLICK, 0, 0);
   }
   DWORD thread_;
+  std::wstring prefix_;
   std::atomic<bool> stop_{false}, failed_{false};
   std::thread watcher_;
 };

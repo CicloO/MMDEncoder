@@ -14,9 +14,10 @@ int wmain(int argc, wchar_t** argv) {
   Json unknown; unknown.type = Json::Object;
   unknown.o[L"code"].type = Json::String; unknown.o[L"code"].s = L"FUTURE_NATIVE";
   unknown.o[L"params"] = params;
-  std::printf("{\"title\":%s,\"brief\":%s,\"unknown\":%s}\n",
+  std::printf("{\"title\":%s,\"brief\":%s,\"unknown\":%s,\"error\":%s}\n",
     jsonString(messages.text(L"plugin.title")).c_str(),
     jsonString(messages.format(L"plugin.testPassedShort", params)).c_str(),
-    jsonString(messages.result(unknown, L"error.", L"external fallback {raw}")).c_str());
+    jsonString(messages.result(unknown, L"error.", L"external fallback {raw}")).c_str(),
+    jsonString(messages.result(config[L"fixtureError"], L"error.", config[L"fixtureError"][L"message"].s)).c_str());
   return 0;
 }
