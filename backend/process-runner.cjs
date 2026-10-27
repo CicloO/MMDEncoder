@@ -1,6 +1,13 @@
 "use strict";
 const { spawn } = require("node:child_process");
 const { commandProcesses } = require("./command-processes.cjs");
+const { appError, serializeError } = require("./errors.cjs");
+
+function runnerError(code, params = {}) {
+  const runnerErrorData = serializeError(appError(code, params));
+  return Object.assign(Error(runnerErrorData.message), { runnerErrorData });
+}
+
 function createRunner({ isDisposed, children, getActive, setActive }) {
   function run(
     exe,
@@ -8,7 +15,7 @@ function createRunner({ isDisposed, children, getActive, setActive }) {
     { timeout = 0, onData, encoding = false, stdin } = {},
   ) {
     return new Promise((resolve, reject) => {
-      if (isDisposed()) return reject(Error("应用已关闭"));
+      if (isDisposed()) return reject(runnerError("RUNNER_CLOSED"));
       const child = spawn(exe, args, {
         windowsHide: true,
         stdio: [stdin ? "pipe" : "ignore", "pipe", "pipe"],
@@ -46,13 +53,14 @@ function createRunner({ isDisposed, children, getActive, setActive }) {
         children.delete(child);
         if (getActive() === child) setActive(null);
         if (err || code !== 0) {
-          const e = Error(
-            timed
-              ? "引擎运行超时"
-              : err
-                ? err.message
-                : stderr.trim().slice(-3000) || "编码器退出：" + code,
-          );
+          const detail = stderr.trim().slice(-3000);
+          const e = timed
+            ? runnerError("RUNNER_TIMEOUT")
+            : err
+              ? Error(err.message)
+              : detail
+                ? Error(detail)
+                : runnerError("RUNNER_EXIT", { exitCode: code });
           e.stdout = stdout;
           e.stderr = stderr;
           e.code = code;
@@ -68,7 +76,7 @@ function createRunner({ isDisposed, children, getActive, setActive }) {
   // Start the whole chain concurrently. Only the last stdout is text;
   // intermediate stdout is binary and is consumed by the next process.
   async function runPiped(c, options = {}) {
-    if (isDisposed()) return Promise.reject(Error("应用已关闭"));
+    if (isDisposed()) return Promise.reject(runnerError("RUNNER_CLOSED"));
     const processes = commandProcesses(c),
       group = [],
       closed = [];
@@ -83,7 +91,10 @@ function createRunner({ isDisposed, children, getActive, setActive }) {
       }
     };
     const controller = {
-      kill: () => stop(Object.assign(Error("编码已取消"), { cancelled: true })),
+      kill: () =>
+        stop(
+          Object.assign(runnerError("RUNNER_CANCELLED"), { cancelled: true }),
+        ),
     };
     if (options.encoding) setActive(controller);
     const data = (stream, b) => {
@@ -114,10 +125,10 @@ function createRunner({ isDisposed, children, getActive, setActive }) {
         child.on("exit", (code, signal) => {
           if (code !== 0)
             stop(
-              Object.assign(Error("管道进程退出：" + (code ?? signal)), {
-                code,
-                processIndex: i,
-              }),
+              Object.assign(
+                runnerError("RUNNER_PIPE_EXIT", { result: code ?? signal }),
+                { code, processIndex: i },
+              ),
             );
         });
         child.stderr.on("data", (b) => data("err", b));
@@ -131,7 +142,10 @@ function createRunner({ isDisposed, children, getActive, setActive }) {
       group.at(-1).stdout.on("data", (b) => data("out", b));
       if (options.timeout)
         timer = setTimeout(
-          () => stop(Object.assign(Error("引擎运行超时"), { timedOut: true })),
+          () =>
+            stop(
+              Object.assign(runnerError("RUNNER_TIMEOUT"), { timedOut: true }),
+            ),
           options.timeout,
         );
     } catch (e) {
@@ -141,7 +155,8 @@ function createRunner({ isDisposed, children, getActive, setActive }) {
     clearTimeout(timer);
     if (getActive() === controller) setActive(null);
     if (failure) {
-      const error = Error(stderr.trim().slice(-3000) || failure.message);
+      const detail = stderr.trim().slice(-3000);
+      const error = Error(detail || failure.message);
       Object.assign(error, {
         stdout,
         stderr,
@@ -151,6 +166,8 @@ function createRunner({ isDisposed, children, getActive, setActive }) {
         cancelled: !!failure.cancelled,
         processIndex: failure.processIndex,
       });
+      if (!detail && failure.runnerErrorData)
+        error.runnerErrorData = failure.runnerErrorData;
       throw error;
     }
     return { stdout, stderr };

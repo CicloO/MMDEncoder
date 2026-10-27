@@ -63,11 +63,11 @@ function createFileDetails({
           ...JSON.parse(r.stdout),
         };
       } catch (e) {
+        const error = appError("DETAILS_READ_FAILED", { detail: e.message });
+        if (e.runnerErrorData) error.params = { error: serializeError(e) };
         result[key] = {
           path: file,
-          ...serializeError(
-            appError("DETAILS_READ_FAILED", { detail: e.message }),
-          ),
+          ...serializeError(error),
         };
       }
     }

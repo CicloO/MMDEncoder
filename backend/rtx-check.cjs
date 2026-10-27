@@ -31,7 +31,9 @@ async function testEnhancements({
     const result = statusMessage("RTX_FAILED", {
       detail: diagnosticMessage(e),
     });
-    onPatch({ ...result, errorData: serializeError(e) });
+    const errorData = serializeError(e);
+    if (e.runnerErrorData) result.messageData.params = { error: errorData };
+    onPatch({ ...result, errorData });
     onLog("\n" + result.message);
     throw e;
   } finally {

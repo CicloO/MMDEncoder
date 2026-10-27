@@ -85,12 +85,13 @@ function createMediaQueue({
         };
       }
     } catch (e) {
-      job.metaErrorData = serializeError(
-        appError("MEDIA_META_FAILED", {
-          detail: e.message,
-          error: serializeError(e),
-        }),
-      );
+      const cause = serializeError(e);
+      const error = appError("MEDIA_META_FAILED", {
+        detail: e.message,
+        error: cause,
+      });
+      if (e.runnerErrorData) error.params = { error: cause };
+      job.metaErrorData = serializeError(error);
       job.metaError = job.metaErrorData.message;
     }
     emit();
@@ -228,14 +229,15 @@ function createMediaQueue({
           await runMediaJob(job, options);
         }
       })()
-        .catch((e) =>
-          onNotice(
-            summary("MEDIA_BATCH_FAILED", {
-              detail: e.message,
-              error: serializeError(e),
-            }),
-          ),
-        )
+        .catch((e) => {
+          const error = serializeError(e);
+          const notice = summary("MEDIA_BATCH_FAILED", {
+            detail: e.message,
+            error,
+          });
+          if (e.runnerErrorData) notice.params = { error };
+          onNotice(notice);
+        })
         .finally(() => {
           setRunning(false);
           emit();

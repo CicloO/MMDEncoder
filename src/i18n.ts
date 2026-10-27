@@ -36,8 +36,15 @@ export function t(key: MessageKey, params: MessageParams = {}) {
 }
 
 function formatErrorValue(value: ReturnType<typeof serializeError>): string {
-  if (value.code === "TOOLS_MOVE_FAILED" && value.params.error)
-    return localeRuntime.t("error.TOOLS_MOVE_FAILED", {
+  if (
+    [
+      "TOOLS_MOVE_FAILED",
+      "VIDEO_ENGINE_FAILED",
+      "DETAILS_READ_FAILED",
+    ].includes(value.code || "") &&
+    value.params.error
+  )
+    return localeRuntime.t(`error.${value.code}`, {
       detail: diagnosticErrorMessage(value.params.error),
     });
   return (
@@ -70,10 +77,14 @@ export function stageMessage(value: StageDescriptor | string) {
 export function summaryMessage(value: MessageDescriptor | string) {
   if (
     typeof value !== "string" &&
-    value?.code === "ENGINE_DETECTION_INCOMPLETE" &&
+    [
+      "ENGINE_DETECTION_INCOMPLETE",
+      "ENGINE_DETECTION_CAUSE",
+      "RTX_FAILED",
+    ].includes(value?.code || "") &&
     value?.params?.error
   )
-    return localeRuntime.t("message.ENGINE_DETECTION_INCOMPLETE", {
+    return localeRuntime.t(`message.${value.code}`, {
       detail: diagnosticErrorMessage(value.params.error),
     });
   return (

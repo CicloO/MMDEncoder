@@ -222,13 +222,17 @@ function createEncoder({
           : isStopped()
             ? "cancelled"
             : "failed";
-      job.errorData = serializeError(
-        isStopped()
-          ? appError("TASK_CANCELLED")
-          : e.code && typeof e.code === "string"
+      let displayError;
+      if (isStopped()) displayError = appError("TASK_CANCELLED");
+      else if (e.runnerErrorData) {
+        displayError = appError("VIDEO_ENGINE_FAILED", { detail: e.message });
+        displayError.params = { error: serializeError(e) };
+      } else
+        displayError =
+          e.code && typeof e.code === "string"
             ? e
-            : appError("VIDEO_ENGINE_FAILED", { detail: e.message }),
-      );
+            : appError("VIDEO_ENGINE_FAILED", { detail: e.message });
+      job.errorData = serializeError(displayError);
       job.error = job.errorData.message;
       job.softwareRetry = !["ENOSPC", "EACCES", "EPERM", "ENOENT"].includes(
         e.systemCode || e.code,

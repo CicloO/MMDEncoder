@@ -9,10 +9,17 @@ export function stageDescriptor(stage, params = {}) {
 }
 
 export function serializeError(error) {
+  // A runner error keeps its original process code and flags on the Error;
+  // the separate record supplies the message code for display and IPC.
+  const runner = error?.runnerErrorData;
   return {
     message: String(error?.message ?? error),
-    ...(typeof error?.code === "string" ? { code: error.code } : {}),
-    params: error?.params || {},
+    ...(typeof runner?.code === "string"
+      ? { code: runner.code }
+      : typeof error?.code === "string"
+        ? { code: error.code }
+        : {}),
+    params: runner?.params || error?.params || {},
     ...(Array.isArray(error?.issues)
       ? { issues: error.issues.map(serializeError) }
       : {}),

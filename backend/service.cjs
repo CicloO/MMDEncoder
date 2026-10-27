@@ -557,7 +557,14 @@ function createService({
           })
         ).stdout;
       } catch (e) {
-        setNotice(e.message);
+        if (e.runnerErrorData) {
+          const error = serializeError(e);
+          const notice = summary("ENGINE_DETECTION_CAUSE", {
+            detail: error.message,
+          });
+          notice.params = { error };
+          setNotice(notice);
+        } else setNotice(e.message);
         return;
       }
       await detector.trialEncoders({
