@@ -960,6 +960,7 @@ export default function App() {
             <input
               id="preset-name"
               autoFocus
+              data-modal-autofocus
               maxLength={80}
               value={presetName}
               onChange={(e) => setPresetName(e.target.value)}

@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { t } from "./i18n";
 import type { ReactNode, ButtonHTMLAttributes, DragEvent } from "react";
 export function Button({
@@ -16,6 +16,7 @@ export function Button({
       onClick={onClick}
       className={`button ${variant} ${className}`}
       {...rest}
+      data-modal-autofocus={rest.autoFocus || undefined}
     >
       {children}
     </button>
@@ -86,6 +87,17 @@ export function Select({
     </Field>
   );
 }
+// Keep the external opener across a direct dialog handoff (for example engine
+// settings -> logs). Nested dialogs keep their own parent-control return target.
+let externalModalOpener: HTMLElement | null = null;
+function canFocus(element: HTMLElement | null): element is HTMLElement {
+  return (
+    !!element?.isConnected &&
+    !element.matches(":disabled") &&
+    !element.closest('[hidden], [inert], [aria-hidden="true"]') &&
+    element.getClientRects().length > 0
+  );
+}
 export function Modal({
   open,
   onClose,
@@ -105,12 +117,66 @@ export function Modal({
   fixedHeight?: boolean;
   children: ReactNode;
 }) {
+  const content = useRef<HTMLDivElement>(null);
+  const opener = useRef<{
+    element: HTMLElement | null;
+    dialog: Element | null;
+  }>({ element: null, dialog: null });
+  useLayoutEffect(() => {
+    if (!open) return;
+    const active = document.activeElement;
+    const element =
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      !content.current?.contains(active)
+        ? active
+        : null;
+    if (element && !element.closest('[role="dialog"]'))
+      externalModalOpener = element;
+    const target = element || externalModalOpener;
+    opener.current = {
+      element: target,
+      dialog: target?.closest('[role="dialog"]') || null,
+    };
+  }, [open]);
   return (
     <Dialog.Root open={open} onOpenChange={(v) => !v && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="overlay" />
         <Dialog.Content
+          ref={content}
           className={`modal${wide ? " wide" : ""}${fixedHeight ? " modal-fixed" : ""}`}
+          onOpenAutoFocus={(event) => {
+            const target =
+              content.current?.querySelector<HTMLElement>(
+                "[data-modal-autofocus], [autofocus]",
+              ) || null;
+            if (canFocus(target)) {
+              target.focus({ preventScroll: true });
+              if (document.activeElement === target) event.preventDefault();
+            }
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const { element, dialog } = opener.current;
+            const remaining = document.querySelector<HTMLElement>(
+              '[role="dialog"][data-state="open"]:not([aria-hidden="true"])',
+            );
+            if (remaining) {
+              if (canFocus(element) && remaining.contains(element))
+                element.focus({ preventScroll: true });
+              else if (remaining === dialog)
+                remaining
+                  .querySelector<HTMLElement>(
+                    'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]',
+                  )
+                  ?.focus({ preventScroll: true });
+              return;
+            }
+            const target = canFocus(element) ? element : externalModalOpener;
+            if (canFocus(target)) target.focus({ preventScroll: true });
+            externalModalOpener = null;
+          }}
         >
           <div className="modal-scroll">
             <div className="modal-head">
