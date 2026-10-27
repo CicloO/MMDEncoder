@@ -69,6 +69,8 @@ function createEncodeQueue({
   probeLimit,
   schema,
   reorder,
+  formatCopiedCommand = (commands) =>
+    core.commandText(commands, { prepare: true }),
 }) {
   // Presentation times (seconds, ascending) of about the first 120 frames.
   // Packet timestamps need no decoding (a 4K intermediate took seconds to
@@ -385,7 +387,7 @@ function createEncodeQueue({
       summary: summaryData?.message || "",
       summaryData,
       maskEncoding: commands.find((c) => c.maskEncoding)?.maskEncoding,
-      command: core.commandText(commands, { prepare: true }),
+      command: formatCopiedCommand(commands),
       errors: [...new Set(issues.map((issue) => issue.message))],
       issues,
     };

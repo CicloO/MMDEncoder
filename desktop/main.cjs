@@ -19,6 +19,7 @@ const {
 } = require("../backend/update.cjs");
 const { createUpdater } = require("../backend/selfupdate.cjs");
 const { appError } = require("../backend/errors.cjs");
+const { commandText } = require("../backend/command-text.cjs");
 const { createTranslator } = require("../locales/runtime.mjs");
 const localeRegistry = require("../locales/registry.json");
 const desktopLocale = createTranslator({
@@ -105,6 +106,8 @@ else {
       service = createService({
         engineDir,
         dataDir,
+        formatCopiedCommand: (commands) =>
+          commandText(commands, { prepare: true }),
         toolsRoot:
           process.env.MMD_ENCODER_TOOLS_ROOT || process.env.MMD_ENCODER_TOOLS,
         onUpdate: (s) => {

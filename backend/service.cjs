@@ -46,6 +46,7 @@ function createService({
   toolsRoot = process.env.MMD_TEST_TOOLS_ROOT,
   toolOptions = {},
   localeRegistry,
+  formatCopiedCommand,
   // MMD export plugin DLL shipped with the app (packaged) or built locally (dev).
   mmdPluginDll = [
     path.join(__dirname, "..", "mmd-plugin", "MMDEncoderPlugin.dll"),
@@ -749,6 +750,9 @@ function createService({
     probeLimit: ctx.probeLimit,
     schema,
     reorder,
+    formatCopiedCommand:
+      formatCopiedCommand &&
+      ((commands) => formatCopiedCommand(commands, state.locale)),
   });
   const alignService = createAlignService({
     engineInfo: () => state.engineInfo,
