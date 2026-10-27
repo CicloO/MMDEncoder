@@ -197,7 +197,7 @@ else {
           event.sender !== win.webContents ||
           event.senderFrame !== win.webContents.mainFrame
         )
-          throw new Error("不受信任的界面");
+          throw appError("DESKTOP_UNTRUSTED_UI");
         if (action === "quit") {
           await service.invoke("cancel");
           await service.invoke("trimCancel");
@@ -215,11 +215,11 @@ else {
         }
         if (action === "pickFiles") {
           const result = await dialog.showOpenDialog(win, {
-            title: "添加视频",
+            title: desktopText("dialog.video.add"),
             properties: ["openFile", "multiSelections"],
             filters: [
               {
-                name: "视频文件",
+                name: desktopText("dialog.video.files"),
                 extensions: [
                   "avi",
                   "mov",
@@ -237,10 +237,10 @@ else {
                 ],
               },
               {
-                name: "PNG 图片序列（选其中任意一张）",
+                name: desktopText("dialog.video.pngSequence"),
                 extensions: ["png"],
               },
-              { name: "所有文件", extensions: ["*"] },
+              { name: desktopText("dialog.files.all"), extensions: ["*"] },
             ],
           });
           return result.canceled
@@ -249,13 +249,13 @@ else {
         }
         if (action === "pickMedia") {
           const result = await dialog.showOpenDialog(win, {
-            title: "选择媒体文件",
+            title: desktopText("dialog.media.pick"),
             properties: payload?.multiple
               ? ["openFile", "multiSelections"]
               : ["openFile"],
             filters: [
               {
-                name: "音视频文件",
+                name: desktopText("dialog.media.files"),
                 extensions: [
                   "avi",
                   "mov",
@@ -272,7 +272,7 @@ else {
                   "mka",
                 ],
               },
-              { name: "全部文件", extensions: ["*"] },
+              { name: desktopText("dialog.media.allFiles"), extensions: ["*"] },
             ],
           });
           if (result.canceled) return null;
@@ -281,20 +281,24 @@ else {
         if (action === "pickMediaOutput") {
           const result = await dialog.showSaveDialog(
             win,
-            mediaOutputDialogOptions(payload),
+            mediaOutputDialogOptions(payload, desktopText),
           );
           return result.canceled ? null : result.filePath;
         }
         if (action === "pickDirectory") {
           const r = await dialog.showOpenDialog(win, {
-            title: payload?.title || "选择统一输出目录",
+            title: payload?.title || desktopText("dialog.directory.output"),
             properties: ["openDirectory", "createDirectory"],
           });
           return r.canceled ? null : r.filePaths[0];
         }
         if (action === "copyCommand") {
           const p = await service.invoke("preview", payload);
-          if (p.errors.length) throw new Error(p.errors.join("\n"));
+          if (p.errors.length)
+            throw appError("VIDEO_COMMAND_INVALID", {
+              detail: p.errors.join("\n"),
+              errors: p.issues || [],
+            });
           clipboard.writeText(p.command);
           return p;
         }
@@ -374,7 +378,7 @@ else {
               } catch {}
             }
           } catch {}
-          if (!last) throw new Error("还没有 MMD 导出记录");
+          if (!last) throw appError("MMD_HISTORY_EMPTY");
           const file = [last.output, last.mask].find(
             (f) => f && fsSync.existsSync(f),
           );
@@ -384,7 +388,7 @@ else {
           }
           const dir = path.dirname(last.output);
           if (!fsSync.existsSync(dir))
-            throw new Error("上次导出的文件夹已不存在：" + dir);
+            throw appError("MMD_HISTORY_DIRECTORY_MISSING", { path: dir });
           await shell.openPath(dir);
           return null;
         }
@@ -424,14 +428,14 @@ else {
         }
         if (action === "openProjectPage") {
           const url = PROJECT_PAGES[payload?.page];
-          if (!url) throw new Error("未知的项目页面");
+          if (!url) throw appError("PROJECT_PAGE_UNKNOWN");
           await shell.openExternal(url);
           return null;
         }
         if (action === "openReleasePage") {
           const url = String(payload?.url || RELEASES_URL);
           if (url !== RELEASES_URL && !url.startsWith(RELEASES_URL + "/"))
-            throw new Error("只能打开本项目的发行页");
+            throw appError("RELEASE_PAGE_UNTRUSTED");
           await shell.openExternal(url);
           return null;
         }
@@ -446,7 +450,7 @@ else {
             ]),
           ].filter(Boolean);
           if (!allowed.includes(payload?.path))
-            throw new Error("只能打开当前任务的文件位置");
+            throw appError("REVEAL_PATH_UNTRUSTED");
           shell.showItemInFolder(payload.path);
           return null;
         }
@@ -516,7 +520,8 @@ else {
           "preview",
           "logs",
         ];
-        if (!allowed.includes(action)) throw new Error("不支持的操作");
+        if (!allowed.includes(action))
+          throw appError("DESKTOP_ACTION_UNSUPPORTED");
         return service.invoke(action, payload);
       });
       await win.loadFile(path.join(__dirname, "../dist/index.html"));

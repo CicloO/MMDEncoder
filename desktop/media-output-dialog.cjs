@@ -1,6 +1,7 @@
 // Pure parameters for the media output picker. Main owns the native window,
 // sender checks and the dialog result.
-function mediaOutputDialogOptions(payload) {
+const { sourceText } = require("../backend/errors.cjs");
+function mediaOutputDialogOptions(payload, text = sourceText) {
   const extensions = {
     wav: "wav",
     flac: "flac",
@@ -13,9 +14,9 @@ function mediaOutputDialogOptions(payload) {
       ? extensions[payload.audioFormat] || "wav"
       : "mkv";
   return {
-    title: "选择新的输出文件",
+    title: text("dialog.output.pick"),
     defaultPath: "output." + ext,
-    filters: [{ name: "输出文件", extensions: [ext] }],
+    filters: [{ name: text("dialog.output.files"), extensions: [ext] }],
   };
 }
 module.exports = { mediaOutputDialogOptions };

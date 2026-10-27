@@ -90,11 +90,19 @@ contextBridge.exposeInMainWorld("encoder", {
   // Structured replies cross contextBridge as plain data. Custom properties
   // on a rejected Error do not reliably survive that second Electron boundary.
   invokeResult(action, payload) {
-    if (!allowed.has(action)) return Promise.reject(new Error("不支持的操作"));
+    if (!allowed.has(action))
+      return Promise.resolve({
+        __mmdError: {
+          code: "DESKTOP_ACTION_UNSUPPORTED",
+          params: {},
+          message: "Unsupported action",
+        },
+      });
     return ipcRenderer.invoke("encoder:action", action, payload);
   },
   invoke(action, payload) {
-    if (!allowed.has(action)) return Promise.reject(new Error("不支持的操作"));
+    if (!allowed.has(action))
+      return Promise.reject(new Error("Unsupported action"));
     return ipcRenderer
       .invoke("encoder:action", action, payload)
       .then((result) => {

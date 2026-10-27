@@ -53,13 +53,16 @@ function formatErrorValue(value: ReturnType<typeof serializeError>): string {
       detail: diagnosticErrorMessage(value.params.error),
     });
   if (
-    value.code === "PRESET_SETTINGS_INVALID" &&
-    Array.isArray(value.params.errors)
+    ["PRESET_SETTINGS_INVALID", "VIDEO_COMMAND_INVALID"].includes(
+      value.code || "",
+    ) &&
+    Array.isArray(value.params.errors) &&
+    value.params.errors.length
   )
-    return localeRuntime.t("error.PRESET_SETTINGS_INVALID", {
+    return localeRuntime.t(`error.${value.code}`, {
       detail: [
         ...new Set(value.params.errors.map(diagnosticErrorMessage)),
-      ].join("；"),
+      ].join(value.code === "PRESET_SETTINGS_INVALID" ? "；" : "\n"),
     });
   return (
     formatTrimMessage(localeRuntime, value) ??
@@ -78,7 +81,12 @@ export function diagnosticErrorMessage(error: unknown) {
 }
 
 export function errorMessage(error: unknown) {
-  return diagnosticErrorMessage(error).replace(
+  const value = serializeError(error);
+  const display = diagnosticErrorMessage(value);
+  // Coded IPC records are already unwrapped. A cause that happens to begin
+  // with Electron's wording must remain an exact diagnostic.
+  if (value.code) return display;
+  return display.replace(
     /^Error invoking remote method '[^']+': (?:Error: )?/,
     "",
   );
