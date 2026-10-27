@@ -130,8 +130,9 @@ function reject(name, expected, catalog = pseudo) {
   assert.equal(result.error, undefined, result.error?.message);
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.ok(result.stdout.includes("renderFailure="), result.stdout);
+  const displayed = result.stdout.replace(/\r\n/g, "\n");
   for (const value of expected)
-    assert.ok(result.stdout.includes(value), value + "\n" + result.stdout);
+    assert.ok(displayed.includes(value), value + "\n" + result.stdout);
   checks.push(name);
 }
 try {
