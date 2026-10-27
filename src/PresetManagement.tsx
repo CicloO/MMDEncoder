@@ -205,7 +205,6 @@ export function usePresetManagement({
     dialogs: {
       save: (
         <Modal
-          error={error}
           open={modal === "save"}
           onClose={() => setModal("")}
           title={t("preset.save.title")}

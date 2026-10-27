@@ -238,10 +238,12 @@ try {
   await expect(
     dialog("preset.save.title").getByRole("alert").first(),
   ).toContainText(source["error.PRESET_DUPLICATE"]);
+  await expect(dialog("preset.save.title").getByRole("alert")).toHaveCount(1);
   await choose("en-XA");
   await expect(
     dialog("preset.save.title").getByRole("alert").first(),
   ).toContainText(pseudo["error.PRESET_DUPLICATE"]);
+  await expect(dialog("preset.save.title").getByRole("alert")).toHaveCount(1);
   await expect(input()).toHaveValue("User 原名 {a}");
   await layout("preset.save.title", "save-error-long");
   await input().fill("User 新存 {d}");
