@@ -172,14 +172,17 @@ try {
   ])
     assert.equal((await request(url)).status, 404, url);
   assert.equal((await request(stream, { method: "POST" })).status, 405);
-  assert.equal(
+  assert.deepEqual(
     await page.evaluate(() =>
-      window.encoder.invokeResult("trimPreviewSource", {}).then(
-        () => false,
-        () => true,
-      ),
+      window.encoder.invokeResult("trimPreviewSource", {}),
     ),
-    true,
+    {
+      __mmdError: {
+        code: "DESKTOP_ACTION_UNSUPPORTED",
+        params: {},
+        message: "Unsupported action",
+      },
+    },
   );
 
   const video = page.locator(".trim-preview video");
