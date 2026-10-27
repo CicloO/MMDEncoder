@@ -147,6 +147,7 @@ test("native snapshots include every error code reachable from MMD command valid
     "backend/filter.cjs",
     "backend/commands.cjs",
     "backend/mask-settings.cjs",
+    "backend/core.cjs",
   ]) {
     const tree = ts.createSourceFile(
       file,

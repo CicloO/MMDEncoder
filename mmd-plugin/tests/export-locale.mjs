@@ -193,6 +193,11 @@ try {
   };
   // The formatter's fallback for an unknown issue remains its full original text.
   fixture.fixtureError.issues.push({
+    code: "OUTPUT_NAME_EXHAUSTED",
+    params: {},
+    message: source["error.OUTPUT_NAME_EXHAUSTED"],
+  });
+  fixture.fixtureError.issues.push({
     code: "FUTURE_CAUSE",
     params: {},
     message: unknown,
@@ -207,7 +212,11 @@ try {
   );
   assert.equal(
     formatted.error,
-    pseudo["error.VALIDATION_FAILED"] + "\nraw fallback\n" + unknown,
+    pseudo["error.VALIDATION_FAILED"] +
+      "\nraw fallback\n" +
+      pseudo["error.OUTPUT_NAME_EXHAUSTED"] +
+      "\n" +
+      unknown,
   );
   checks.push("formatter-issues-and-unknown-fallback");
 } finally {
