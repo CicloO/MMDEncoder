@@ -4,13 +4,10 @@ import {
   Moon,
   ArrowDownToLine,
   Plus,
-  FolderOpen,
   Layers,
   Settings2,
   Check,
-  RefreshCw,
   Bookmark,
-  Cpu,
   LoaderCircle,
   Clapperboard,
 } from "lucide-react";
@@ -28,19 +25,18 @@ import { AboutDialog, type UpdateCheck, type AppUpdate } from "./AboutDialog";
 import { VideoSettingsPanel } from "./VideoSettingsPanel";
 import { PresetList } from "./PresetList";
 import { MmdExportDialog, useMmdExport } from "./MmdExportDialog";
+import {
+  EngineManagementDialog,
+  EngineStatusButton,
+  useEngineInstallationPrompt,
+} from "./EngineManagement";
 import { createActions } from "./actions";
 import { invoke } from "./ipc";
 import { errorMessage, summaryMessage, t, notification } from "./i18n";
 import { serializeError } from "../locales/messages.mjs";
 import type { VideoFix } from "./VideoFeedback";
 import type { ErrorData, MessageDescriptor } from "./i18n";
-import {
-  engineLabel,
-  presetLabel,
-  videoName,
-  formatSize,
-  compatibilityErrors,
-} from "./presentation";
+import { presetLabel, videoName, compatibilityErrors } from "./presentation";
 import type { State, Settings, Preview, Job, Preset } from "./types";
 
 // Which kind of encoder an id names, for encoders not detected here.
@@ -254,14 +250,9 @@ export default function App() {
       if (noticeTimer.current) clearTimeout(noticeTimer.current);
     };
   }, []);
-  const installationPrompted = useRef(false);
-  useEffect(() => {
-    if (state?.located && !installationPrompted.current) {
-      installationPrompted.current = true;
-      if (!state.engineInfo.ffmpeg || !state.engineInfo.ffprobe)
-        setModal("engines");
-    }
-  }, [state?.located]);
+  useEngineInstallationPrompt(state?.located, state?.engineInfo, () =>
+    setModal("engines"),
+  );
   const jobs = state?.jobs || [],
     job = jobs.find((j) => j.id === selected) || jobs[0],
     s = draft,
@@ -304,12 +295,13 @@ export default function App() {
       cancelled = true;
     };
   }, [s, state?.engines]);
-  const { call, action } = createActions({
+  const actions = createActions({
     request: invoke,
     onState: receive,
     onError: (text, data) => setError(data || text),
     onNotice: notify,
   });
+  const { call, action } = actions;
   const {
     busy: mmdBusy,
     call: mmdCall,
@@ -682,14 +674,11 @@ export default function App() {
           >
             {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
           </Button>
-          <Button onClick={() => setModal("engines")}>
-            <span
-              className={`status-dot ${state.detecting ? "pending" : ""}`}
-            />
-            {state.detecting
-              ? "检测编码器…"
-              : `${state.engines.length} 个可用编码器`}
-          </Button>
+          <EngineStatusButton
+            detecting={state.detecting}
+            count={state.engines.length}
+            onOpen={() => setModal("engines")}
+          />
           <Button onClick={() => setModal("presets")}>
             <Bookmark size={16} />
             预设管理
@@ -1128,180 +1117,24 @@ export default function App() {
         onInstall={() => void installUpdate()}
         action={action}
       />
-      <Modal
-        error={error}
+      <EngineManagementDialog
         open={modal === "engines"}
         onClose={() => setModal("")}
-        fixedHeight
-        title="编码引擎"
-        description="首次使用从官方来源下载工具到本机；安装后可离线编码，无需管理员权限。"
-      >
-        {state.tools && (
-          <section
-            className="modal-section"
-            aria-label="工具安装与更新"
-            aria-busy={state.tools.busy}
-          >
-            <h3>编码工具</h3>
-            <p className="hint">
-              FFmpeg / ffprobe：Gyan · NVEncC：rigaya / GitHub
-            </p>
-            {state.tools.phase === "downloading" && (
-              <p>
-                {formatSize(state.tools.received)}
-                {state.tools.total
-                  ? ` / ${formatSize(state.tools.total)}`
-                  : " · 总大小待服务器确认"}
-              </p>
-            )}
-            <Field id="tools-root" label="安装位置">
-              <div className="path-picker">
-                <input
-                  id="tools-root"
-                  value={state.tools.root}
-                  readOnly
-                  title={state.tools.root}
-                />
-                <Button
-                  disabled={
-                    state.tools.busy ||
-                    state.running ||
-                    state.trim.running ||
-                    state.detecting
-                  }
-                  title="已安装的工具会一起移到新位置；选择已装有本软件工具的文件夹则直接使用"
-                  onClick={async () => {
-                    try {
-                      const dir = await call("pickDirectory", {
-                        title: "选择编码工具安装位置",
-                      });
-                      if (dir)
-                        await call(
-                          "setToolsRoot",
-                          { root: dir },
-                          "已更改编码工具安装位置",
-                        );
-                    } catch {}
-                  }}
-                >
-                  <FolderOpen size={15} />
-                  更改位置
-                </Button>
-                <Button
-                  disabled={
-                    state.tools.busy ||
-                    state.running ||
-                    state.trim.running ||
-                    state.detecting
-                  }
-                  onClick={() =>
-                    action("setToolsRoot", { root: "" }, "已恢复默认安装位置")
-                  }
-                >
-                  恢复默认
-                </Button>
-              </div>
-            </Field>
-            <div className="status-row">
-              <div>
-                <p role={state.tools.phase === "error" ? "alert" : "status"}>
-                  {state.tools.message}
-                </p>
-                <p className="hint">
-                  {Object.entries(state.tools.installed)
-                    .map(
-                      ([id, tool]) =>
-                        `${id} ${tool.version}（${tool.verifiedHash ? "发布 SHA-256 已验证" : "发布方未提供校验值"}）`,
-                    )
-                    .join(" · ") || "尚未安装编码工具"}
-                </p>
-              </div>
-              <div className="row-actions">
-                <Button
-                  disabled={
-                    state.tools.busy ||
-                    state.running ||
-                    state.trim.running ||
-                    state.detecting
-                  }
-                  onClick={() => action("checkTools")}
-                >
-                  检查工具更新
-                </Button>
-                <Button
-                  disabled={
-                    state.tools.busy ||
-                    state.running ||
-                    state.trim.running ||
-                    state.detecting
-                  }
-                  onClick={() => action("installTools")}
-                >
-                  {state.tools.busy
-                    ? "正在处理…"
-                    : state.tools.phase === "error"
-                      ? "重试下载并安装"
-                      : "下载并安装最新工具"}
-                </Button>
-              </div>
-            </div>
-            {(state.running || state.trim.running) && (
-              <p>编码或剪辑导出结束后可更新工具。</p>
-            )}
-          </section>
-        )}
-        <div className="engine-list">
-          {state.engines.map((e) => (
-            <div className="engine-item" key={e.id}>
-              <Cpu size={17} />
-              <strong>{engineLabel(e)}</strong>
-              <span>
-                <Check size={14} />
-                可用
-              </span>
-            </div>
-          ))}
-        </div>
-        {state.detecting && (
-          <p role="status">
-            <LoaderCircle size={16} className="spin" /> 正在测试硬件编码能力…
-          </p>
-        )}
-        {!state.detecting && !state.engines.length && (
-          <p className="inline-error">
-            尚无可用编码器。请下载编码工具，或在安装完成后重新检测。
-          </p>
-        )}
-        <details className="engine-paths">
-          <summary>引擎位置</summary>
-          {Object.entries(state.engineInfo).map(([key, value]) => (
-            <p key={key}>
-              <strong>{key}</strong>
-              <code>{value || "未找到"}</code>
-            </p>
-          ))}
-        </details>
-        <div className="modal-actions">
-          <Button onClick={() => action("openDataFolder")}>配置与日志</Button>
-          <Button
-            onClick={async () => {
-              try {
-                setLog(await call("logs", {}));
-                setModal("logs");
-              } catch {}
-            }}
-          >
-            检测日志与版本
-          </Button>
-          <Button
-            disabled={state.detecting || state.running}
-            onClick={() => action("detect")}
-          >
-            <RefreshCw size={15} />
-            重新检测
-          </Button>
-        </div>
-      </Modal>
+        error={error}
+        status={{
+          tools: state.tools,
+          engines: state.engines,
+          engineInfo: state.engineInfo,
+          detecting: state.detecting,
+          running: state.running,
+          trimRunning: state.trim.running,
+        }}
+        actions={actions}
+        onShowLog={(text) => {
+          setLog(text);
+          setModal("logs");
+        }}
+      />
       <Modal
         error={error}
         open={modal === "logs"}
