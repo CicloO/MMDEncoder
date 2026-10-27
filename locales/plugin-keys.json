@@ -119,5 +119,7 @@
   "error.MMD_AUDIO_AUTO_SHIFT_INVALID",
   "error.MMD_AUDIO_RATE_REQUIRED",
   "error.MMD_AUDIO_SHIFT_SAMPLE_RANGE",
-  "message.MMD_AUDIO_SHIFT"
+  "message.MMD_AUDIO_SHIFT",
+  "plugin.audioShift",
+  "plugin.audioAutoShift"
 ]

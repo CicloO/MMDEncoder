@@ -101,13 +101,13 @@ static void inspectSettings(HWND dialog) {
   }
   bool fits = true;
   RECT client{}; GetClientRect(dialog, &client);
-  for (int id : {102, 106, 108, 109, 110, 105, 107, IDOK, IDCANCEL}) {
+  for (int id : {102, 106, 108, 109, 110, 105, 107, IDOK, IDCANCEL, 112, 115}) {
     HWND child = GetDlgItem(dialog, id); RECT r{}; GetClientRect(child, &r);
     wchar_t text[8192]{}; GetWindowTextW(child, text, 8192);
     HDC dc = GetDC(child); auto old = SelectObject(dc, (HFONT)SendMessageW(child, WM_GETFONT, 0, 0));
     RECT measured{0,0,r.right,0};
     if (id == 108) DrawTextW(dc, text, -1, &measured, DT_CALCRECT | DT_WORDBREAK);
-    else { SIZE size{}; GetTextExtentPoint32W(dc, text, (int)wcslen(text), &size); measured.right = size.cx + ((id == 102 || id == 106) ? 24 : (id == 109 || id == 110) ? 0 : 16); measured.bottom=size.cy; }
+    else { SIZE size{}; GetTextExtentPoint32W(dc, text, (int)wcslen(text), &size); measured.right = size.cx + ((id == 102 || id == 106 || id == 112) ? 24 : (id == 109 || id == 110 || id == 115) ? 0 : 16); measured.bottom=size.cy; }
     SelectObject(dc, old); ReleaseDC(child, dc);
     RECT position{}; GetWindowRect(child,&position); MapWindowPoints(nullptr,dialog,(POINT*)&position,2);
     if (measured.right > r.right || measured.bottom > r.bottom || position.right > client.right || position.bottom > client.bottom) fits = false;
@@ -115,6 +115,9 @@ static void inspectSettings(HWND dialog) {
   for (int id : {101, 103, 104}) {
     RECT r{}; if (!SendDlgItemMessageW(dialog,id,CB_GETDROPPEDCONTROLRECT,0,(LPARAM)&r) || r.bottom-r.top < 50) fits=false;
   }
+  RECT edit{}; GetWindowRect(GetDlgItem(dialog, 111), &edit);
+  MapWindowPoints(nullptr, dialog, (POINT*)&edit, 2);
+  if (edit.left < 0 || edit.right > client.right || edit.right <= edit.left) fits = false;
   std::printf("layoutFits=%d\n", fits ? 1 : 0);
   wchar_t file[32768]{};
   if (GetEnvironmentVariableW(L"MMD_SIM_SCREENSHOT", file, 32768)) {
@@ -214,6 +217,17 @@ class RenderFailureGuard {
 
 int wmain(int argc, wchar_t** argv) {
   setvbuf(stdout, nullptr, _IONBF, 0);
+  // A no-argument launch is a bounded visual review on the interactive desktop.
+  // Command-line integration tests keep their existing explicit arguments.
+  const bool review = argc == 1;
+  std::wstring reviewDll;
+  wchar_t dialogMode[] = L"--dialog";
+  std::vector<wchar_t*> reviewArgs;
+  if (review) {
+    wchar_t executable[32768]{}; GetModuleFileNameW(nullptr, executable, 32768);
+    reviewDll = executable; reviewDll = reviewDll.substr(0, reviewDll.find_last_of(L"\\/")) + L"\\MMDEncoderPlugin.dll";
+    reviewArgs = {argv[0], dialogMode, reviewDll.data()}; argc = 3; argv = reviewArgs.data();
+  }
   // --dialog <plugin.dll>: open the codec settings window, as MMD's 詳細設定 does.
   if (argc >= 3 && (wcscmp(argv[1], L"--dialog") == 0 || wcscmp(argv[1], L"--dialog-test") == 0)) {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -227,6 +241,22 @@ int wmain(int argc, wchar_t** argv) {
       return std::printf("cannot create plugin\n"), 1;
     std::thread driver;
     bool tested = false;
+    if (review) {
+      const DWORD threadId = GetCurrentThreadId();
+      driver = std::thread([&tested, threadId] {
+        HWND settings = nullptr;
+        for (int i = 0; i < 500 && !settings; ++i) {
+          EnumThreadWindows(threadId, [](HWND window, LPARAM data) -> BOOL {
+            if (GetDlgItem(window, 107)) { *(HWND*)data = window; return FALSE; } return TRUE;
+          }, (LPARAM)&settings);
+          Sleep(10);
+        }
+        if (!settings) return;
+        tested = true;
+        for (int i = 0; i < 9000 && IsWindow(settings); ++i) Sleep(10);
+        if (IsWindow(settings)) PostMessageW(settings, WM_COMMAND, IDCANCEL, 0);
+      });
+    }
     if (wcscmp(argv[1], L"--dialog-test") == 0 && argc == 5) {
       const DWORD threadId = GetCurrentThreadId();
       const int mask = _wtoi(argv[3]);
@@ -252,6 +282,40 @@ int wmain(int argc, wchar_t** argv) {
         inspectSettings(settings);
         std::printf("settings window found\n");
         std::printf("initialMask=%lld\n", (long long)SendDlgItemMessageW(settings, 104, CB_GETCURSEL, 0, 0));
+        wchar_t initialShift[64]{}; GetDlgItemTextW(settings, 111, initialShift, 64);
+        std::printf("initialShift=%lld initialAutoShift=%d\n", _wtoi64(initialShift), (int)IsDlgButtonChecked(settings, 112));
+        wchar_t invalid[128]{}, validation[1024]{};
+        if (GetEnvironmentVariableW(L"MMD_SIM_AUDIO_INVALID", invalid, 128) && GetEnvironmentVariableW(L"MMD_SIM_VALIDATION_TEXT", validation, 1024)) {
+          SetDlgItemTextW(settings, 111, invalid);
+          PostMessageW(settings, WM_COMMAND, IDOK, 0);
+          HWND error = nullptr;
+          for (int i = 0; i < 500 && !error; ++i) { error = find(false); Sleep(10); }
+          if (!error) { std::printf("validation dialog missing\n"); PostMessageW(settings, WM_CLOSE, 0, 0); return; }
+          std::wstring body;
+          EnumChildWindows(error, [](HWND child, LPARAM data) -> BOOL {
+            wchar_t cls[64]{}, value[2048]{}; GetClassNameW(child, cls, 64);
+            if (!wcscmp(cls, L"Static") && GetWindowTextW(child, value, 2048)) *(std::wstring*)data += value;
+            return TRUE;
+          }, (LPARAM)&body);
+          HWND confirm = GetDlgItem(error, IDOK);
+          if (!confirm) confirm = GetDlgItem(error, IDCANCEL);
+          if (body != validation || !confirm) { std::printf("unexpected validation dialog\n"); return; }
+          PostMessageW(confirm, BM_CLICK, 0, 0);
+          for (int i = 0; i < 500 && IsWindow(error); ++i) Sleep(10);
+          std::printf("validationRejected=%d\n", !IsWindow(error) && IsWindow(settings));
+          tested = true; PostMessageW(settings, WM_COMMAND, IDCANCEL, 0); return;
+        }
+        wchar_t desired[64]{}, automatic[8]{};
+        if (GetEnvironmentVariableW(L"MMD_SIM_AUDIO_SHIFT", desired, 64)) {
+          SetDlgItemTextW(settings, 111, desired);
+          wchar_t after[64]{};
+          SendDlgItemMessageW(settings, 112, BM_CLICK, 0, 0);
+          GetDlgItemTextW(settings, 111, after, 64);
+          std::printf("manualRewrite=%d\n", wcscmp(after, desired) != 0);
+          if (GetEnvironmentVariableW(L"MMD_SIM_AUDIO_AUTO", automatic, 8) && IsDlgButtonChecked(settings, 112) != (_wtoi(automatic) ? BST_CHECKED : BST_UNCHECKED)) SendDlgItemMessageW(settings, 112, BM_CLICK, 0, 0);
+          std::printf("chosenShift=%lld chosenAutoShift=%d\n", _wtoi64(after), (int)IsDlgButtonChecked(settings, 112));
+          inspectSettings(settings);
+        }
         SendDlgItemMessageW(settings, 104, CB_SETCURSEL, mask, 0);
         PostMessageW(settings, WM_COMMAND, MAKEWPARAM(107, BN_CLICKED), (LPARAM)GetDlgItem(settings, 107));
         // The result is shown briefly on the test button (107), starting with

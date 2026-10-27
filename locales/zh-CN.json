@@ -134,7 +134,7 @@
   "plugin.fade": "音频淡入淡出",
   "plugin.fadeOff": "关闭",
   "plugin.fadeSeconds": "{seconds} 秒",
-  "plugin.note": "自动合成音频，完成后删除占位 AVI。此处选项优先级高于 MMDEncoder 预设本身。",
+  "plugin.note": "音频偏移正数延后，负数提前。自动合成音频，完成后删除占位 AVI。此处选项优先级高于 MMDEncoder 预设本身。",
   "plugin.openApp": "打开 MMDEncoder",
   "plugin.test": "编码测试",
   "plugin.testing": "测试中…",
@@ -1406,5 +1406,7 @@
   "error.MMD_AUDIO_AUTO_SHIFT_INVALID": "音频自动偏移开关无效",
   "error.MMD_AUDIO_RATE_REQUIRED": "无法读取音轨采样率，不能应用音频偏移",
   "error.MMD_AUDIO_SHIFT_SAMPLE_RANGE": "音频偏移过大，无法精确换算采样点",
-  "message.MMD_AUDIO_SHIFT": "音频偏移 {frames} 帧 = 设置 {manual} + 起点为 1 自动 {automatic}"
+  "message.MMD_AUDIO_SHIFT": "音频偏移 {frames} 帧 = 设置 {manual} + 起点为 1 自动 {automatic}",
+  "plugin.audioShift": "音频偏移（帧，30 fps）",
+  "plugin.audioAutoShift": "起点为 1 时自动 +1"
 }

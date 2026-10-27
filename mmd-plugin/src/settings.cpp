@@ -11,6 +11,10 @@
 #include <cstring>
 #include <shellapi.h>
 #include <vector>
+#include <cerrno>
+#include <cwchar>
+#include <cwctype>
+#include <cmath>
 
 // ------------------------------------------------------ settings window ---
 // MMD's "詳細設定" for this codec: the same choices as MMDEncoder's preset
@@ -18,7 +22,9 @@
 // saved to mmd-selection.json, which MMDEncoder also reads and writes; MMDEncoder adopts a
 // choice saved here as soon as it lands.
 
-enum { IDC_PRESET = 101, IDC_FOLLOW = 102, IDC_FADE = 103, IDC_MASK = 104, IDC_OPEN_APP = 105, IDC_SUFFIX = 106, IDC_TEST = 107 };
+enum { IDC_PRESET = 101, IDC_FOLLOW = 102, IDC_FADE = 103, IDC_MASK = 104, IDC_OPEN_APP = 105, IDC_SUFFIX = 106, IDC_TEST = 107,
+       IDC_SHIFT = 111, IDC_AUTO_SHIFT = 112, IDC_SHIFT_LABEL = 115 };
+static constexpr long long kMaxShiftFrames = 9007199254740991LL;
 static const double kFades[] = {0, 0.5, 1, 2};
 
 // Alpha mask: the choice overrides the preset's own alpha setting.
@@ -37,12 +43,32 @@ struct SettingsContext {
   bool rangeSuffix = true;  // name the file with the MMD frame range (_0400-0600f)
   int maskMode = 0;
   double audioFade = 0;
+  long long audioShiftFrames = 0;
+  bool audioAutoShift = true;
   std::wstring appExe;  // MMDEncoder.exe, from mmd-export.json
   std::wstring helper;
   bool testing = false;
   ProcessLog log;
   PluginMessages messages;
 };
+
+static bool readAudioShift(HWND dlg, SettingsContext* ctx, long long& value) {
+  HWND edit = GetDlgItem(dlg, IDC_SHIFT);
+  std::wstring text(GetWindowTextLengthW(edit) + 1, 0);
+  GetWindowTextW(edit, text.data(), (int)text.size());
+  wchar_t* end = nullptr;
+  errno = 0;
+  value = std::wcstoll(text.c_str(), &end, 10);
+  const bool converted = end != text.c_str();
+  while (*end && std::iswspace(*end)) ++end;
+  if (errno == ERANGE || !converted || *end || value < -kMaxShiftFrames || value > kMaxShiftFrames) {
+    MessageBoxW(dlg, ctx->messages.text(L"error.MMD_AUDIO_SHIFT_INVALID").c_str(), L"MMDEncoder", MB_OK | MB_ICONWARNING);
+    SetFocus(edit);
+    SendMessageW(edit, EM_SETSEL, 0, -1);
+    return false;
+  }
+  return true;
+}
 
 static bool readSettings(HWND dlg, SettingsContext* ctx) {
   int i = (int)SendDlgItemMessageW(dlg, IDC_PRESET, CB_GETCURSEL, 0, 0);
@@ -51,6 +77,10 @@ static bool readSettings(HWND dlg, SettingsContext* ctx) {
     return false;
   }
   ctx->presetId = ctx->presets[i].id;
+  long long shift;
+  if (!readAudioShift(dlg, ctx, shift)) return false;
+  ctx->audioShiftFrames = shift;
+  ctx->audioAutoShift = IsDlgButtonChecked(dlg, IDC_AUTO_SHIFT) == BST_CHECKED;
   ctx->followMmd = IsDlgButtonChecked(dlg, IDC_FOLLOW) == BST_CHECKED;
   ctx->rangeSuffix = IsDlgButtonChecked(dlg, IDC_SUFFIX) == BST_CHECKED;
   int f = (int)SendDlgItemMessageW(dlg, IDC_FADE, CB_GETCURSEL, 0, 0);
@@ -124,6 +154,8 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
     SendMessageW(presets, CB_SETCURSEL, selected, 0);
     CheckDlgButton(dlg, IDC_FOLLOW, ctx->followMmd ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(dlg, IDC_SUFFIX, ctx->rangeSuffix ? BST_CHECKED : BST_UNCHECKED);
+    SetDlgItemTextW(dlg, IDC_SHIFT, std::to_wstring(ctx->audioShiftFrames).c_str());
+    CheckDlgButton(dlg, IDC_AUTO_SHIFT, ctx->audioAutoShift ? BST_CHECKED : BST_UNCHECKED);
     HWND fade = GetDlgItem(dlg, IDC_FADE);
     int fadeIndex = 0;
     for (int i = 0; i < 4; i++) {
@@ -141,10 +173,12 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
   }
   if (ctx && ctx->testing && (msg == WM_CLOSE || msg == WM_COMMAND)) return TRUE;
   // A result belongs to the choices it tested: changing them resets the button.
-  if (msg == WM_COMMAND &&
+  // EDIT can notify while the template is created, before WM_INITDIALOG.
+  if (ctx && msg == WM_COMMAND &&
       ((HIWORD(wp) == CBN_SELCHANGE &&
         (LOWORD(wp) == IDC_PRESET || LOWORD(wp) == IDC_MASK || LOWORD(wp) == IDC_FADE)) ||
-       (HIWORD(wp) == BN_CLICKED && LOWORD(wp) == IDC_FOLLOW)))
+       (HIWORD(wp) == BN_CLICKED && (LOWORD(wp) == IDC_FOLLOW || LOWORD(wp) == IDC_AUTO_SHIFT)) ||
+       (HIWORD(wp) == EN_CHANGE && LOWORD(wp) == IDC_SHIFT)))
     SetDlgItemTextW(dlg, IDC_TEST, ctx->messages.text(L"plugin.test").c_str());
   if (msg == WM_COMMAND && LOWORD(wp) == IDC_TEST && HIWORD(wp) == BN_CLICKED) {
     if (!readSettings(dlg, ctx)) return TRUE;
@@ -154,10 +188,13 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
     // the last saved selection, even after a successful or failed test.
     std::string job = "{\"selection\":{\"presetId\":" + jsonString(ctx->presetId) +
                       ",\"followMmd\":" + (ctx->followMmd ? "true" : "false") +
+                      ",\"rangeSuffix\":" + (ctx->rangeSuffix ? "true" : "false") +
+                      ",\"audioShiftFrames\":" + std::to_string(ctx->audioShiftFrames) +
+                      ",\"audioAutoShift\":" + (ctx->audioAutoShift ? "true" : "false") +
                       ",\"maskMode\":\"" + kMaskModes[ctx->maskMode] +
                       "\",\"audioFade\":" + fade + "}}";
     ctx->testing = true;
-    const int controls[] = {IDC_PRESET, IDC_FOLLOW, IDC_SUFFIX, IDC_FADE, IDC_MASK, IDC_OPEN_APP, IDC_TEST, IDOK, IDCANCEL};
+    const int controls[] = {IDC_PRESET, IDC_FOLLOW, IDC_SUFFIX, IDC_FADE, IDC_MASK, IDC_SHIFT, IDC_AUTO_SHIFT, IDC_OPEN_APP, IDC_TEST, IDOK, IDCANCEL};
     for (int id : controls) EnableWindow(GetDlgItem(dlg, id), FALSE);
     SetDlgItemTextW(dlg, IDC_TEST, ctx->messages.text(L"plugin.testing").c_str());
     const ULONGLONG started = GetTickCount64();
@@ -227,14 +264,18 @@ void showSettings(HWND parent, HINSTANCE module, const std::wstring& dir, Proces
     ctx.followMmd = selection[L"followMmd"].type != Json::Bool || selection[L"followMmd"].b;
     ctx.rangeSuffix = selection[L"rangeSuffix"].type != Json::Bool || selection[L"rangeSuffix"].b;
     ctx.audioFade = selection[L"audioFade"].n;
+    const Json& shift = selection[L"audioShiftFrames"];
+    if (shift.type == Json::Number && std::isfinite(shift.n) && std::floor(shift.n) == shift.n &&
+        shift.n >= -kMaxShiftFrames && shift.n <= kMaxShiftFrames) ctx.audioShiftFrames = (long long)shift.n;
+    ctx.audioAutoShift = selection[L"audioAutoShift"].type != Json::Bool || selection[L"audioAutoShift"].b;
     for (int i = 0; i < 3; i++)
       if (selection[L"maskMode"].s == utf16(kMaskModes[i])) ctx.maskMode = i;
   }
   ctx.appExe = config[L"appExe"].s;
   ctx.helper = config[L"helper"].s;
 
-  DialogTemplate t(ctx.messages.text(L"plugin.title").c_str(), 270, 150);
-  const WORD STATIC_ = 0x0082, BUTTON_ = 0x0080, COMBO_ = 0x0085;
+  DialogTemplate t(ctx.messages.text(L"plugin.title").c_str(), 270, 188);
+  const WORD STATIC_ = 0x0082, BUTTON_ = 0x0080, COMBO_ = 0x0085, EDIT_ = 0x0081;
   t.control(0xFFFF, STATIC_, SS_LEFT, 10, 8, 250, 9, ctx.messages.text(L"plugin.preset").c_str());
   t.control(IDC_PRESET, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 19, 250, 160, L"");
   t.control(IDC_FOLLOW, BUTTON_, BS_AUTOCHECKBOX | WS_TABSTOP, 10, 38, 250, 11,
@@ -245,12 +286,15 @@ void showSettings(HWND parent, HINSTANCE module, const std::wstring& dir, Proces
   t.control(IDC_MASK, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 79, 120, 80, L"");
   t.control(110, STATIC_, SS_LEFT, 140, 68, 120, 9, ctx.messages.text(L"plugin.fade").c_str());
   t.control(IDC_FADE, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 140, 79, 120, 80, L"");
-  t.control(108, STATIC_, SS_LEFT, 10, 102, 250, 18,
+  t.control(IDC_SHIFT_LABEL, STATIC_, SS_LEFT, 10, 102, 120, 9, ctx.messages.text(L"plugin.audioShift").c_str());
+  t.control(IDC_SHIFT, EDIT_, WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP, 10, 113, 120, 15, L"0");
+  t.control(IDC_AUTO_SHIFT, BUTTON_, BS_AUTOCHECKBOX | WS_TABSTOP, 140, 113, 120, 15, ctx.messages.text(L"plugin.audioAutoShift").c_str());
+  t.control(108, STATIC_, SS_LEFT, 10, 136, 250, 22,
             ctx.messages.text(L"plugin.note").c_str());
-  t.control(IDC_OPEN_APP, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 10, 128, 80, 15, ctx.messages.text(L"plugin.openApp").c_str());
-  t.control(IDC_TEST, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 94, 128, 50, 15, ctx.messages.text(L"plugin.test").c_str());
-  t.control(IDOK, BUTTON_, BS_DEFPUSHBUTTON | WS_TABSTOP, 148, 128, 54, 15, ctx.messages.text(L"plugin.ok").c_str());
-  t.control(IDCANCEL, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 206, 128, 54, 15, ctx.messages.text(L"plugin.cancel").c_str());
+  t.control(IDC_OPEN_APP, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 10, 166, 80, 15, ctx.messages.text(L"plugin.openApp").c_str());
+  t.control(IDC_TEST, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 94, 166, 50, 15, ctx.messages.text(L"plugin.test").c_str());
+  t.control(IDOK, BUTTON_, BS_DEFPUSHBUTTON | WS_TABSTOP, 148, 166, 54, 15, ctx.messages.text(L"plugin.ok").c_str());
+  t.control(IDCANCEL, BUTTON_, BS_PUSHBUTTON | WS_TABSTOP, 206, 166, 54, 15, ctx.messages.text(L"plugin.cancel").c_str());
   if (DialogBoxIndirectParamW(module, t.get(), parent, settingsProc, (LPARAM)&ctx) != 1) return;
 
   SYSTEMTIME st;
@@ -263,6 +307,8 @@ void showSettings(HWND parent, HINSTANCE module, const std::wstring& dir, Proces
                      (ctx.followMmd ? "true" : "false") + ",\n  \"maskMode\": \"" + kMaskModes[ctx.maskMode] +
                      "\",\n  \"rangeSuffix\": " + (ctx.rangeSuffix ? "true" : "false") +
                      ",\n  \"audioFade\": " + fade +
+                     ",\n  \"audioShiftFrames\": " + std::to_string(ctx.audioShiftFrames) +
+                     ",\n  \"audioAutoShift\": " + (ctx.audioAutoShift ? "true" : "false") +
                      ",\n  \"savedAt\": \"" + saved + "\"\n}\n";
   std::wstring file = dir + L"\\mmd-selection.json", tmp = file + L".tmp";
   HANDLE h = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
