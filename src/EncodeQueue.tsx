@@ -629,22 +629,25 @@ export function useSoftwareRetry(call: RequestCall, error: string) {
         error={error}
         open={!!fallback}
         onClose={() => setFallback(null)}
-        title="改用软件编码重试"
-        description="软件编码速度通常更慢。CQ 与 CRF 不等效，重试将使用软件编码预设，并保留可兼容的输出设置。"
+        title={t("queue.softwareRetry.title")}
+        description={t("queue.softwareRetry.description")}
       >
         <p>
-          重试参数：
-          {fallback?.settings?.encoder.includes("hevc")
-            ? "HEVC · libx265"
-            : fallback?.settings?.encoder.includes("av1")
-              ? "AV1 · libsvtav1"
-              : "H.264 · libx264"}
-          ，CRF 18，
-          {fallback?.settings?.encoder.includes("av1") ? "预设 6" : "medium"}
-          ；关闭硬件前向分析。分辨率、帧率、音频和位深保持原任务设置；不兼容项会要求调整。
+          {t("queue.softwareRetry.parameters", {
+            encoder: fallback?.settings?.encoder.includes("hevc")
+              ? "HEVC · libx265"
+              : fallback?.settings?.encoder.includes("av1")
+                ? "AV1 · libsvtav1"
+                : "H.264 · libx264",
+            preset: fallback?.settings?.encoder.includes("av1")
+              ? t("queue.softwareRetry.av1Preset")
+              : "medium",
+          })}
         </p>
         <div className="modal-actions">
-          <Button onClick={() => setFallback(null)}>取消</Button>
+          <Button onClick={() => setFallback(null)}>
+            {t("common.cancel")}
+          </Button>
           <Button
             variant="primary"
             onClick={async () => {
@@ -654,7 +657,7 @@ export function useSoftwareRetry(call: RequestCall, error: string) {
               } catch {}
             }}
           >
-            软件编码重试
+            {t("queue.softwareRetry.confirm")}
           </Button>
         </div>
       </Modal>

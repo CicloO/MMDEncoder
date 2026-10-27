@@ -231,9 +231,11 @@ export default function App() {
   }
   useEffect(() => {
     if (!window.encoder) {
-      setError(
-        "请通过 MMDEncoder.exe 启动桌面应用，以访问本地视频和编码引擎。",
-      );
+      setError({
+        code: "DESKTOP_LAUNCH_REQUIRED",
+        params: {},
+        message: t("error.DESKTOP_LAUNCH_REQUIRED"),
+      });
       return;
     }
     const off = window.encoder.onUpdate(receive);
@@ -242,8 +244,7 @@ export default function App() {
         setModal("close");
       else void flushAndQuit();
     });
-    window.encoder
-      .invoke("state")
+    invoke("state")
       .then(receive)
       .catch((e) => setError(serializeError(e)));
     return () => {
@@ -558,7 +559,7 @@ export default function App() {
           <p role="alert">{error}</p>
         ) : (
           <p>
-            <LoaderCircle className="spin" size={16} /> 正在读取配置…
+            <LoaderCircle className="spin" size={16} /> {t("app.loading")}
           </p>
         )}
       </main>
@@ -596,15 +597,17 @@ export default function App() {
             <h1>
               MMD<span>Encoder</span>
             </h1>
-            <p>让每一帧，恰到好处。</p>
+            <p>{t("app.tagline")}</p>
           </div>
           <span className="version">{__APP_VERSION__}</span>
         </div>
         <div className="header-actions">
           <Button
             className="theme-toggle"
-            aria-label={theme === "dark" ? "切换到白天模式" : "切换到黑夜模式"}
-            title={theme === "dark" ? "切换到白天模式" : "切换到黑夜模式"}
+            aria-label={t(
+              theme === "dark" ? "app.theme.light" : "app.theme.dark",
+            )}
+            title={t(theme === "dark" ? "app.theme.light" : "app.theme.dark")}
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           >
             {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
@@ -620,7 +623,7 @@ export default function App() {
           </Button>
           <Button onClick={() => setModal("mmd")}>
             <Clapperboard size={16} />
-            MMD 导出
+            {t("mmd.title")}
           </Button>
           <Button
             className="about-button"
@@ -633,7 +636,7 @@ export default function App() {
           </Button>
         </div>
       </header>
-      <nav className="workspace-tabs" aria-label="功能页">
+      <nav className="workspace-tabs" aria-label={t("app.navigation")}>
         <Button
           aria-pressed={workspace === "encode"}
           onClick={() => {
@@ -641,7 +644,7 @@ export default function App() {
             setWorkspace("encode");
           }}
         >
-          视频压制
+          {t("app.workspace.encode")}
         </Button>
         <Button
           aria-pressed={workspace === "media"}
@@ -650,7 +653,7 @@ export default function App() {
             setWorkspace("media");
           }}
         >
-          音视频提取与合并
+          {t("app.workspace.media")}
         </Button>
         <Button
           aria-pressed={workspace === "trim"}
@@ -659,7 +662,7 @@ export default function App() {
             setWorkspace("trim");
           }}
         >
-          无损剪辑
+          {t("app.workspace.trim")}
         </Button>
       </nav>
       {workspace === "trim" && (
@@ -851,10 +854,10 @@ export default function App() {
           <ArrowDownToLine size={42} />
           <h2>
             {workspace === "media"
-              ? "松开以选择媒体文件"
+              ? t("app.drop.media")
               : workspace === "trim"
-                ? "松开以加入剪辑片段"
-                : "松开以加入视频队列"}
+                ? t("app.drop.trim")
+                : t("app.drop.encode")}
           </h2>
         </div>
       )}
@@ -921,19 +924,19 @@ export default function App() {
         error={error}
         open={modal === "close"}
         onClose={() => setModal("")}
-        title="退出 MMDEncoder"
-        description="队列或剪辑导出仍在运行。退出将取消未完成任务，保留原视频和已完成输出。"
+        title={t("app.close.title")}
+        description={t("app.close.description")}
       >
         <div className="modal-actions">
           <Button autoFocus onClick={() => setModal("")}>
-            继续压制
+            {t("app.close.continue")}
           </Button>
           <Button
             variant="danger"
             disabled={busy}
             onClick={() => void flushAndQuit()}
           >
-            取消任务并退出
+            {t("app.close.quit")}
           </Button>
         </div>
       </Modal>
@@ -941,15 +944,15 @@ export default function App() {
         error={error}
         open={modal === "closeSaveError"}
         onClose={() => setModal("")}
-        title="设置尚未保存"
-        description="最后一次修改未能保存。可以返回调整，也可以放弃这次修改并退出。"
+        title={t("app.closeSave.title")}
+        description={t("app.closeSave.description")}
       >
         <div className="modal-actions">
           <Button autoFocus onClick={() => setModal("")}>
-            返回调整
+            {t("app.closeSave.return")}
           </Button>
           <Button variant="danger" onClick={() => action("quit")}>
-            不保存并退出
+            {t("app.closeSave.discard")}
           </Button>
         </div>
       </Modal>
