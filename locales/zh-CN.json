@@ -1360,5 +1360,9 @@
   "error.RTX_TEST_BUSY": "请等待当前任务结束",
   "error.SERVICE_ACTION_UNSUPPORTED": "不支持的操作：{action}",
   "error.OUTPUT_NAME_EXHAUSTED": "无法分配不重名的输出文件",
-  "error.VIDEO_STREAM_MISSING": "未找到视频轨"
+  "error.VIDEO_STREAM_MISSING": "未找到视频轨",
+  "command.pipeFailed": "管道进程失败（退出码 {code}）",
+  "command.outputExists": "输出已存在，停止以避免覆盖",
+  "command.requiresPowerShell7": "请用 PowerShell 7（pwsh）运行这段命令",
+  "command.failed": "编码失败"
 }

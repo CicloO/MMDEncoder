@@ -1,9 +1,16 @@
 "use strict";
 const path = require("node:path");
 const { commandProcesses } = require("./command-processes.cjs");
+const { sourceText } = require("./errors.cjs");
 const quote = (v) => "'" + String(v).replace(/'/g, "''") + "'";
+const scriptString = (v) =>
+  '"' + String(v).replace(/[`"$]/g, (character) => "`" + character) + '"';
 // Copy both binary links concurrently; a full pipe must not block the other.
-const invokePiped = String.raw`function Invoke-Piped([object[]]$Commands) {
+function invokePiped(text) {
+  const failure = scriptString(
+    text("command.pipeFailed", { code: "__MMD_EXIT_CODE__" }),
+  ).replaceAll("__MMD_EXIT_CODE__", "$($p.ExitCode)");
+  return String.raw`function Invoke-Piped([object[]]$Commands) {
   $ps = [Collections.Generic.List[Diagnostics.Process]]::new()
   $copies = [Collections.Generic.List[object]]::new()
   try {
@@ -21,7 +28,7 @@ const invokePiped = String.raw`function Invoke-Piped([object[]]$Commands) {
     }
     while ($true) {
       foreach ($p in $ps) {
-        if ($p.HasExited -and $p.ExitCode -ne 0) { throw "管道进程失败（退出码 $($p.ExitCode)）" }
+        if ($p.HasExited -and $p.ExitCode -ne 0) { throw ${failure} }
       }
       foreach ($copy in $copies) {
         if (!$copy.Closed -and $copy.Task.IsCompleted) {
@@ -35,14 +42,15 @@ const invokePiped = String.raw`function Invoke-Piped([object[]]$Commands) {
     }
     foreach ($p in $ps) {
       $p.WaitForExit()
-      if ($p.ExitCode -ne 0) { throw "管道进程失败（退出码 $($p.ExitCode)）" }
+      if ($p.ExitCode -ne 0) { throw ${failure} }
     }
   } finally {
     foreach ($p in $ps) { if (!$p.HasExited) { $p.Kill($true) } }
     foreach ($p in $ps) { $p.WaitForExit(); $p.Dispose() }
   }
 }`;
-function commandText(commands, { prepare = false } = {}) {
+}
+function commandText(commands, { prepare = false, text = sourceText } = {}) {
   const lines = [];
   const files = [
     ...new Set(
@@ -53,7 +61,7 @@ function commandText(commands, { prepare = false } = {}) {
     lines.push('$ErrorActionPreference = "Stop"');
     for (const file of files)
       lines.push(
-        `if (Test-Path -LiteralPath ${quote(file)}) { throw "输出已存在，停止以避免覆盖" }`,
+        `if (Test-Path -LiteralPath ${quote(file)}) { throw ${scriptString(text("command.outputExists"))} }`,
       );
     for (const dir of new Set(files.map((file) => path.dirname(file))))
       lines.push(`[void][System.IO.Directory]::CreateDirectory(${quote(dir)})`);
@@ -66,8 +74,8 @@ function commandText(commands, { prepare = false } = {}) {
       : quote(value);
   if (prepare && piped)
     lines.push(
-      'if ($PSVersionTable.PSVersion.Major -lt 7) { throw "请用 PowerShell 7（pwsh）运行这段命令" }',
-      invokePiped,
+      `if ($PSVersionTable.PSVersion.Major -lt 7) { throw ${scriptString(text("command.requiresPowerShell7"))} }`,
+      invokePiped(text),
     );
   if (staged) {
     lines.push("$targets = @{}", "$workdirs = @{}", "try {");
@@ -94,7 +102,9 @@ function commandText(commands, { prepare = false } = {}) {
       );
     } else {
       lines.push(processes.map(call).join(" | "));
-      lines.push('if ($LASTEXITCODE -ne 0) { throw "编码失败" }');
+      lines.push(
+        `if ($LASTEXITCODE -ne 0) { throw ${scriptString(text("command.failed"))} }`,
+      );
     }
   }
   if (staged) {

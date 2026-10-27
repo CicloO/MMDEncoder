@@ -106,8 +106,13 @@ else {
       service = createService({
         engineDir,
         dataDir,
-        formatCopiedCommand: (commands) =>
-          commandText(commands, { prepare: true }),
+        formatCopiedCommand: (commands, locale) => {
+          desktopLocale.setLocale(locale);
+          return commandText(commands, {
+            prepare: true,
+            text: desktopLocale.t,
+          });
+        },
         toolsRoot:
           process.env.MMD_ENCODER_TOOLS_ROOT || process.env.MMD_ENCODER_TOOLS,
         onUpdate: (s) => {
