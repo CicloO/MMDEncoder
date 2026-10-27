@@ -11,7 +11,13 @@ const trim = require("./trim.cjs");
 const { createTools, DEFAULT_ROOT } = require("./tools.cjs");
 const mmdExport = require("./mmd-export.cjs");
 const { syncConfig } = require("./mmd-config.cjs");
-const { appError, serializeError, restoreError } = require("./errors.cjs");
+const {
+  appError,
+  serializeError,
+  restoreError,
+  sourceText,
+  summary,
+} = require("./errors.cjs");
 const mmdPlugin = require("./mmd-plugin.cjs");
 const { createFileDetails } = require("./file-details.cjs");
 const { referenceTiming, streamDuration } = require("./audio-timing.mjs");
@@ -116,6 +122,10 @@ function createService({
     // waits here until they choose to drop it or keep it as a personal preset.
     presetConflicts: [],
   };
+  function setNotice(message) {
+    state.notice = typeof message === "string" ? message : message.message;
+    state.noticeData = typeof message === "string" ? undefined : message;
+  }
   // A tools folder chosen in the app is remembered in data/tools-location.json;
   // an explicit toolsRoot (environment / tests) always wins.
   const toolsLocationFile = path.join(dataDir, "tools-location.json");
@@ -514,7 +524,7 @@ function createService({
     detectPromise = (async () => {
       await locate();
       if (!state.engineInfo.ffmpeg) {
-        state.notice = "未找到可运行的 FFmpeg，请检查引擎目录";
+        setNotice(summary("ENGINE_FFMPEG_MISSING"));
         return;
       }
       // Hi-Res resampling uses soxr when this FFmpeg has it.
@@ -533,9 +543,9 @@ function createService({
         state.engines = cached.engines;
         state.detectionLog +=
           (cached.log || "") +
-          "\n使用 " +
-          cached.detectedAt +
-          " 的编码器检测结果。工具、显卡或驱动变化后会自动重新检测，也可以手动重新检测。\n";
+          sourceText("engine.log.cachedResult", {
+            detectedAt: cached.detectedAt,
+          });
         return;
       }
       const logStart = state.detectionLog.length;
@@ -547,7 +557,7 @@ function createService({
           })
         ).stdout;
       } catch (e) {
-        state.notice = e.message;
+        setNotice(e.message);
         return;
       }
       await detector.trialEncoders({
@@ -565,7 +575,12 @@ function createService({
         writeDetectionCache(key, state.detectionLog.slice(logStart));
     })()
       .catch((e) => {
-        state.notice = "检测未完成：" + e.message;
+        const error = serializeError(e);
+        const notice = summary("ENGINE_DETECTION_INCOMPLETE", {
+          detail: error.message,
+        });
+        notice.params = { error };
+        setNotice(notice);
       })
       .finally(() => {
         state.detecting = false;
@@ -643,10 +658,7 @@ function createService({
     setRunning: (value) => (state.running = value),
     isStopped: () => stopped,
     setStopped: (value) => (stopped = value),
-    onNotice: (message) => {
-      state.notice = message.message;
-      state.noticeData = message;
-    },
+    onNotice: setNotice,
     emit,
     emitProgress,
     run,
@@ -669,10 +681,7 @@ function createService({
     isDetecting: () => state.detecting,
     isRunning: () => state.running,
     setRunning: (value) => (state.running = value),
-    onNotice: (message) => {
-      state.notice = typeof message === "string" ? message : message.message;
-      state.noticeData = typeof message === "string" ? undefined : message;
-    },
+    onNotice: setNotice,
     isStopped: () => stopped,
     setStopped: (value) => (stopped = value),
     waitDetection: () => detectPromise,
@@ -786,8 +795,7 @@ function createService({
         );
       case "checkTools":
       case "installTools":
-        if (isBusy({ tools: false }))
-          throw Error("请等待编码、探测和硬件检测结束后管理工具");
+        if (isBusy({ tools: false })) throw appError("TOOLS_MANAGE_BUSY");
         try {
           await tools.run(action === "installTools");
         } finally {
@@ -799,9 +807,8 @@ function createService({
         }
         break;
       case "setToolsRoot": {
-        if (toolsRoot) throw Error("安装位置由环境变量指定，不能在软件中更改");
-        if (isBusy({ tools: false }))
-          throw Error("请等待编码、探测和硬件检测结束后更改安装位置");
+        if (toolsRoot) throw appError("TOOLS_ROOT_ENV_LOCKED");
+        if (isBusy({ tools: false })) throw appError("TOOLS_ROOT_BUSY");
         const target = payload?.root || DEFAULT_ROOT;
         tools.relocate(target);
         if (path.resolve(target) === path.resolve(DEFAULT_ROOT))
@@ -819,8 +826,8 @@ function createService({
         break;
       }
       case "detect":
-        if (tools.state.busy) throw Error("工具安装中，请稍后重新检测");
-        if (state.trim.running) throw Error("无损剪辑正在导出，请稍后重新检测");
+        if (tools.state.busy) throw appError("ENGINE_DETECT_INSTALL_BUSY");
+        if (state.trim.running) throw appError("ENGINE_DETECT_TRIM_BUSY");
         await detect({ force: true });
         break;
       case "settings":

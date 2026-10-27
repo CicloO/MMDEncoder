@@ -92,7 +92,9 @@ export default function App() {
     [tab, setTab] = useState("encoding"),
     [modal, setModal] = useState(""),
     [noticeValue, setNotice] = useState<MessageDescriptor | string>(""),
-    [errorValue, setError] = useState<ErrorData | string>(""),
+    [errorValue, setError] = useState<
+      ErrorData | string | { notice: MessageDescriptor }
+    >(""),
     [preview, setPreview] = useState<Preview | null>(null),
     [busy, setBusy] = useState(false),
     [drag, setDrag] = useState(false),
@@ -109,7 +111,10 @@ export default function App() {
     [fallback, setFallback] = useState<Job | null>(null),
     [renameTarget, setRenameTarget] = useState<Preset | null>(null),
     [saveId, setSaveId] = useState("");
-  const error = errorMessage(errorValue);
+  const error =
+    typeof errorValue !== "string" && "notice" in errorValue
+      ? summaryMessage(errorValue.notice)
+      : errorMessage(errorValue);
   const notice = summaryMessage(noticeValue);
   const initialized = useRef(false),
     seenInterrupted = useRef(new Set<string>()),
@@ -215,7 +220,11 @@ export default function App() {
         s.presets.find((p) => p.name === s.settings.presetName)?.id || "",
       );
       if (s.notice)
-        setError(s.noticeData?.message === s.notice ? s.noticeData : s.notice);
+        setError(
+          s.noticeData?.message === s.notice
+            ? { notice: s.noticeData }
+            : s.notice,
+        );
       // An update changed built-ins the user had edited: ask once per start.
       if (s.presetConflicts?.length) setModal("conflicts");
     }
@@ -1139,10 +1148,10 @@ export default function App() {
         error={error}
         open={modal === "logs"}
         onClose={() => setModal("")}
-        title="任务日志"
-        description="日志记录实际执行命令及引擎输出，可用于定位失败参数。"
+        title={t("engine.log.title")}
+        description={t("engine.log.description")}
       >
-        <pre className="log-view">{log || "此任务暂无编码日志。"}</pre>
+        <pre className="log-view">{log || t("engine.log.empty")}</pre>
       </Modal>
       <Modal
         error={error}

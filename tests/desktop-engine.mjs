@@ -25,6 +25,7 @@ const {createRequire}=require('node:module'),native=createRequire(${JSON.stringi
 const service=native('../backend/service.cjs'),create=service.createService;
 global.engineCalls=[];global.pendingToolCheck=null;
 service.createService=options=>create({...options,toolOptions:{resolveReleases:()=>new Promise((resolve,reject)=>{global.pendingToolCheck={resolve,reject};})}});
+const updates=native('../backend/update.cjs');updates.checkForUpdate=async current=>({current,latest:current,newer:false,url:updates.RELEASES_URL});
 const {ipcMain}=native('electron'),handle=ipcMain.handle.bind(ipcMain);
 ipcMain.handle=(channel,listener)=>handle(channel,(event,action,...args)=>{global.engineCalls.push({action,payload:args[0]??null});return listener(event,action,...args);});
 native('./main.cjs');

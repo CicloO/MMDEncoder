@@ -11,6 +11,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const core = require("./core.cjs");
 const { createLimit } = require("./limit.cjs");
+const { sourceText } = require("./errors.cjs");
 
 function createDetector({ run, dataDir, info, engines, logs }) {
   // Whether FFmpeg can run libplacebo on a Vulkan GPU (ArtCNN upscaling):
@@ -120,7 +121,9 @@ function createDetector({ run, dataDir, info, engines, logs }) {
     try {
       gpu = await displayAdapters();
     } catch (e) {
-      logs.text += "无法读取显卡信息，本次不使用检测缓存：" + e.message + "\n";
+      logs.text += sourceText("engine.log.adapterUnavailable", {
+        detail: e.message,
+      });
     }
     if (!gpu) return "";
     const files = {};
@@ -180,7 +183,9 @@ function createDetector({ run, dataDir, info, engines, logs }) {
       );
       fs.renameSync(tmp, cacheFile());
     } catch (e) {
-      logs.text += "检测缓存保存失败：" + e.message + "\n";
+      logs.text += sourceText("engine.log.cacheWriteFailed", {
+        detail: e.message,
+      });
     }
   }
   // A trial encode of every encoder FFmpeg lists (and NVEncC's), per bit

@@ -302,6 +302,8 @@ export type State = {
     busy: boolean;
     phase: string;
     message: string;
+    messageData?: MessageDescriptor | null;
+    errorData?: ErrorData | null;
     received: number;
     total: number;
     root: string;

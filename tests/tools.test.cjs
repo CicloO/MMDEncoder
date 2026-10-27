@@ -26,6 +26,7 @@ test("staged install, hash failure rollback, offline reuse and duplicate lock", 
     offline = false,
     unblock;
   const bytes = Buffer.from("fixture archive");
+  const messages = [];
   const release = () => [
     {
       id: "ffmpeg",
@@ -38,6 +39,7 @@ test("staged install, hash failure rollback, offline reuse and duplicate lock", 
   ];
   const manager = createTools({
     root,
+    onUpdate: (state) => messages.push(JSON.parse(JSON.stringify(state))),
     resolveReleases: async () => {
       if (offline) throw Error("offline");
       if (unblock) await new Promise((r) => (unblock = r));
@@ -57,11 +59,19 @@ test("staged install, hash failure rollback, offline reuse and duplicate lock", 
   });
   try {
     await manager.run(true);
+    assert.equal(manager.state.errorData, null);
+    for (const phase of ["checking", "downloading", "extracting", "ready"]) {
+      const value = messages.find((state) => state.phase === phase);
+      assert.ok(value?.messageData?.code, phase + " has a structured message");
+      assert.equal(value.message, value.messageData.message);
+    }
     const old = manager.paths().ffmpeg;
     assert.ok(fs.existsSync(old));
     version = "2";
     bad = true;
     await assert.rejects(manager.run(true), /SHA-256/);
+    assert.ok(manager.state.errorData.code);
+    assert.equal(manager.state.messageData, null);
     assert.equal(manager.paths().ffmpeg, old);
     assert.equal(
       JSON.parse(fs.readFileSync(path.join(root, "active.json"))).ffmpeg
@@ -70,11 +80,16 @@ test("staged install, hash failure rollback, offline reuse and duplicate lock", 
     );
     offline = true;
     await assert.rejects(manager.run(), /offline/);
+    assert.deepEqual(manager.state.errorData, {
+      message: "offline",
+      params: {},
+    });
     assert.equal(createTools({ root }).paths().ffmpeg, old);
     offline = false;
     bad = false;
     unblock = () => {};
     const pending = manager.run(true);
+    assert.equal(manager.state.errorData, null);
     await assert.rejects(manager.run(true), /正在进行/);
     unblock();
     unblock = null;

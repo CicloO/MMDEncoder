@@ -35,23 +35,32 @@ export function t(key: MessageKey, params: MessageParams = {}) {
   return localeRuntime.t(key, params);
 }
 
-export function errorMessage(error: unknown) {
+function formatErrorValue(value: ReturnType<typeof serializeError>): string {
+  if (value.code === "TOOLS_MOVE_FAILED" && value.params.error)
+    return localeRuntime.t("error.TOOLS_MOVE_FAILED", {
+      detail: diagnosticErrorMessage(value.params.error),
+    });
+  return (
+    formatTrimMessage(localeRuntime, value) ??
+    formatMediaMessage(localeRuntime, "error", value) ??
+    formatDescriptor(localeRuntime, "error", value)
+  );
+}
+
+export function diagnosticErrorMessage(error: unknown) {
   const e = serializeError(error);
   const lines = [
-    formatTrimMessage(localeRuntime, e) ??
-      formatMediaMessage(localeRuntime, "error", e) ??
-      formatDescriptor(localeRuntime, "error", e),
-    ...(e.issues || []).map(
-      (issue) =>
-        formatTrimMessage(localeRuntime, issue) ??
-        formatMediaMessage(localeRuntime, "error", issue) ??
-        formatDescriptor(localeRuntime, "error", issue),
-    ),
+    formatErrorValue(e),
+    ...(e.issues || []).map(formatErrorValue),
   ];
-  return lines
-    .filter(Boolean)
-    .join("\n")
-    .replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
+  return lines.filter(Boolean).join("\n");
+}
+
+export function errorMessage(error: unknown) {
+  return diagnosticErrorMessage(error).replace(
+    /^Error invoking remote method '[^']+': (?:Error: )?/,
+    "",
+  );
 }
 
 export function stageMessage(value: StageDescriptor | string) {
@@ -59,6 +68,14 @@ export function stageMessage(value: StageDescriptor | string) {
 }
 
 export function summaryMessage(value: MessageDescriptor | string) {
+  if (
+    typeof value !== "string" &&
+    value?.code === "ENGINE_DETECTION_INCOMPLETE" &&
+    value?.params?.error
+  )
+    return localeRuntime.t("message.ENGINE_DETECTION_INCOMPLETE", {
+      detail: diagnosticErrorMessage(value.params.error),
+    });
   return (
     formatVideoSummary(localeRuntime, value) ??
     formatMediaMessage(localeRuntime, "message", value) ??
