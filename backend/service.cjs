@@ -929,7 +929,7 @@ function createService({
             payload.presetId &&
             !state.presets.some((p) => p.id === payload.presetId)
           )
-            throw Error("未找到预设");
+            throw appError("PRESET_MISSING");
           // Every MMD export option outranks the preset: picking a preset
           // leaves the mask choice (and the others) as they are.
           state.mmd.presetId = payload.presetId;
@@ -937,7 +937,7 @@ function createService({
         }
         if (payload.audioFade !== undefined) {
           if (![0, 0.5, 1, 2].includes(payload.audioFade))
-            throw Error("淡入淡出时长无效");
+            throw appError("MMD_FADE_INVALID");
           state.mmd.audioFade = payload.audioFade;
         }
         if (typeof payload.followMmd === "boolean")
@@ -946,7 +946,7 @@ function createService({
           state.mmd.rangeSuffix = payload.rangeSuffix;
         if (payload.maskMode !== undefined) {
           if (!mmdExport.MASK_MODES.includes(payload.maskMode))
-            throw Error("遮罩选项无效");
+            throw appError("MMD_MASK_INVALID");
           state.mmd.maskMode = payload.maskMode;
           state.mmd.test = null;
         }
@@ -958,12 +958,13 @@ function createService({
         break;
       }
       case "mmdTest":
-        if (state.running) throw Error("请等待当前压制结束后再测试");
+        if (state.running) throw appError("MMD_TEST_BUSY");
         await testMmdExport();
         break;
       case "mmdRecover":
       case "mmdDiscard": {
-        if (typeof payload?.id !== "string") throw Error("无效的导出记录");
+        if (typeof payload?.id !== "string")
+          throw appError("MMD_RECORD_INVALID");
         try {
           if (action === "mmdRecover") await mmdExport.recover(payload.id);
           else mmdExport.discard(payload.id);
@@ -1003,7 +1004,7 @@ function createService({
     const known = new Set(state.mmd.interrupted.map((x) => x.id));
     state.mmd.interrupted = list;
     if (list.some((x) => !known.has(x.id)))
-      state.notice = `有 ${list.length} 个 MMD 导出意外中断，可在“MMD 导出”里补完已导出的部分`;
+      setNotice(summary("MMD_INTERRUPTED", { count: list.length }));
     emit();
   }
   return {

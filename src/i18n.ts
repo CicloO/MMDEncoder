@@ -120,6 +120,7 @@ export function summaryMessage(value: MessageDescriptor | string) {
       "SETTINGS_UNREADABLE",
       "SETTINGS_BACKUP_FAILED",
       "EVIDENCE_SAVE_FAILED",
+      "MMD_AVI_UNREADABLE",
     ].includes(value?.code || "") &&
     value?.params?.error
   )

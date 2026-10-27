@@ -249,6 +249,37 @@ try {
     exact: true,
   });
   await expect(longDialog).toBeVisible();
+  const historyPath = "C:/User 用户/{raw}.mp4";
+  await page.evaluate(
+    (path) =>
+      window.localeFixture.setMmdHistory({
+        ok: false,
+        at: "2026-10-27T00:00:00Z",
+        error: "source fallback",
+        errorData: {
+          code: "MMD_OUTPUT_VIDEO_MISSING",
+          params: { path },
+          message: "source fallback",
+        },
+      }),
+    historyPath,
+  );
+  await expect(longDialog.getByRole("status")).toHaveText(
+    labels["mmd.lastFailed"].replace(
+      "{detail}",
+      labels["error.MMD_OUTPUT_VIDEO_MISSING"].replace("{path}", historyPath),
+    ),
+  );
+  await page.evaluate(() =>
+    window.localeFixture.setMmdHistory({
+      ok: false,
+      at: "2026-10-27T00:00:00Z",
+      error: "Legacy foreign {raw}",
+    }),
+  );
+  await expect(longDialog.getByRole("status")).toHaveText(
+    labels["mmd.lastFailed"].replace("{detail}", "Legacy foreign {raw}"),
+  );
   await expect(
     longDialog.locator('option[value="test-preset-policy"]'),
   ).toBeDisabled();

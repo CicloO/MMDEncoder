@@ -48,7 +48,10 @@ export function MmdExportDialog({
         : errorMessage(mmd.test);
     const last = mmd.lastExport;
     if (!last) return t("mmd.outputHint");
-    if (!last.ok) return t("mmd.lastFailed", { detail: last.error || "" });
+    if (!last.ok)
+      return t("mmd.lastFailed", {
+        detail: errorMessage(last.errorData || last.error || ""),
+      });
     const audio =
       last.audio === "wav" ? "wav" : last.audio === "avi" ? "avi" : "none";
     const key = ("mmd.last." + audio + (last.mask ? "Mask" : "")) as MessageKey;

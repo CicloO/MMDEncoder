@@ -5,6 +5,7 @@
 const fs = require("node:fs");
 const { createRunner } = require("./process-runner.cjs");
 const { commandProcesses } = require("./command-processes.cjs");
+const { appError } = require("./errors.cjs");
 const job = JSON.parse(process.env.MMD_PIPE_JOB || "{}");
 let active;
 const run = createRunner({
@@ -24,7 +25,7 @@ process.on("SIGTERM", cancel);
     // A previous interrupted render may still be recoverable. Refuse it
     // before launching; failure cleanup must never delete that older file.
     for (const file of job.outputs || []) {
-      if (fs.existsSync(file)) throw Error("输出已存在，停止以避免覆盖");
+      if (fs.existsSync(file)) throw appError("MMD_PIPE_OUTPUT_EXISTS");
     }
     started = true;
     for (const step of job.steps || []) {

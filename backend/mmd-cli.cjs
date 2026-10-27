@@ -38,7 +38,11 @@ async function main({ plan, finish, remember, readConfig }) {
   }
   if (mode === "finish") {
     const lines = [];
-    const log = (m) => lines.push(m);
+    const notesData = [];
+    const log = (m, data) => {
+      lines.push(m);
+      if (data) notesData.push(data);
+    };
     const started = Date.now();
     try {
       const r = await finish(job, undefined, log);
@@ -59,14 +63,17 @@ async function main({ plan, finish, remember, readConfig }) {
             }
           : {}),
         notes: lines,
+        ...(notesData.length ? { notesData } : {}),
       });
     } catch (e) {
       remember({
         ok: false,
         error: e.message,
+        errorData: serializeError(e),
         output: job.output,
         avi: job.avi,
         notes: lines,
+        ...(notesData.length ? { notesData } : {}),
       });
       process.exitCode = 1;
     }

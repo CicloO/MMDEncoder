@@ -15,6 +15,7 @@ const path = require("node:path");
 const { execFile } = require("node:child_process");
 const core = require("./core.cjs");
 const media = require("./media.cjs");
+const { appError, summary, serializeError } = require("./errors.cjs");
 
 const {
   baseDir,
@@ -35,6 +36,11 @@ const historyPath = () => path.join(baseDir(), "exports.jsonl");
 const TIMELINE_FPS = 30;
 // Placeholder FOURCC the plugin writes into the AVI instead of real frames.
 const PLACEHOLDER_TAG = "MMDE";
+
+function note(log, code, params = {}) {
+  const data = summary(code, params);
+  log(data.message, data);
+}
 
 // Where the mask is encoded before finish moves it next to the video.
 const maskTemp = (temp) => {
@@ -154,12 +160,14 @@ function plan(runtime, config = readConfig()) {
   // MMD only sends alpha with 32-bit frames; without it a mask next to the
   // video is skipped, not the export.
   const notes = [];
-  if (maskMode === "only" && !alpha)
-    throw Error("MMD 没有提供 Alpha 画面，无法只导出遮罩");
+  const notesData = [];
+  if (maskMode === "only" && !alpha) throw appError("MMD_ALPHA_REQUIRED");
   let mask = maskMode === "with";
   if (mask && !alpha) {
     mask = false;
-    notes.push("MMD 没有提供 Alpha 画面，未导出遮罩");
+    const data = summary("MMD_MASK_SKIPPED");
+    notes.push(data.message);
+    notesData.push(data);
   }
   out.alphaMask = mask;
   const paths = core.outputPaths(runtime.avi, out, 1, fs.existsSync);
@@ -253,6 +261,7 @@ function plan(runtime, config = readConfig()) {
         ? { maskTemp: maskTemp(temp), maskOutput: maskOutput(paths.output) }
         : {}),
       notes,
+      notesData,
       fps: rate,
       presetName: config.presetName,
     };
@@ -336,7 +345,8 @@ async function waitUnlocked(file, ms = 60000) {
       return;
     } catch (e) {
       if (e.code === "ENOENT") return;
-      if (Date.now() > end) throw Error("等待 MMD 释放 AVI 超时：" + file);
+      if (Date.now() > end)
+        throw appError("MMD_AVI_UNLOCK_TIMEOUT", { path: file });
       await sleep(250);
     }
   }
@@ -411,7 +421,7 @@ function freeOutput(output, withMask) {
     if (!fs.existsSync(name) && !(withMask && fs.existsSync(maskOutput(name))))
       return name;
   }
-  throw Error("无法分配不重名的输出文件");
+  throw appError("OUTPUT_NAME_EXHAUSTED");
 }
 
 // Move a finished file into place without replacing an existing one: a hard
@@ -423,9 +433,9 @@ function placeFile(from, to) {
     fs.rmSync(from, { force: true });
     return;
   } catch (e) {
-    if (e.code === "EEXIST") throw Error("输出文件已存在，未覆盖：" + to);
+    if (e.code === "EEXIST") throw appError("MMD_OUTPUT_EXISTS", { path: to });
   }
-  if (fs.existsSync(to)) throw Error("输出文件已存在，未覆盖：" + to);
+  if (fs.existsSync(to)) throw appError("MMD_OUTPUT_EXISTS", { path: to });
   fs.renameSync(from, to);
 }
 
@@ -445,14 +455,17 @@ async function finish(
   const planned = withRange(job.output, config, job);
   job = { ...job, output: freeOutput(planned, hasMask) };
   if (job.output !== planned)
-    log("同名文件在导出期间已存在，改存为：" + job.output);
+    note(log, "MMD_OUTPUT_RENAMED", { path: job.output });
   const rate = frameRate(job.avgTimePerFrame);
   await waitUnlocked(job.avi);
   let aviInfo = null;
   try {
     aviInfo = await probe(config, job.avi);
   } catch (e) {
-    log("无法读取占位 AVI：" + e.message);
+    note(log, "MMD_AVI_UNREADABLE", {
+      detail: e.message,
+      error: serializeError(e),
+    });
   }
   const placeholder = !!aviInfo?.streams?.some(
     (x) => x.codec_type === "video" && x.codec_tag_string === PLACEHOLDER_TAG,
@@ -475,8 +488,7 @@ async function finish(
       const sr = Number(stream?.sample_rate);
       const first = Math.round((job.startFrame * sr) / TIMELINE_FPS);
       const total = Math.round(Number(info.format?.duration) * sr) || Infinity;
-      if (sr && first >= total)
-        log("导出起点已超过工程 WAV 的结尾，成片没有音频");
+      if (sr && first >= total) note(log, "MMD_WAV_PAST_END");
       else if (sr) {
         // Sample-exact: start = start frame on the 30 fps timeline, length =
         // frames actually received at the export frame rate.
@@ -484,11 +496,14 @@ async function finish(
         trim = `atrim=start_sample=${first}:end_sample=${first + count},asetpts=PTS-STARTPTS`;
         source = "wav";
         input = ["-i", wav];
-        log(
-          `音频取自 WAV：${wav}，采样点 ${first}–${first + count}（${sr} Hz）`,
-        );
+        note(log, "MMD_WAV_SOURCE", {
+          path: wav,
+          first,
+          end: first + count,
+          sampleRate: sr,
+        });
       }
-    } else log("没有找到可用的音频（AVI 无音轨，工程 WAV 未找到）");
+    } else note(log, "MMD_AUDIO_MISSING");
   }
   // Optional fade in / out over the clip's audio, at most half its length each.
   const length = (job.frames * rate.den) / rate.num;
@@ -502,7 +517,7 @@ async function finish(
       `afade=t=in:st=0:d=${fade}`,
       `afade=t=out:st=${(length - fade).toFixed(6)}:d=${fade}`,
     );
-    log(`音频淡入淡出 ${fade} 秒`);
+    note(log, "MMD_AUDIO_FADE", { seconds: fade });
   }
   // Hi-Res: the audio is filtered here anyway (trim, pad), so it is always
   // re-encoded, never copied.
@@ -514,7 +529,7 @@ async function finish(
     if (plan.action === "copy") plan.action = "encode";
     filters.push(media.hiResFilter(plan, config.engines.soxr));
     audio = media.hiResCodec(plan);
-    log(`Hi-Res：${plan.from} → ${plan.to}`);
+    note(log, "MMD_AUDIO_HIRES", { from: plan.from, to: plan.to });
   }
   const af = filters.filter(Boolean).join(",");
   if (source === "none") {
@@ -549,15 +564,13 @@ async function finish(
     ]);
     if (have < want) {
       fs.rmSync(job.output, { force: true });
-      throw Error(
-        `合成音频后只剩 ${have} / ${want} 帧，已保留未合成的视频：${job.temp}`,
-      );
+      throw appError("MMD_MUX_FRAMES_LOST", { have, want, path: job.temp });
     }
     fs.rmSync(job.temp, { force: true });
   }
   const result = await probe(config, job.output);
   const video = result.streams?.find((x) => x.codec_type === "video");
-  if (!video) throw Error("成片没有视频流：" + job.output);
+  if (!video) throw appError("MMD_OUTPUT_VIDEO_MISSING", { path: job.output });
   // The mask was encoded next to the video during the render.
   let mask = "";
   // Always kept, even when it is all white or all black: checking that took
@@ -565,7 +578,7 @@ async function finish(
   if (hasMask) {
     mask = maskOutput(job.output);
     placeFile(matte, mask);
-    log("Alpha 遮罩：" + mask);
+    note(log, "MMD_MASK_OUTPUT", { path: mask });
   }
   // Only ever delete an AVI this plugin wrote (placeholder frames only).
   if (placeholder) fs.rmSync(job.avi, { force: true });
@@ -635,11 +648,11 @@ function interrupted() {
 }
 
 function snapshotById(id) {
-  if (!/^[0-9a-f]{16}$/.test(id)) throw Error("无效的导出记录");
+  if (!/^[0-9a-f]{16}$/.test(id)) throw appError("MMD_RECORD_INVALID");
   const snap = JSON.parse(
     fs.readFileSync(path.join(pendingDir(), id + ".json"), "utf8"),
   );
-  if (alive(snap.mmdPid)) throw Error("这个导出仍在进行中");
+  if (alive(snap.mmdPid)) throw appError("MMD_EXPORT_ACTIVE");
   return snap;
 }
 
@@ -647,8 +660,8 @@ function snapshotById(id) {
 async function recover(id, log = () => {}) {
   const snap = snapshotById(id);
   const frames = await countFrames(snap, snap.temp);
-  if (!frames) throw Error("中断的导出里没有可用画面：" + snap.temp);
-  log(`恢复中断的导出：${frames} 帧`);
+  if (!frames) throw appError("MMD_RECOVERY_EMPTY", { path: snap.temp });
+  note(log, "MMD_RECOVERING", { frames });
   const job = {
     avi: snap.avi,
     temp: snap.temp,

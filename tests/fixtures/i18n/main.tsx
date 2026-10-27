@@ -34,6 +34,7 @@ let openMmd = () => {};
 let failPreset = async () => {};
 let openPresets = () => {};
 let openVideo = () => {};
+let setMmdHistory = (_record: State["mmd"]["lastExport"]) => {};
 function Fixture() {
   const [color, setColor] = useState("#00FF00");
   const [state, setState] = useState<State | null>(null);
@@ -46,6 +47,21 @@ function Fixture() {
   openMmd = () => setMmdOpen(true);
   openPresets = () => setPresetsOpen(true);
   openVideo = () => setVideoOpen(true);
+  setMmdHistory = (record) =>
+    setState((current) =>
+      current
+        ? {
+            ...current,
+            mmd: {
+              ...current.mmd,
+              error: "",
+              errorData: null,
+              test: null,
+              lastExport: record,
+            },
+          }
+        : current,
+    );
   failPreset = async () => {
     try {
       await invoke("renamePreset", { id: "builtin-4k", name: "" });
@@ -169,6 +185,7 @@ function Fixture() {
 (window as any).localeFixture = {
   invoke,
   openMmd: () => openMmd(),
+  setMmdHistory: (record: State["mmd"]["lastExport"]) => setMmdHistory(record),
   failPreset: () => failPreset(),
   openPresets: () => openPresets(),
   openVideo: () => openVideo(),

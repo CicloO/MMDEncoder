@@ -275,6 +275,7 @@ export type State = {
       mask?: string;
       audio?: string;
       error?: string;
+      errorData?: ErrorData;
       startFrame?: number;
       frames?: number;
       // Seconds; written by plugins from 1.4.2 on.
