@@ -175,19 +175,17 @@ function syncConfig({
   adoptSelection,
   getSelection,
   locale,
+  catalogs,
 }) {
   try {
     adoptSelection();
     writeConfig({
-      presets: presets.map(({ id, name, settings }) => ({
-        id,
-        name,
-        settings,
-      })),
+      presets,
       engines: engines,
       appExe,
       helper,
       locale,
+      catalogs,
     });
   } catch (e) {
     return serializeError(appError("MMD_CONFIG_WRITE", { detail: e.message }));

@@ -22,14 +22,15 @@ const { appError } = require("../backend/errors.cjs");
 const { commandText } = require("../backend/command-text.cjs");
 const { createTranslator } = require("../locales/runtime.mjs");
 const localeRegistry = require("../locales/registry.json");
+const localeCatalogs = Object.fromEntries(
+  localeRegistry.locales.map((entry) => [
+    entry.id,
+    require(path.resolve(__dirname, "../locales", entry.file)),
+  ]),
+);
 const desktopLocale = createTranslator({
   sourceLocale: localeRegistry.sourceLocale,
-  catalogs: Object.fromEntries(
-    localeRegistry.locales.map((entry) => [
-      entry.id,
-      require(path.resolve(__dirname, "../locales", entry.file)),
-    ]),
-  ),
+  catalogs: localeCatalogs,
 });
 // Native pickers use the saved locale at opening; they keep their own text
 // while open. Shared service preferences remain the only locale authority.
@@ -106,6 +107,7 @@ else {
       service = createService({
         engineDir,
         dataDir,
+        localeCatalogs,
         formatCopiedCommand: (commands, locale) => {
           desktopLocale.setLocale(locale);
           return commandText(commands, {

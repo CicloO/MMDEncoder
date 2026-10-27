@@ -46,6 +46,7 @@ function createService({
   toolsRoot = process.env.MMD_TEST_TOOLS_ROOT,
   toolOptions = {},
   localeRegistry,
+  localeCatalogs,
   formatCopiedCommand,
   // MMD export plugin DLL shipped with the app (packaged) or built locally (dev).
   mmdPluginDll = [
@@ -335,6 +336,7 @@ function createService({
       appExe: mmdAppExe,
       helper: path.join(__dirname, "mmd-export.cjs"),
       locale: state.locale,
+      catalogs: localeCatalogs,
       adoptSelection: adoptMmdSelection,
       getSelection: () => ({
         presetId: state.mmd.presetId,

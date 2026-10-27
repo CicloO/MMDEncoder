@@ -70,6 +70,52 @@ test("the service persists locale before writing its standalone plugin snapshot,
   }
 });
 
+test("service plugin snapshots use registered catalogs and preserve builtin display metadata", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-plugin-catalog-"));
+  const preset = core.BUILTINS[0];
+  const pseudo = {
+    "plugin.title": "⟦ Native title ··· ⟧",
+    [preset.nameKey]: "⟦ Expanded default ··· ⟧",
+  };
+  const svc = createService({
+    dataDir: dir,
+    localeRegistry: {
+      ...require("../locales/registry.json"),
+      locales: [{ id: "zh-CN" }, { id: "en-XA" }],
+    },
+    localeCatalogs: { "zh-CN": source, "en-XA": pseudo },
+  });
+  try {
+    const original = svc.getState().presets;
+    await svc.invoke("setLocale", { locale: "en-XA" });
+    const config = JSON.parse(fs.readFileSync(mx.configPath(), "utf8"));
+    assert.equal(config.locale, "en-XA");
+    assert.equal(config.messages["plugin.title"], pseudo["plugin.title"]);
+    assert.equal(config.messages["plugin.cancel"], source["plugin.cancel"]);
+    assert.equal(
+      config.presets.find((p) => p.id === preset.id).displayName,
+      pseudo[preset.nameKey],
+    );
+    assert.deepEqual(svc.getState().presets, original);
+    await svc.invoke("renamePreset", { id: preset.id, name: "User 用户改名" });
+    const renamed = JSON.parse(fs.readFileSync(mx.configPath(), "utf8"));
+    assert.equal(
+      renamed.presets.find((p) => p.id === preset.id).displayName,
+      "User 用户改名",
+    );
+    await svc.invoke("setLocale", { locale: "zh-CN" });
+    const restored = JSON.parse(fs.readFileSync(mx.configPath(), "utf8"));
+    assert.equal(restored.locale, "zh-CN");
+    assert.equal(
+      restored.presets.find((p) => p.id === preset.id).displayName,
+      "User 用户改名",
+    );
+  } finally {
+    svc.dispose();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("MMD plan/test helpers keep coded failures and params in their JSON result", () => {
   for (const mode of ["plan", "test"]) {
     const result = JSON.parse(
