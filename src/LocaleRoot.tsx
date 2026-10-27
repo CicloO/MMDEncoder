@@ -14,6 +14,7 @@ export function LocaleRoot({ children }: { children: () => ReactNode }) {
     };
     apply();
     const unsubscribe = subscribeLocale(apply);
+    if (!window.encoder) return unsubscribe;
     let stopped = false;
     let updates = 0;
     const off = window.encoder.onUpdate((state) => {
