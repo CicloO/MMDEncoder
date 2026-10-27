@@ -3,7 +3,6 @@ import {
   Sun,
   Moon,
   ArrowDownToLine,
-  Plus,
   Layers,
   Settings2,
   Check,
@@ -11,7 +10,7 @@ import {
   LoaderCircle,
   Clapperboard,
 } from "lucide-react";
-import { Button, Field, Modal, useDragSort, PAGE_SIZE } from "./components";
+import { Button, Modal, useDragSort, PAGE_SIZE } from "./components";
 import { MediaTools } from "./MediaTools";
 import { TrimTools } from "./TrimTools";
 import { EncodeQueue } from "./EncodeQueue";
@@ -23,7 +22,7 @@ import { VideoFeedback } from "./VideoFeedback";
 import { VideoSettings } from "./VideoSettings";
 import { AboutDialog, type UpdateCheck, type AppUpdate } from "./AboutDialog";
 import { VideoSettingsPanel } from "./VideoSettingsPanel";
-import { PresetList } from "./PresetList";
+import { usePresetManagement, presetHidden } from "./PresetManagement";
 import { MmdExportDialog, useMmdExport } from "./MmdExportDialog";
 import {
   EngineManagementDialog,
@@ -37,7 +36,7 @@ import { serializeError } from "../locales/messages.mjs";
 import type { VideoFix } from "./VideoFeedback";
 import type { ErrorData, MessageDescriptor } from "./i18n";
 import { presetLabel, videoName, compatibilityErrors } from "./presentation";
-import type { State, Settings, Preview, Job, Preset } from "./types";
+import type { State, Settings, Preview, Job } from "./types";
 
 // Which kind of encoder an id names, for encoders not detected here.
 const encoderBackend = (id: string) =>
@@ -103,14 +102,9 @@ export default function App() {
       { paths: string[]; seq: number } | undefined
     >(),
     [presetId, setPresetId] = useState(""),
-    [presetName, setPresetName] = useState(""),
     [log, setLog] = useState(""),
-    [pendingPreset, setPendingPreset] = useState<Preset | null>(null),
-    [pendingDelete, setPendingDelete] = useState<Preset | null>(null),
     [customFPS, setCustomFPS] = useState(false),
-    [fallback, setFallback] = useState<Job | null>(null),
-    [renameTarget, setRenameTarget] = useState<Preset | null>(null),
-    [saveId, setSaveId] = useState("");
+    [fallback, setFallback] = useState<Job | null>(null);
   const error =
     typeof errorValue !== "string" && "notice" in errorValue
       ? summaryMessage(errorValue.notice)
@@ -274,14 +268,6 @@ export default function App() {
     (ids) => void call("reorderJobs", { ids }).catch(() => {}),
   );
   const presets = state?.presets || [];
-  const sortPreset = useDragSort(
-    presets.map((p) => p.id),
-    (ids) => void call("reorderPresets", { ids }).catch(() => {}),
-    true,
-    { handle: true },
-  );
-  // Every preset shows unless the user hid it with the hide / show button.
-  const presetHidden = (p: Preset) => p.hidden ?? false;
   useEffect(() => {
     if (page >= pageCount) setPage(pageCount - 1);
   }, [page, pageCount]);
@@ -477,6 +463,40 @@ export default function App() {
         s[k as keyof Settings] !== activePreset.settings[k as keyof Settings],
     )
   );
+  const presetFlow = usePresetManagement({
+    presets,
+    presetConflicts: state?.presetConflicts,
+    settings: s,
+    selection: {
+      id: presetId,
+      active: activePreset,
+      modified,
+      select: setPresetId,
+      resetCustomFPS: () => setCustomFPS(false),
+    },
+    draft: {
+      latest: () => draftRef.current,
+      isOwn: () => !!draftTarget.current,
+      change: changed,
+      persist,
+      beforeApply: async () => {
+        if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+        await saveChain.current.catch(() => {});
+      },
+      beforeRename: async () => {
+        if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+        if (draftRef.current) await persist(draftRef.current);
+      },
+    },
+    modal,
+    setModal,
+    busy,
+    setBusy,
+    error,
+    clearError: () => setError(""),
+    actions,
+    notify,
+  });
   const errors = [
     ...new Set([
       ...(s ? compatibilityErrors(s) : []),
@@ -494,28 +514,6 @@ export default function App() {
     } finally {
       setBusy(false);
     }
-  }
-  async function applyPreset(p: Preset) {
-    try {
-      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      await saveChain.current.catch(() => {});
-      if (draftTarget.current) {
-        // A video's own settings: the preset replaces them, keeping where to save.
-        changed({
-          ...p.settings,
-          outputMode: draftRef.current?.outputMode ?? p.settings.outputMode,
-          outputDir: draftRef.current?.outputDir ?? p.settings.outputDir,
-          presetName: p.name,
-        });
-      } else {
-        const result: State = await call("applyPreset", { id: p.id });
-        changed(result.settings);
-      }
-      setPresetId(p.id);
-      setCustomFPS(false);
-      setPendingPreset(null);
-      notify(`已应用“${p.name}”`);
-    } catch {}
   }
   async function add() {
     setBusy(true);
@@ -536,78 +534,6 @@ export default function App() {
         notification("VIDEO_COMMAND_COPIED"),
       );
     } catch {}
-  }
-  async function savePreset() {
-    if (!s || !presetName.trim()) return;
-    setBusy(true);
-    try {
-      await persist(s);
-      const r: State = await call("savePreset", {
-        name: presetName.trim(),
-        ...(saveId ? { id: saveId } : {}),
-        ...(draftTarget.current ? { settings: s } : {}),
-      });
-      changed(
-        draftTarget.current
-          ? { ...s, presetName: presetName.trim() }
-          : r.settings,
-      );
-      setPresetId(
-        r.presets.find((p) => p.name === presetName.trim())?.id || "",
-      );
-      setModal("");
-      notify("预设已保存");
-    } catch {
-    } finally {
-      setBusy(false);
-    }
-  }
-  // Overwrite the selected preset with the current settings, keeping its name.
-  async function overwritePreset() {
-    if (!s || !activePreset) return;
-    setBusy(true);
-    try {
-      await persist(s);
-      const r: State = await call("savePreset", {
-        id: activePreset.id,
-        name: activePreset.name,
-        ...(draftTarget.current ? { settings: s } : {}),
-      });
-      changed(
-        draftTarget.current
-          ? { ...s, presetName: activePreset.name }
-          : r.settings,
-      );
-      setPresetId(activePreset.id);
-      notify(`已保存到“${activePreset.name}”`);
-    } catch {
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function renamePreset() {
-    if (!renameTarget || !presetName.trim()) return;
-    setBusy(true);
-    try {
-      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      if (draftRef.current) await persist(draftRef.current);
-      const r: State = await call("renamePreset", {
-        id: renameTarget.id,
-        name: presetName.trim(),
-      });
-      changed({
-        ...r.settings,
-        presetName:
-          presetId === renameTarget.id
-            ? presetName.trim()
-            : r.settings.presetName,
-      });
-      setRenameTarget(null);
-      notify("预设名称已更新");
-    } catch {
-    } finally {
-      setBusy(false);
-    }
   }
   async function openLog(j: Job) {
     try {
@@ -806,24 +732,14 @@ export default function App() {
               presetId={presetId}
               modified={modified}
               presetHidden={presetHidden}
-              onSelectPreset={(id) => {
-                const p = state.presets.find((p) => p.id === id);
-                if (p) {
-                  if (modified) setPendingPreset(p);
-                  else void applyPreset(p);
-                } else setPresetId("");
-              }}
+              onSelectPreset={presetFlow.select}
               hasActivePreset={!!activePreset}
               activePresetLabel={
                 activePreset ? presetLabel(activePreset, presets) : ""
               }
               busy={busy}
-              onOverwrite={() => void overwritePreset()}
-              onSaveAs={() => {
-                setSaveId("");
-                setPresetName("");
-                setModal("save");
-              }}
+              onOverwrite={() => void presetFlow.overwrite()}
+              onSaveAs={presetFlow.saveAs}
               tab={tab}
               setTab={setTab}
             >
@@ -942,166 +858,9 @@ export default function App() {
           </h2>
         </div>
       )}
-      <Modal
-        error={error}
-        open={modal === "save"}
-        onClose={() => setModal("")}
-        title="保存当前配置"
-        description="把画质、音频和帧率保存为可重复使用的预设。输出目录单独记忆。"
-      >
-        <form
-          noValidate
-          onSubmit={(e) => {
-            e.preventDefault();
-            void savePreset();
-          }}
-        >
-          <Field id="preset-name" label="预设名称">
-            <input
-              id="preset-name"
-              autoFocus
-              data-modal-autofocus
-              maxLength={80}
-              value={presetName}
-              onChange={(e) => setPresetName(e.target.value)}
-              placeholder="例如：MMD · HEVC 30帧"
-            />
-          </Field>
-          {error && (
-            <p role="alert" className="inline-error">
-              {error}
-            </p>
-          )}
-          <div className="modal-actions">
-            <Button onClick={() => setModal("")}>取消</Button>
-            <Button
-              variant="primary"
-              disabled={busy || !presetName.trim()}
-              type="submit"
-            >
-              保存预设
-            </Button>
-          </div>
-        </form>
-      </Modal>
-      <Modal
-        error={error}
-        open={modal === "conflicts" && !!state.presetConflicts?.length}
-        onClose={() => setModal("")}
-        title="内置预设已更新"
-        description="新版本改动了下面这些内置预设，而你之前修改过它们。内置预设已换成新版；你的修改可以丢弃，也可以另存为个人预设。关闭这个窗口后，下次打开软件还会再问。"
-      >
-        <div className="preset-list">
-          {state.presetConflicts?.map((c) => (
-            <div className="preset-item" key={c.id}>
-              <div>
-                <strong>
-                  {state.presets.find((p) => p.id === c.id)
-                    ? presetLabel(
-                        state.presets.find((p) => p.id === c.id)!,
-                        state.presets,
-                      )
-                    : c.builtinName}
-                </strong>
-                <small>你修改过的版本：{c.name}</small>
-              </div>
-              <Button
-                onClick={() =>
-                  call("resolvePresetConflict", { id: c.id, keep: false })
-                }
-              >
-                用新版覆盖
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() =>
-                  call(
-                    "resolvePresetConflict",
-                    { id: c.id, keep: true },
-                    "已另存为个人预设",
-                  )
-                }
-              >
-                保留我的版本
-              </Button>
-            </div>
-          ))}
-        </div>
-      </Modal>
-      <Modal
-        error={error}
-        open={modal === "presets"}
-        onClose={() => setModal("")}
-        fixedHeight
-        title="预设管理"
-        description="拖动排序；隐藏的预设不出现在预设下拉框里。内置预设也可以改名、更新或删除，随时可以恢复。导入导出只包含个人预设。"
-      >
-        <PresetList
-          presets={presets}
-          sort={sortPreset}
-          hidden={presetHidden}
-          onApply={(p) => {
-            setModal("");
-            if (modified) setPendingPreset(p);
-            else void applyPreset(p);
-          }}
-          onRename={(p) => {
-            setRenameTarget(p);
-            setPresetName(p.name);
-            setError("");
-          }}
-          onHide={(p) => {
-            void call("hidePreset", {
-              id: p.id,
-              hidden: !presetHidden(p),
-            }).catch(() => {});
-          }}
-          onDelete={setPendingDelete}
-        />
-        <div className="modal-actions">
-          <Button
-            onClick={() => action("importPresetsFile", undefined, "预设已导入")}
-          >
-            导入 JSON
-          </Button>
-          <Button
-            onClick={() =>
-              action("exportPresetsFile", undefined, "预设导出操作已完成")
-            }
-          >
-            导出预设
-          </Button>
-          <Button
-            onClick={() =>
-              action("restoreBuiltinPresets", undefined, "内置预设已恢复")
-            }
-          >
-            恢复内置预设
-          </Button>
-          {activePreset && (
-            <Button
-              onClick={() => {
-                setSaveId(activePreset.id);
-                setPresetName(activePreset.name);
-                setModal("save");
-              }}
-            >
-              用当前设置更新预设
-            </Button>
-          )}
-          <Button
-            variant="primary"
-            onClick={() => {
-              setSaveId("");
-              setPresetName("");
-              setModal("save");
-            }}
-          >
-            <Plus size={15} />
-            新建预设
-          </Button>
-        </div>
-      </Modal>
+      {presetFlow.dialogs.save}
+      {presetFlow.dialogs.conflicts}
+      {presetFlow.dialogs.manager}
       <MmdExportDialog
         error={mmdError || error}
         open={modal === "mmd"}
@@ -1154,54 +913,8 @@ export default function App() {
       >
         <pre className="log-view">{log || t("engine.log.empty")}</pre>
       </Modal>
-      <Modal
-        error={error}
-        open={!!pendingPreset}
-        onClose={() => setPendingPreset(null)}
-        title="切换编码预设"
-        description="当前配置有未保存到预设的修改。切换将替换当前编码设置，输出目录保留。"
-      >
-        <div className="modal-actions">
-          <Button onClick={() => setPendingPreset(null)} autoFocus>
-            保留当前设置
-          </Button>
-          <Button
-            variant="primary"
-            onClick={() => pendingPreset && applyPreset(pendingPreset)}
-          >
-            应用“{pendingPreset ? presetLabel(pendingPreset, presets) : ""}”
-          </Button>
-        </div>
-      </Modal>
-      <Modal
-        error={error}
-        open={!!pendingDelete}
-        onClose={() => setPendingDelete(null)}
-        title="删除个人预设"
-        description={
-          pendingDelete?.builtin
-            ? `删除内置预设“${presetLabel(pendingDelete, presets)}”后，可在预设管理中点“恢复内置预设”找回。`
-            : `删除“${pendingDelete?.name || ""}”后无法恢复。不会影响视频文件。`
-        }
-      >
-        <div className="modal-actions">
-          <Button autoFocus onClick={() => setPendingDelete(null)}>
-            取消
-          </Button>
-          <Button
-            variant="danger"
-            onClick={async () => {
-              try {
-                await call("deletePreset", { id: pendingDelete?.id });
-                setPendingDelete(null);
-                notify("预设已删除");
-              } catch {}
-            }}
-          >
-            删除预设
-          </Button>
-        </div>
-      </Modal>
+      {presetFlow.dialogs.switching}
+      {presetFlow.dialogs.deletion}
       <Modal
         error={error}
         open={!!fallback}
@@ -1235,40 +948,7 @@ export default function App() {
           </Button>
         </div>
       </Modal>
-      <Modal
-        error={error}
-        open={!!renameTarget}
-        onClose={() => setRenameTarget(null)}
-        title="修改预设名称"
-        description="仅修改名称，已保存的编码参数保持不变。"
-      >
-        <form
-          noValidate
-          onSubmit={(e) => {
-            e.preventDefault();
-            void renamePreset();
-          }}
-        >
-          <Field id="rename-preset" label="预设名称">
-            <input
-              id="rename-preset"
-              value={presetName}
-              maxLength={80}
-              onChange={(e) => setPresetName(e.target.value)}
-            />
-          </Field>
-          <div className="modal-actions">
-            <Button onClick={() => setRenameTarget(null)}>取消</Button>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={busy || !presetName.trim()}
-            >
-              保存名称
-            </Button>
-          </div>
-        </form>
-      </Modal>
+      {presetFlow.dialogs.rename}
       <Modal
         error={error}
         open={modal === "close"}
