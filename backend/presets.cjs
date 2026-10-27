@@ -171,6 +171,7 @@ function createPresetOperations({ schema, reorder }) {
         unreadable.presets.push(p);
         model.noticeData = summary("PRESET_UNREADABLE", {
           name: p?.name || sourceText("preset.unnamed"),
+          ...(!p?.name ? { unnamed: true } : {}),
           detail: e.message,
           error: serializeError(e),
         });

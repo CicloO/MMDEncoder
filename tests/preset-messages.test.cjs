@@ -135,3 +135,39 @@ test("preset notices reproject default names and collisions while keeping person
     assert.ok(i.summaryMessage(value).includes("builtin-4k"));
   }
 });
+
+test("missing-name placeholder follows locale while a user name equal to the source placeholder stays exact", async (t) => {
+  for (const name of [undefined, "未命名"]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "preset-unnamed-"));
+    const raw = {
+      id: "user-unnamed",
+      ...(name === undefined ? {} : { name }),
+      settings: { quality: "bad" },
+    };
+    fs.writeFileSync(
+      path.join(dir, "settings.json"),
+      JSON.stringify({ version: 1, settings: core.DEFAULTS, presets: [raw] }),
+    );
+    const service = createService({ dataDir: dir, mmdPluginDll: "" });
+    try {
+      const notice = JSON.parse(JSON.stringify(service.getState().noticeData));
+      const { i } = translated();
+      i.setLocale("en-XA");
+      assert.equal(
+        i.summaryMessage(notice).includes("Test preset.unnamed"),
+        name === undefined,
+      );
+      if (name !== undefined)
+        assert.ok(i.summaryMessage(notice).includes(name));
+      await service.invoke("settings", { patch: { quality: 19 } });
+      assert.deepEqual(
+        JSON.parse(fs.readFileSync(path.join(dir, "settings.json"), "utf8"))
+          .presets[0],
+        raw,
+      );
+    } finally {
+      service.dispose();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});

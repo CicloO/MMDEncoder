@@ -125,6 +125,9 @@ export function summaryMessage(value: MessageDescriptor | string) {
   )
     return localeRuntime.t(`message.${value.code}`, {
       ...value.params,
+      ...(value.code === "PRESET_UNREADABLE" && value.params.unnamed === true
+        ? { name: localeRuntime.t("preset.unnamed") }
+        : {}),
       detail: diagnosticErrorMessage(value.params.error),
       ...(value.params.backupError
         ? { backupDetail: diagnosticErrorMessage(value.params.backupError) }
