@@ -67,8 +67,8 @@ const launch = () =>
     timeout: 60000,
   });
 let app = await launch();
-async function dismissSetup(page) {
-  const setup = page.getByRole("dialog", { name: "编码引擎", exact: true });
+async function dismissSetup(page, title = "编码引擎") {
+  const setup = page.getByRole("dialog", { name: title, exact: true });
   await expect(setup).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(setup).toBeHidden();
@@ -289,7 +289,8 @@ try {
       BrowserWindow.getAllWindows()[0].loadFile(file),
     path.join(outDir, "tests/fixtures/i18n/app.html"),
   );
-  await dismissSetup(restarted);
+  await expect(restarted.locator("html")).toHaveAttribute("lang", "en-XA");
+  await dismissSetup(restarted, pseudo["engine.title"]);
   await expect(
     restarted.getByRole("button", {
       name: pseudo["about.open"] + " · Language",
