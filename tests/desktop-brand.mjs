@@ -141,6 +141,37 @@ try {
     before,
   );
   checks.push("brand-theme-switch-keeps-encoding-settings");
+  for (const width of [1360, 1000, 680]) {
+    await app.evaluate(
+      ({ BrowserWindow }, width) =>
+        BrowserWindow.getAllWindows()[0].setSize(width, 900),
+      width,
+    );
+    const header = await page.locator(".app-header").evaluate((node) => {
+      const brand = node.querySelector(".brand-icon").getBoundingClientRect();
+      const tab = document.querySelector(".workspace-tabs .button");
+      const label = document.createRange();
+      label.selectNodeContents(tab);
+      return {
+        iconLeft: brand.left,
+        tabLeft: label.getBoundingClientRect().left,
+        gap: parseFloat(getComputedStyle(node.querySelector(".brand")).gap),
+        fits: node.scrollWidth <= node.clientWidth,
+      };
+    });
+    assert.ok(
+      Math.abs(header.iconLeft - header.tabLeft) < 1,
+      JSON.stringify(header),
+    );
+    assert.equal(header.gap, 8);
+    assert.equal(header.fits, true);
+    await page
+      .locator(".app-header")
+      .screenshot({ path: path.join(dir, `header-${width}.png`) });
+  }
+  checks.push(
+    "compact-header-and-navigation-share-left-origin-at-three-widths",
+  );
   await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].setSize(680, 900),
   );
