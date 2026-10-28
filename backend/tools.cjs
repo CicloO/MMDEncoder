@@ -191,6 +191,60 @@ function createTools({
     Object.assign(state, patch);
     onUpdate({ ...state });
   }
+  async function installArchive(stage, archive, release, digest) {
+    emit({
+      phase: "extracting",
+      ...messagePatch("TOOLS_EXTRACTING", { id: release.id }),
+    });
+    const unpack = path.join(stage, "unpacked");
+    fs.mkdirSync(unpack);
+    const seven = extractor || path.resolve(__dirname, "../assets/7za.exe");
+    // List first: reject traversal/link entries before any archive data is extracted.
+    const listing = await extract(seven, ["l", "-slt", archive]);
+    for (const line of String(listing).split(/\r?\n/)) {
+      if (line.startsWith("Path = ")) {
+        const entry = line.slice(7);
+        if (entry === archive) continue;
+        if (
+          path.win32.isAbsolute(entry) ||
+          entry.includes(":") ||
+          entry.split(/[\\/]/).includes("..")
+        )
+          throw appError("TOOLS_UNSAFE_ARCHIVE_PATH");
+      }
+      if (/^(Symbolic Link|Hard Link) = /i.test(line))
+        throw appError("TOOLS_ARCHIVE_LINK");
+    }
+    await extract(seven, ["x", "-y", "-o" + unpack, archive]);
+    for (const name of release.id === "ffmpeg"
+      ? ["ffmpeg.exe", "ffprobe.exe"]
+      : ["NVEncC.exe"]) {
+      const exe =
+        find(unpack, name) ||
+        (name === "NVEncC.exe" && find(unpack, "NVEncC64.exe"));
+      if (!exe) throw appError("TOOLS_EXECUTABLE_MISSING", { name });
+      await verify(exe, [name === "NVEncC.exe" ? "--version" : "-version"]);
+    }
+    const directory = release.id + "-" + crypto.randomUUID();
+    fs.renameSync(unpack, path.join(root, directory));
+    const installed = {
+      ...state.installed,
+      [release.id]: {
+        version: release.version,
+        directory,
+        sha256: digest,
+        verifiedHash: !!release.sha256,
+        url: release.url,
+      },
+    };
+    const temporary = path.join(
+      root,
+      "active-" + crypto.randomUUID() + ".json",
+    );
+    fs.writeFileSync(temporary, JSON.stringify(installed, null, 2));
+    fs.renameSync(temporary, path.join(root, "active.json"));
+    emit({ installed });
+  }
   async function run(install = false) {
     if (busy) throw appError("TOOLS_BUSY");
     busy = true;
@@ -258,61 +312,7 @@ function createTools({
           const digest = hash.digest("hex");
           if (release.sha256 && digest !== release.sha256)
             throw appError("TOOLS_CHECKSUM_MISMATCH");
-          emit({
-            phase: "extracting",
-            ...messagePatch("TOOLS_EXTRACTING", { id: release.id }),
-          });
-          const unpack = path.join(stage, "unpacked");
-          fs.mkdirSync(unpack);
-          const seven =
-            extractor || path.resolve(__dirname, "../assets/7za.exe");
-          // List first: reject traversal/link entries before any archive data is extracted.
-          const listing = await extract(seven, ["l", "-slt", archive]);
-          for (const line of String(listing).split(/\r?\n/)) {
-            if (line.startsWith("Path = ")) {
-              const entry = line.slice(7);
-              if (entry === archive) continue;
-              if (
-                path.win32.isAbsolute(entry) ||
-                entry.includes(":") ||
-                entry.split(/[\\/]/).includes("..")
-              )
-                throw appError("TOOLS_UNSAFE_ARCHIVE_PATH");
-            }
-            if (/^(Symbolic Link|Hard Link) = /i.test(line))
-              throw appError("TOOLS_ARCHIVE_LINK");
-          }
-          await extract(seven, ["x", "-y", "-o" + unpack, archive]);
-          for (const name of release.id === "ffmpeg"
-            ? ["ffmpeg.exe", "ffprobe.exe"]
-            : ["NVEncC.exe"]) {
-            const exe =
-              find(unpack, name) ||
-              (name === "NVEncC.exe" && find(unpack, "NVEncC64.exe"));
-            if (!exe) throw appError("TOOLS_EXECUTABLE_MISSING", { name });
-            await verify(exe, [
-              name === "NVEncC.exe" ? "--version" : "-version",
-            ]);
-          }
-          const directory = release.id + "-" + crypto.randomUUID();
-          fs.renameSync(unpack, path.join(root, directory));
-          const installed = {
-            ...state.installed,
-            [release.id]: {
-              version: release.version,
-              directory,
-              sha256: digest,
-              verifiedHash: !!release.sha256,
-              url: release.url,
-            },
-          };
-          const temporary = path.join(
-            root,
-            "active-" + crypto.randomUUID() + ".json",
-          );
-          fs.writeFileSync(temporary, JSON.stringify(installed, null, 2));
-          fs.renameSync(temporary, path.join(root, "active.json"));
-          emit({ installed });
+          await installArchive(stage, archive, release, digest);
         } finally {
           fs.rmSync(stage, { recursive: true, force: true });
         }
