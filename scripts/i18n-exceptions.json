@@ -1510,5 +1510,191 @@
     "text": "plugin.saveFailed",
     "category": "technical",
     "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "src/AboutDialog.tsx",
+    "text": "MMD",
+    "category": "technical",
+    "reason": "Product/author/license proper name; preserved as an identity, including the approved two-part wordmark."
+  },
+  {
+    "file": "src/AboutDialog.tsx",
+    "text": "Encoder",
+    "category": "technical",
+    "reason": "Product/author/license proper name; preserved as an identity, including the approved two-part wordmark."
+  },
+  {
+    "file": "src/AboutDialog.tsx",
+    "text": "CicloO",
+    "category": "technical",
+    "reason": "Product/author/license proper name; preserved as an identity, including the approved two-part wordmark."
+  },
+  {
+    "file": "src/AboutDialog.tsx",
+    "text": "Mozilla Public License 2.0",
+    "category": "technical",
+    "reason": "Product/author/license proper name; preserved as an identity, including the approved two-part wordmark."
+  },
+  {
+    "file": "src/App.tsx",
+    "text": "MMDEncoder",
+    "category": "technical",
+    "reason": "Product identity and approved wordmark; the Encoder segment uses theme accent but its spelling does not localize."
+  },
+  {
+    "file": "src/App.tsx",
+    "text": "MMD",
+    "category": "technical",
+    "reason": "Product identity and approved wordmark; the Encoder segment uses theme accent but its spelling does not localize."
+  },
+  {
+    "file": "src/App.tsx",
+    "text": "Encoder",
+    "category": "technical",
+    "reason": "Product identity and approved wordmark; the Encoder segment uses theme accent but its spelling does not localize."
+  },
+  {
+    "file": "src/AlignDialog.tsx",
+    "text": "←",
+    "category": "technical",
+    "reason": "Direction glyph on frame adjustment controls; accessible names are localized separately."
+  },
+  {
+    "file": "src/AlignDialog.tsx",
+    "text": "→",
+    "category": "technical",
+    "reason": "Direction glyph on frame adjustment controls; accessible names are localized separately."
+  },
+  {
+    "file": "src/EncodeFooter.tsx",
+    "text": "·",
+    "category": "technical",
+    "reason": "Visual separator glyph, not linguistic copy."
+  },
+  {
+    "file": "src/EncodeQueue.tsx",
+    "text": "→",
+    "category": "technical",
+    "reason": "Source-to-result direction glyph; descriptive text is localized separately."
+  },
+  {
+    "file": "src/FileMeta.tsx",
+    "text": "×",
+    "category": "technical",
+    "reason": "Dimension separator and standard bitrate unit symbol; numeric values use locale formatting."
+  },
+  {
+    "file": "src/FileMeta.tsx",
+    "text": "Mbps",
+    "category": "technical",
+    "reason": "Dimension separator and standard bitrate unit symbol; numeric values use locale formatting."
+  },
+  {
+    "file": "src/MediaDetails.tsx",
+    "text": "·",
+    "category": "technical",
+    "reason": "Visual metadata separator glyph."
+  },
+  {
+    "file": "src/MediaTools.tsx",
+    "text": "→",
+    "category": "technical",
+    "reason": "Source-to-result direction glyph."
+  },
+  {
+    "file": "src/PresetList.tsx",
+    "text": "·",
+    "category": "technical",
+    "reason": "Visual metadata separator glyph."
+  },
+  {
+    "file": "src/TrimQueue.tsx",
+    "text": "H.264 · HEVC · ProRes · UtVideo · FFV1",
+    "category": "technical",
+    "reason": "Supported codec proper names in the empty-state hint; format names are invariant technical labels."
+  },
+  {
+    "file": "src/VideoSettings.tsx",
+    "text": "RGB",
+    "category": "technical",
+    "reason": "Color/Alpha diagram symbols and chroma-subsampling notation; these technical values are invariant."
+  },
+  {
+    "file": "src/VideoSettings.tsx",
+    "text": "A",
+    "category": "technical",
+    "reason": "Color/Alpha diagram symbols and chroma-subsampling notation; these technical values are invariant."
+  },
+  {
+    "file": "src/VideoSettings.tsx",
+    "text": "4:2:0",
+    "category": "technical",
+    "reason": "Color/Alpha diagram symbols and chroma-subsampling notation; these technical values are invariant."
+  },
+  {
+    "file": "src/VideoSettings.tsx",
+    "text": "4:2:2",
+    "category": "technical",
+    "reason": "Color/Alpha diagram symbols and chroma-subsampling notation; these technical values are invariant."
+  },
+  {
+    "file": "src/VideoSettings.tsx",
+    "text": "4:4:4",
+    "category": "technical",
+    "reason": "Color/Alpha diagram symbols and chroma-subsampling notation; these technical values are invariant."
+  },
+  {
+    "file": "src/TrimEditor.tsx",
+    "text": "I",
+    "category": "technical",
+    "reason": "Literal keyboard shortcuts for setting in/out points; button labels and accessible names are localized."
+  },
+  {
+    "file": "src/TrimEditor.tsx",
+    "text": "O",
+    "category": "technical",
+    "reason": "Literal keyboard shortcuts for setting in/out points; button labels and accessible names are localized."
+  },
+  {
+    "file": "src/RtxSettings.tsx",
+    "text": "NVIDIA QualityLevel",
+    "category": "technical",
+    "reason": "NVIDIA API/property and VSR preset names, retained as vendor technical labels."
+  },
+  {
+    "file": "src/RtxSettings.tsx",
+    "text": "Streaming Medium",
+    "category": "technical",
+    "reason": "NVIDIA API/property and VSR preset names, retained as vendor technical labels."
+  },
+  {
+    "file": "src/RtxSettings.tsx",
+    "text": "Streaming Ultra",
+    "category": "technical",
+    "reason": "NVIDIA API/property and VSR preset names, retained as vendor technical labels."
+  },
+  {
+    "file": "desktop/main.cjs",
+    "text": "MMDEncoder",
+    "category": "technical",
+    "reason": "Native window product identity."
+  },
+  {
+    "file": "backend/detect.cjs",
+    "text": "HEVC Alpha：",
+    "category": "technical",
+    "reason": "Diagnostic prefix for the codec Alpha probe; codec names remain technical and output details are preserved."
+  },
+  {
+    "file": "desktop/preload.cjs",
+    "text": "Unsupported action",
+    "category": "diagnostic",
+    "reason": "Internal unsupported-operation guard, unreachable from the current allowlisted UI actions; structured callers localize the stable code and legacy developer diagnostics stay exact."
+  },
+  {
+    "file": "backend/presets.cjs",
+    "text": "Unsupported preset action: ",
+    "category": "diagnostic",
+    "reason": "Internal unsupported-operation guard, unreachable from the current allowlisted UI actions; structured callers localize the stable code and legacy developer diagnostics stay exact."
   }
 ]
