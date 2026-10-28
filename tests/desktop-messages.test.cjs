@@ -85,6 +85,8 @@ test("sandbox preload denies unknown actions locally and preserves supported IPC
     Promise,
     Error,
     Set,
+    process: { argv: [] },
+    document: { documentElement: { dataset: {} } },
   };
   vm.runInNewContext(
     fs.readFileSync(path.join(__dirname, "../desktop/preload.cjs"), "utf8"),
