@@ -170,7 +170,7 @@ try {
       .replace("{current}", pseudo["app.theme.darkName"])
       .replace("{next}", pseudo["app.theme.system"]),
   );
-  await expect(page.locator(".brand p")).toHaveText(pseudo["app.tagline"]);
+  await expect(page.locator(".brand h1")).toHaveText("MMDEncoder");
   assert.equal(
     await page.evaluate(
       () => window.shellNode === document.querySelector(".app-shell"),

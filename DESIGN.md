@@ -22,6 +22,9 @@ colors:
   preview: "#101318"
   shadowSmall: "#00000044"
   shadowLarge: "#00000088"
+  logoMain: "#f3f6fa"
+  logoCyan: "#3ddbea"
+  logoPink: "#ff5c8a"
 lightColors:
   background: "#f3f5f8"
   surface: "#ffffff"
@@ -44,6 +47,9 @@ lightColors:
   preview: "#101318"
   shadowSmall: "#00000044"
   shadowLarge: "#00000088"
+  logoMain: "#1c2b45"
+  logoCyan: "#1fb8cc"
+  logoPink: "#ff4d7e"
 typography:
   body:
     fontFamily: "Segoe UI, Microsoft YaHei UI, sans-serif"
@@ -94,6 +100,10 @@ Borders separate functional panels; shadows only on dialog overlays. No gradient
 ## Shapes
 
 8px controls and 12px panels. Badges have modest rounded corners, not pills everywhere.
+
+Brand (2026-10-28, final screenshots and taskbar appearance approved by the user): use the supplied frame/wave/dot/cut-triangle artwork unchanged. The shared inline mark crops only empty viewBox margins, uses instance-unique SVG references and the semantic logoMain/logoCyan/logoPink tokens. Header, startup and About retain the 42 × 46px wrapper footprint; the mark is 36px with no redundant border or background frame. The supplied ICO is authoritative: its 16/24px simplified, 32/48px heavier and 64px+ full drawings come from curated PNGs, never one SVG resized to every size.
+
+The user removed the tagline on 2026-10-28. Header mark, name and version badge align vertically on one row; About aligns the mark and name with its version block. No empty tagline slot or former version top offset remains. Both obsolete locale keys and their presentation rules are removed. The user also requested the Encoder wordmark segment in the theme's primary accent, while MMD keeps the normal text color; typography and alignment stay unchanged.
 
 ## Components
 

@@ -294,10 +294,10 @@ svg {
   height: 46px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  color: var(--color-primary);
-  background: var(--color-surface);
+}
+.brand-mark {
+  width: 36px;
+  height: 36px;
 }
 .brand h1 {
   font: 600 24px/1.2 var(--font-display);
@@ -305,12 +305,7 @@ svg {
 }
 .brand h1 span {
   font-weight: 400;
-}
-.brand p {
-  font-size: 11px;
-  color: var(--color-muted);
-  letter-spacing: 1.5px;
-  margin-top: 5px;
+  color: var(--color-primary);
 }
 .version {
   font-family: var(--font-mono);
@@ -319,8 +314,6 @@ svg {
   color: var(--color-muted);
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  align-self: flex-start;
-  margin-top: 4px;
 }
 .header-actions {
   display: flex;
@@ -1381,12 +1374,7 @@ textarea {
 }
 .about-name span {
   font-weight: 400;
-}
-.about-tagline {
-  margin: 4px 0 0;
-  font-size: 11px;
-  letter-spacing: 1.5px;
-  color: var(--color-muted);
+  color: var(--color-primary);
 }
 .about-version {
   margin: 0;

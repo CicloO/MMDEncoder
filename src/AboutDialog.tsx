@@ -1,10 +1,10 @@
+import { BrandMark } from "./BrandMark";
 import { useEffect, useState } from "react";
 import {
   ArrowDownToLine,
   ExternalLink,
   FolderOpen,
   Globe,
-  Layers,
   MessageSquareWarning,
   RefreshCw,
 } from "lucide-react";
@@ -121,14 +121,11 @@ export function AboutDialog({
     >
       <div className="about-hero">
         <span className="brand-icon" aria-hidden="true">
-          <Layers size={23} />
+          <BrandMark />
         </span>
-        <div>
-          <p className="about-name">
-            MMD<span>Encoder</span>
-          </p>
-          <p className="about-tagline">{text("about.tagline")}</p>
-        </div>
+        <p className="about-name">
+          MMD<span>Encoder</span>
+        </p>
         <p className="about-version">
           <span>{text("about.version")}</span>
           <strong>{info.version}</strong>

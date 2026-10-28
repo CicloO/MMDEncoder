@@ -20,7 +20,10 @@
     "overlay": "#080b12bb",
     "preview": "#101318",
     "shadowSmall": "#00000044",
-    "shadowLarge": "#00000088"
+    "shadowLarge": "#00000088",
+    "logoMain": "#f3f6fa",
+    "logoCyan": "#3ddbea",
+    "logoPink": "#ff5c8a"
   },
   "light": {
     "background": "#f3f5f8",
@@ -43,6 +46,9 @@
     "overlay": "#080b12bb",
     "preview": "#101318",
     "shadowSmall": "#00000044",
-    "shadowLarge": "#00000088"
+    "shadowLarge": "#00000088",
+    "logoMain": "#1c2b45",
+    "logoCyan": "#1fb8cc",
+    "logoPink": "#ff4d7e"
   }
 }

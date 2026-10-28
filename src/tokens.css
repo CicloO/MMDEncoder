@@ -21,6 +21,9 @@
   --color-preview: #101318;
   --color-shadowSmall: #00000044;
   --color-shadowLarge: #00000088;
+  --color-logoMain: #f3f6fa;
+  --color-logoCyan: #3ddbea;
+  --color-logoPink: #ff5c8a;
   --font-body: Segoe UI, Microsoft YaHei UI, sans-serif;
   --font-display: Bahnschrift, Microsoft YaHei UI, sans-serif;
   --font-mono: Cascadia Code, Consolas, monospace;
@@ -52,4 +55,7 @@
   --color-preview: #101318;
   --color-shadowSmall: #00000044;
   --color-shadowLarge: #00000088;
+  --color-logoMain: #1c2b45;
+  --color-logoCyan: #1fb8cc;
+  --color-logoPink: #ff4d7e;
 }

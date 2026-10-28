@@ -1,10 +1,10 @@
+import { BrandMark } from "./BrandMark";
 import { useEffect, useRef, useState } from "react";
 import {
   Sun,
   Moon,
   Monitor,
   ArrowDownToLine,
-  Layers,
   Settings2,
   Check,
   Bookmark,
@@ -567,7 +567,7 @@ export default function App() {
     return (
       <main className="startup">
         <div className="brand-icon">
-          <Layers />
+          <BrandMark />
         </div>
         <h1>MMDEncoder</h1>
         {error ? (
@@ -606,14 +606,11 @@ export default function App() {
       <header className="app-header">
         <div className="brand">
           <span className="brand-icon">
-            <Layers size={23} />
+            <BrandMark />
           </span>
-          <div>
-            <h1>
-              MMD<span>Encoder</span>
-            </h1>
-            <p>{t("app.tagline")}</p>
-          </div>
+          <h1>
+            MMD<span>Encoder</span>
+          </h1>
           <span className="version">{__APP_VERSION__}</span>
         </div>
         <div className="header-actions">
