@@ -161,7 +161,7 @@ export function RtxSettings({
           />
           <span>
             {t("rtx.vfg")}
-            <small className="hint hires-hint">{t("rtx.vfgHint")}</small>
+            <small className="hint">{t("rtx.vfgHint")}</small>
           </span>
         </label>
         {s.vfg && (

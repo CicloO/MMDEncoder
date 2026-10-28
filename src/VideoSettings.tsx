@@ -1,5 +1,6 @@
 import { t, localeRuntime } from "./i18n";
-import { Button, Field, Select } from "./components";
+import { useId } from "react";
+import { Button, Field, Select, Tooltip } from "./components";
 import { BackgroundColor } from "./BackgroundColor";
 import { RtxSettings } from "./RtxSettings";
 import { Copy, Folder, Info, Plus } from "lucide-react";
@@ -73,6 +74,7 @@ export function VideoSettings({
   copy: () => void;
   pickDirectory: () => void;
 }) {
+  const tooltipId = useId();
   // 前向分析只对 NVENC / NVEncC 生效；级别只有 HEVC / AV1 支持
   const lookaheadSupported = /_nvenc$|^nvencc:/.test(s?.encoder || "");
   const lookaheadLevelSupported =
@@ -85,6 +87,13 @@ export function VideoSettings({
     hint?: string,
   ) {
     const value = Number(s?.[key]);
+    const automatic = key === "gop" || key === "bframes";
+    const unavailable =
+      key === "lookahead" && !lookaheadSupported
+        ? t("video.lookaheadHint")
+        : key === "lookaheadLevel" && !lookaheadLevelSupported
+          ? t("video.lookaheadLevelHint")
+          : undefined;
     const fieldError =
       !Number.isFinite(value) || value < min || value > max
         ? t("video.numberRange", {
@@ -92,27 +101,60 @@ export function VideoSettings({
             max: localeRuntime.number(max),
           })
         : undefined;
+    const input = (
+      <input
+        id={key}
+        type="number"
+        min={automatic ? 0 : min}
+        max={max}
+        value={
+          automatic && value === -1
+            ? ""
+            : Number.isFinite(value)
+              ? String(value)
+              : ""
+        }
+        placeholder={automatic ? t("video.automatic") : undefined}
+        title={unavailable}
+        disabled={
+          (s?.encoder === "prores_ks" && key === "bitrate") ||
+          (key === "lookahead" && !lookaheadSupported) ||
+          (key === "lookaheadLevel" && !lookaheadLevelSupported)
+        }
+        aria-invalid={!!fieldError}
+        aria-describedby={
+          [
+            fieldError ? `${key}-error` : hint ? `${key}-hint` : "",
+            unavailable ? `${tooltipId}-${key}-reason` : "",
+          ]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
+        onChange={(e) =>
+          set(
+            key,
+            e.target.value === ""
+              ? automatic
+                ? -1
+                : NaN
+              : Number(e.target.value),
+          )
+        }
+      />
+    );
     return (
       <Field id={key} label={label} hint={hint} error={fieldError}>
-        <input
-          id={key}
-          type="number"
-          min={min}
-          max={max}
-          value={Number.isFinite(value) ? String(value) : ""}
-          disabled={
-            (s?.encoder === "prores_ks" && key === "bitrate") ||
-            (key === "lookahead" && !lookaheadSupported) ||
-            (key === "lookaheadLevel" && !lookaheadLevelSupported)
-          }
-          aria-invalid={!!fieldError}
-          aria-describedby={
-            fieldError ? `${key}-error` : hint ? `${key}-hint` : undefined
-          }
-          onChange={(e) =>
-            set(key, e.target.value === "" ? NaN : Number(e.target.value))
-          }
-        />
+        {unavailable ? (
+          <Tooltip
+            id={`${tooltipId}-${key}-reason`}
+            text={unavailable}
+            label={label}
+          >
+            {input}
+          </Tooltip>
+        ) : (
+          input
+        )}
       </Field>
     );
   }
@@ -201,11 +243,8 @@ export function VideoSettings({
                         : "p7",
               });
             }}
-            hint={
-              detecting
-                ? t("video.encoderDetectingHint")
-                : t("video.encoderAvailableHint")
-            }
+            hint={detecting ? t("video.encoderDetectingHint") : undefined}
+            help={t("video.encoderAvailableHint")}
           />
           <div className="form-row">
             <Select
@@ -246,7 +285,7 @@ export function VideoSettings({
                       : 63,
                 )}
           </div>
-          <p className="hint quality-hint">
+          <p className="hint">
             {s.encoder === "prores_ks"
               ? t("video.proresHint")
               : s.rateControl === "bitrate"
@@ -505,7 +544,7 @@ export function VideoSettings({
             />
             <span>
               {t("video.hiRes")}
-              <small className="hint hires-hint">
+              <small className="hint">
                 {!["flac", "pcm_s16le"].includes(s.audio)
                   ? t("video.hiResDisabled")
                   : t("video.hiResDetails", {
@@ -770,7 +809,7 @@ export function VideoSettings({
             />
             <span>
               {t("video.editFriendly")}
-              <small className="hint hires-hint">
+              <small className="hint">
                 {s.gop >= 0
                   ? t("video.editFriendlyManual")
                   : t("video.editFriendlyHint")}
@@ -778,38 +817,12 @@ export function VideoSettings({
             </span>
           </label>
           <div className="form-row">
-            {fieldNumber(
-              "gop",
-              t("video.gop"),
-              -1,
-              10000,
-              t("video.automaticNegative"),
-            )}
-            {fieldNumber(
-              "bframes",
-              t("video.bframes"),
-              -1,
-              16,
-              t("video.automaticNegative"),
-            )}
+            {fieldNumber("gop", t("video.gop"), -1, 10000)}
+            {fieldNumber("bframes", t("video.bframes"), -1, 16)}
           </div>
           <div className="form-row">
-            {fieldNumber(
-              "lookahead",
-              t("video.lookahead"),
-              0,
-              32,
-              lookaheadSupported ? undefined : t("video.lookaheadHint"),
-            )}
-            {fieldNumber(
-              "lookaheadLevel",
-              t("video.lookaheadLevel"),
-              0,
-              3,
-              lookaheadLevelSupported
-                ? undefined
-                : t("video.lookaheadLevelHint"),
-            )}
+            {fieldNumber("lookahead", t("video.lookahead"), 0, 32)}
+            {fieldNumber("lookaheadLevel", t("video.lookaheadLevel"), 0, 3)}
           </div>
           <div className="command-row">
             <details className="command-details">

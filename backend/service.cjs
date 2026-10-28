@@ -30,7 +30,7 @@ const { createAlignService } = require("./align-service.cjs");
 const { createTrimQueue } = require("./trim-queue.cjs");
 const { commit } = require("./commit.cjs");
 const { createSettingsStore } = require("./settings-store.cjs");
-const { createPreferences } = require("./preferences.cjs");
+const { createPreferences, normalizeTheme } = require("./preferences.cjs");
 const { createPresetOperations } = require("./presets.cjs");
 const {
   testEnhancements,
@@ -71,7 +71,7 @@ function createService({
     detectPromise = null,
     locatePromise = null;
   const state = {
-    preferences: { locale: null },
+    preferences: { locale: null, theme: "system" },
     locale: preferences.resolve(null),
     systemLocale: preferences.resolve(null),
     jobs: [],
@@ -248,7 +248,7 @@ function createService({
     );
     state.notice = state.noticeData.message;
   }
-  function persist() {
+  function persist({ syncMmd = true } = {}) {
     if (unbackedSettings) {
       const pending = unbackedSettings;
       try {
@@ -281,7 +281,7 @@ function createService({
         savedAt: state.mmd.savedAt,
       },
     });
-    syncMmdExport();
+    if (syncMmd) syncMmdExport();
   }
   // The export choice is shared with the plugin's settings window in MMD through
   // mmd-selection.json; take it over when it was saved there more recently.
@@ -394,6 +394,7 @@ function createService({
     const saved = settingsStore.read();
     if (saved.version !== 1) throw appError("SETTINGS_VERSION_UNSUPPORTED");
     state.preferences.locale = preferences.normalize(saved.preferences?.locale);
+    state.preferences.theme = normalizeTheme(saved.preferences?.theme);
     state.locale = preferences.resolve(state.preferences.locale);
     if (saved.mmdExport && typeof saved.mmdExport === "object") {
       if (typeof saved.mmdExport.presetId === "string")
@@ -824,6 +825,17 @@ function createService({
         } catch (error) {
           state.preferences = previous;
           state.locale = preferences.resolve(previous.locale);
+          throw error;
+        }
+        break;
+      }
+      case "setTheme": {
+        const previous = state.preferences.theme;
+        state.preferences.theme = normalizeTheme(payload.theme);
+        try {
+          persist({ syncMmd: false });
+        } catch (error) {
+          state.preferences.theme = previous;
           throw error;
         }
         break;

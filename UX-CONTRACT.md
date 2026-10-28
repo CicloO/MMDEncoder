@@ -43,6 +43,10 @@ Queue is a paged list, 10 entries per page, single focused item for detail; star
 
 Settings persist atomically and immediately; presets require explicit save, with modified status relative to selected preset. Switching preset while modified uses application dialog. Output location is a remembered global preference and is retained across preset changes. Start freezes settings per job. Disabled start states explain absence of inputs/engine/validation.
 
+第八项已于2026-10-28获用户全部页面截图确认：GOP/B 帧的内部自动值仍为 −1，界面显示空框和“自动”占位；输入数字保存其值，清空回到自动，0 保持为 0。编码器可用说明由字段标题旁的说明按钮提供，悬停、焦点、点击及 Enter 均可打开，Escape 关闭；不可用前向分析控件保留原规则，以可聚焦的说明区域和 aria-describedby 提供原因。共享 Tooltip 管理显示、定位和关联，浮层不挤占布局，滚动及缩放窗口时保持在视口内。
+
+Theme is an independent system/light/dark preference, persisted by the service's existing settings-store owner. The header cycles system → light → dark → system. System mode follows live OS color-scheme events; explicit modes remain fixed. Startup window and document colors use the saved resolution before React content renders. Old localStorage theme values are ignored. Theme persistence does not synchronize or adopt MMD export selection, alter encoding settings/presets/jobs, or enter RTX signatures; a save failure rolls back the preference through the existing failure path. Native MMD settings remain outside the renderer theme.
+
 An unreadable settings file is backed up before replacement. If that copy fails, the notice reports failure and the original file stays untouched; the existing persistence path retries the same backup before any later settings or preference write. A successful copy allows the normal atomic save and updates the notice with the actual backup name. Both read and copy causes remain structured for locale refresh, and a rejected preference save keeps the previously saved language.
 
 视频队列在结果状态后显示已提交的成品文件名；双文件遮罩显示两项，仅遮罩显示一项，部分完成只展示提交成功的部分。完整路径在悬停提示中，长文件名从中部省略且保留完整可访问文字。计划中的遮罩路径由后端留作重试，不能冒充成品发送给显示层。输出概览位于 page 内，内容由 page-scroll 独立滚动，宽窄窗口和滚动前后都保持底栏贴底；测试工作台必须沿用同一容器结构，诊断通知不得挤占底栏下方空间。

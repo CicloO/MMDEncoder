@@ -209,7 +209,7 @@ export type Engine = {
   labelParams?: { codec: string; backend: string };
 };
 export type State = {
-  preferences: { locale: string | null };
+  preferences: { locale: string | null; theme: "system" | "light" | "dark" };
   locale: string;
   systemLocale: string;
   jobs: Job[];
@@ -335,6 +335,7 @@ declare global {
   const __APP_VERSION__: string;
   interface Window {
     encoder: {
+      initialTheme?: "light" | "dark";
       invokeResult: (action: string, payload?: unknown) => Promise<any>;
       invoke: (action: string, payload?: unknown) => Promise<any>;
       onCloseRequest: (fn: () => void) => () => void;

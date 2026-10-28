@@ -26,3 +26,9 @@ fs.writeFileSync(
     { parser: "css" },
   ),
 );
+fs.writeFileSync(
+  new URL("../desktop/theme-colors.json", import.meta.url),
+  await format(JSON.stringify({ dark: t.colors, light: t.lightColors }), {
+    parser: "json",
+  }),
+);

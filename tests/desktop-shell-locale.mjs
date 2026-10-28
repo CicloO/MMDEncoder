@@ -149,9 +149,9 @@ try {
     }
   };
   checks.push("pending-state-shows-loading-and-release-keeps-actual-app");
-  await page
-    .getByRole("button", { name: source["app.theme.dark"], exact: true })
-    .click();
+  await page.evaluate(() =>
+    window.encoder.invoke("setTheme", { theme: "dark" }),
+  );
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   const before = await state();
   await page.evaluate(
@@ -160,11 +160,15 @@ try {
   await choose("en-XA");
   await expect(page.locator(".theme-toggle")).toHaveAttribute(
     "aria-label",
-    pseudo["app.theme.light"],
+    pseudo["app.theme.switch"]
+      .replace("{current}", pseudo["app.theme.darkName"])
+      .replace("{next}", pseudo["app.theme.system"]),
   );
   await expect(page.locator(".theme-toggle")).toHaveAttribute(
     "title",
-    pseudo["app.theme.light"],
+    pseudo["app.theme.switch"]
+      .replace("{current}", pseudo["app.theme.darkName"])
+      .replace("{next}", pseudo["app.theme.system"]),
   );
   await expect(page.locator(".brand p")).toHaveText(pseudo["app.tagline"]);
   assert.equal(
@@ -175,13 +179,10 @@ try {
   );
   assert.deepEqual((await state()).settings, before.settings);
   assert.deepEqual((await state()).presets, before.presets);
-  assert.equal(
-    await page.evaluate(() => localStorage.getItem("mmd-color-theme")),
-    "dark",
+  assert.equal((await state()).preferences.theme, "dark");
+  await page.evaluate(() =>
+    window.encoder.invoke("setTheme", { theme: "light" }),
   );
-  await page
-    .getByRole("button", { name: pseudo["app.theme.light"], exact: true })
-    .click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   for (const workspace of ["media", "trim", "encode"]) {
     await page

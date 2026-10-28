@@ -60,9 +60,7 @@ export function TrimSettings({
             />
             <span>
               {text("trim.smart")}
-              <small className="hint hires-hint">
-                {text("trim.smartHint")}
-              </small>
+              <small className="hint">{text("trim.smartHint")}</small>
             </span>
           </label>
           <label className="checkbox-row">
@@ -73,9 +71,7 @@ export function TrimSettings({
             />
             <span>
               {text("trim.mmdFrames")}
-              <small className="hint hires-hint">
-                {text("trim.mmdFramesHint")}
-              </small>
+              <small className="hint">{text("trim.mmdFramesHint")}</small>
             </span>
           </label>
           <Select

@@ -6,6 +6,7 @@ const {
   clipboard,
   shell,
   protocol,
+  nativeTheme,
 } = require("electron");
 const path = require("node:path");
 const { Readable } = require("node:stream");
@@ -22,6 +23,9 @@ const { appError } = require("../backend/errors.cjs");
 const { commandText } = require("../backend/command-text.cjs");
 const { createTranslator } = require("../locales/runtime.mjs");
 const localeRegistry = require("../locales/registry.json");
+const { createSettingsStore } = require("../backend/settings-store.cjs");
+const { normalizeTheme, resolveTheme } = require("../backend/preferences.cjs");
+const themeColors = require("./theme-colors.json");
 const localeCatalogs = Object.fromEntries(
   localeRegistry.locales.map((entry) => [
     entry.id,
@@ -74,6 +78,25 @@ else {
   app
     .whenReady()
     .then(async () => {
+      let initialPreference = "system";
+      try {
+        initialPreference = normalizeTheme(
+          createSettingsStore(dataDir).read().preferences?.theme,
+        );
+      } catch {
+        /* The service reports and backs up unreadable settings. */
+      }
+      let appliedTheme = resolveTheme(
+        initialPreference,
+        nativeTheme.shouldUseDarkColors,
+      );
+      const applyWindowTheme = (preference) => {
+        const next = resolveTheme(preference, nativeTheme.shouldUseDarkColors);
+        if (next !== appliedTheme && win && !win.isDestroyed()) {
+          win.setBackgroundColor(themeColors[next].background);
+          appliedTheme = next;
+        }
+      };
       win = new BrowserWindow({
         width: 1280,
         height: 900,
@@ -81,7 +104,7 @@ else {
         minHeight: 600,
         title: "MMDEncoder",
         icon: path.join(__dirname, "../assets/icon.ico"),
-        backgroundColor: "#f3f5f8",
+        backgroundColor: themeColors[appliedTheme].background,
         show: !process.env.MMD_ENCODER_TEST,
         autoHideMenuBar: true,
         webPreferences: {
@@ -90,8 +113,14 @@ else {
           nodeIntegration: false,
           sandbox: true,
           backgroundThrottling: false,
+          additionalArguments: [`--mmd-theme=${appliedTheme}`],
         },
       });
+      nativeTheme.on("updated", () =>
+        applyWindowTheme(
+          service?.getState().preferences.theme || initialPreference,
+        ),
+      );
       win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       win.webContents.on("will-navigate", (event) => event.preventDefault());
       win.webContents.session.setPermissionRequestHandler(
@@ -118,6 +147,7 @@ else {
         toolsRoot:
           process.env.MMD_ENCODER_TOOLS_ROOT || process.env.MMD_ENCODER_TOOLS,
         onUpdate: (s) => {
+          applyWindowTheme(s.preferences.theme);
           if (win && !win.isDestroyed())
             win.webContents.send("encoder:state", s);
         },
@@ -467,6 +497,7 @@ else {
         const allowed = [
           "state",
           "setLocale",
+          "setTheme",
           "compatibility",
           "testEnhancements",
           "mediaStart",

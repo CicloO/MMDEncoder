@@ -83,7 +83,7 @@ export function MediaSettings({
               />
               <span>
                 {t("media.hiresLabel")}
-                <small className="hint hires-hint">
+                <small className="hint">
                   {!HIRES_FORMATS.includes(o.audioFormat)
                     ? t("media.hiresUnsupported")
                     : t(

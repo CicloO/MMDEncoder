@@ -3,6 +3,7 @@ const allowed = new Set([
   "quit",
   "state",
   "setLocale",
+  "setTheme",
   "compatibility",
   "testEnhancements",
   "mediaStart",
@@ -86,7 +87,22 @@ const allowed = new Set([
   "mmdOpenLog",
   "mmdOpenLatest",
 ]);
+const initialTheme = process.argv.includes("--mmd-theme=dark")
+  ? "dark"
+  : "light";
+const applyInitialTheme = () => {
+  if (!document.documentElement) return false;
+  document.documentElement.dataset.theme = initialTheme;
+  return true;
+};
+if (!applyInitialTheme()) {
+  const observer = new MutationObserver(() => {
+    if (applyInitialTheme()) observer.disconnect();
+  });
+  observer.observe(document, { childList: true });
+}
 contextBridge.exposeInMainWorld("encoder", {
+  initialTheme,
   // Structured replies cross contextBridge as plain data. Custom properties
   // on a rejected Error do not reliably survive that second Electron boundary.
   invokeResult(action, payload) {

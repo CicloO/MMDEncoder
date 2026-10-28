@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Sun,
   Moon,
+  Monitor,
   ArrowDownToLine,
   Layers,
   Settings2,
@@ -52,24 +53,16 @@ const encoderBackend = (id: string) =>
 // Audio files dropped on the video page replace a video's audio.
 const AUDIO_EXT = /\.(wav|flac|mp3|aac|m4a|opus|ogg|mka)$/i;
 export default function App() {
-  // Light is the default. A new key so the old auto-saved "dark" default does not stick.
-  const [theme, setTheme] = useState(() => {
-    try {
-      return localStorage.getItem("mmd-color-theme") === "dark"
-        ? "dark"
-        : "light";
-    } catch {
-      return "light";
-    }
-  });
+  const [systemDark, setSystemDark] = useState(
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try {
-      localStorage.setItem("mmd-color-theme", theme);
-    } catch {
-      /* Theme still works for this session. */
-    }
-  }, [theme]);
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => setSystemDark(query.matches);
+    apply();
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, []);
   useEffect(() => {
     try {
       localStorage.removeItem("mmd-auto-align");
@@ -548,6 +541,28 @@ export default function App() {
       if (path) set("outputDir", path);
     } catch {}
   }
+  const themePreference =
+    state?.preferences.theme || window.encoder?.initialTheme || "system";
+  const theme =
+    themePreference === "system"
+      ? systemDark
+        ? "dark"
+        : "light"
+      : themePreference;
+  const nextTheme =
+    themePreference === "system"
+      ? "light"
+      : themePreference === "light"
+        ? "dark"
+        : "system";
+  const themeNames = {
+    system: t("app.theme.system"),
+    light: t("app.theme.lightName"),
+    dark: t("app.theme.darkName"),
+  };
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
   if (!s || !state)
     return (
       <main className="startup">
@@ -604,13 +619,23 @@ export default function App() {
         <div className="header-actions">
           <Button
             className="theme-toggle"
-            aria-label={t(
-              theme === "dark" ? "app.theme.light" : "app.theme.dark",
-            )}
-            title={t(theme === "dark" ? "app.theme.light" : "app.theme.dark")}
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            aria-label={t("app.theme.switch", {
+              current: themeNames[themePreference],
+              next: themeNames[nextTheme],
+            })}
+            title={t("app.theme.switch", {
+              current: themeNames[themePreference],
+              next: themeNames[nextTheme],
+            })}
+            onClick={() => action("setTheme", { theme: nextTheme })}
           >
-            {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            {themePreference === "system" ? (
+              <Monitor size={18} />
+            ) : themePreference === "dark" ? (
+              <Moon size={18} />
+            ) : (
+              <Sun size={18} />
+            )}
           </Button>
           <EngineStatusButton
             detecting={state.detecting}
