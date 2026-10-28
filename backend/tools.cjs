@@ -194,7 +194,10 @@ function createTools({
   async function installArchive(stage, archive, release, digest) {
     emit({
       phase: "extracting",
-      ...messagePatch("TOOLS_EXTRACTING", { id: release.id }),
+      ...messagePatch(
+        release.id ? "TOOLS_EXTRACTING" : "TOOLS_LOCAL_EXTRACTING",
+        release.id ? { id: release.id } : {},
+      ),
     });
     const unpack = path.join(stage, "unpacked");
     fs.mkdirSync(unpack);
@@ -216,27 +219,57 @@ function createTools({
         throw appError("TOOLS_ARCHIVE_LINK");
     }
     await extract(seven, ["x", "-y", "-o" + unpack, archive]);
-    for (const name of release.id === "ffmpeg"
-      ? ["ffmpeg.exe", "ffprobe.exe"]
-      : ["NVEncC.exe"]) {
-      const exe =
-        find(unpack, name) ||
-        (name === "NVEncC.exe" && find(unpack, "NVEncC64.exe"));
-      if (!exe) throw appError("TOOLS_EXECUTABLE_MISSING", { name });
-      await verify(exe, [name === "NVEncC.exe" ? "--version" : "-version"]);
+    const ids = release.id
+      ? [release.id]
+      : [
+          ...(find(unpack, "ffmpeg.exe") || find(unpack, "ffprobe.exe")
+            ? ["ffmpeg"]
+            : []),
+          ...(find(unpack, "NVEncC.exe") || find(unpack, "NVEncC64.exe")
+            ? ["nvencc"]
+            : []),
+        ];
+    if (!ids.length) throw appError("TOOLS_ARCHIVE_UNRECOGNIZED");
+    const versions = {};
+    for (const id of ids) {
+      for (const name of id === "ffmpeg"
+        ? ["ffmpeg.exe", "ffprobe.exe"]
+        : ["NVEncC.exe"]) {
+        const exe =
+          find(unpack, name) ||
+          (name === "NVEncC.exe" && find(unpack, "NVEncC64.exe"));
+        if (!exe) throw appError("TOOLS_EXECUTABLE_MISSING", { name });
+        const output = await verify(exe, [
+          id === "nvencc" ? "--version" : "-version",
+        ]);
+        if (!versions[id]) {
+          const line =
+            String(output)
+              .split(/\r?\n/)
+              .find((line) => line.trim()) || "";
+          versions[id] =
+            release.version ||
+            (id === "ffmpeg"
+              ? line.match(/^ffmpeg version (\S+)/i)?.[1]
+              : line.match(/NVEncC.*?\b(\d+\.\d+(?:\.\d+)?)/i)?.[1]) ||
+            line.slice(0, 100);
+          if (!versions[id]) throw appError("TOOLS_VERSION_MISSING", { id });
+        }
+      }
     }
-    const directory = release.id + "-" + crypto.randomUUID();
+    const directory = (release.id || "local") + "-" + crypto.randomUUID();
     fs.renameSync(unpack, path.join(root, directory));
-    const installed = {
-      ...state.installed,
-      [release.id]: {
-        version: release.version,
+    const installed = { ...state.installed };
+    for (const id of ids) {
+      installed[id] = {
+        version: versions[id],
         directory,
         sha256: digest,
         verifiedHash: !!release.sha256,
         url: release.url,
-      },
-    };
+        ...(release.id ? {} : { source: "local" }),
+      };
+    }
     const temporary = path.join(
       root,
       "active-" + crypto.randomUUID() + ".json",
@@ -245,17 +278,51 @@ function createTools({
     fs.renameSync(temporary, path.join(root, "active.json"));
     emit({ installed });
   }
-  async function run(install = false) {
+  async function run(install = false, localArchive) {
     if (busy) throw appError("TOOLS_BUSY");
     busy = true;
     emit({
       busy: true,
       phase: "checking",
-      ...messagePatch("TOOLS_CHECKING"),
+      ...messagePatch(
+        localArchive !== undefined ? "TOOLS_LOCAL_PREPARING" : "TOOLS_CHECKING",
+      ),
       received: 0,
       total: 0,
     });
     try {
+      if (localArchive !== undefined) {
+        if (
+          typeof localArchive !== "string" ||
+          !path.isAbsolute(localArchive) ||
+          !/\.(zip|7z)$/i.test(localArchive)
+        )
+          throw appError("TOOLS_ARCHIVE_INVALID");
+        fs.mkdirSync(root, { recursive: true });
+        const stage = fs.mkdtempSync(path.join(root, "staging-"));
+        try {
+          const archive = path.join(
+            stage,
+            "package" + path.extname(localArchive).toLowerCase(),
+          );
+          const hash = crypto.createHash("sha256");
+          await pipeline(
+            fs.createReadStream(localArchive),
+            new Transform({
+              transform(chunk, _encoding, cb) {
+                hash.update(chunk);
+                cb(null, chunk);
+              },
+            }),
+            fs.createWriteStream(archive, { flags: "wx" }),
+          );
+          await installArchive(stage, archive, {}, hash.digest("hex"));
+          emit({ phase: "ready", ...messagePatch("TOOLS_INSTALLED") });
+        } finally {
+          fs.rmSync(stage, { recursive: true, force: true });
+        }
+        return;
+      }
       const available = await resolveReleases();
       emit({ available });
       if (!install) {
@@ -442,6 +509,12 @@ function createTools({
       busy = false;
     }
   }
-  return { state, paths, run, relocate };
+  return {
+    state,
+    paths,
+    run,
+    installLocal: (file) => run(true, file ?? null),
+    relocate,
+  };
 }
 module.exports = { createTools, trusted, releases, DEFAULT_ROOT };
