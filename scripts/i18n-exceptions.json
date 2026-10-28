@@ -988,5 +988,527 @@
     "text": "processes.h",
     "category": "technical",
     "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "messages.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "../build/plugin-messages.generated.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "locale",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "zh-CN",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "messages",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": ".",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": ",",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "%.*f",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "seconds",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "true",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "false",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "code",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "params",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "error",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "detail",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "error.",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "message",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "issues",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "\\n",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.h",
+    "text": "json.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "messages.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.aviMissing",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.configMissing",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.configIncomplete",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.planMissing",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "detail",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.presetFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "errorData",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "error.",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "notesData",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "message.",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.pipeFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.encoderStartFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "path",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.frameSizeInvalid",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.encoderExited",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.encoderTimeout",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.encoderFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "exitCode",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.finishStartFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.exportFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings-layout.cpp",
+    "text": "settings-layout.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/settings-layout.cpp",
+    "text": "-9007199254740991",
+    "category": "technical",
+    "reason": "Numeric edit default or worst-case layout measurement sample, not a translated label."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "messages.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "settings-layout.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.maskOff",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.maskWith",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.maskOnly",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "error.MMD_AUDIO_SHIFT_INVALID",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.presetRequired",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.fadeSeconds",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "seconds",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.fadeOff",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.testPassedShort",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.test",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.testing",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.testFailedShort",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\\"rangeSuffix\\\":",
+    "category": "technical",
+    "reason": "Selection JSON field serialization; preserves the fixed English protocol name and delimiters."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\\"audioShiftFrames\\\":",
+    "category": "technical",
+    "reason": "Selection JSON field serialization; preserves the fixed English protocol name and delimiters."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\\"audioAutoShift\\\":",
+    "category": "technical",
+    "reason": "Selection JSON field serialization; preserves the fixed English protocol name and delimiters."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "message.",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.testFailure",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "detail",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "errorData",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "error.",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.noTestResult",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.appMissing",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.configMissing",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "displayName",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "audioShiftFrames",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "audioAutoShift",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.title",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.preset",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.follow",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.suffix",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.mask",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.fade",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.audioShift",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "0",
+    "category": "technical",
+    "reason": "Numeric edit default or worst-case layout measurement sample, not a translated label."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.audioAutoShift",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.note",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.openApp",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.ok",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.cancel",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\n  \\\"audioShiftFrames\\\": ",
+    "category": "technical",
+    "reason": "Selection JSON field serialization; preserves the fixed English protocol name and delimiters."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\n  \\\"audioAutoShift\\\": ",
+    "category": "technical",
+    "reason": "Selection JSON field serialization; preserves the fixed English protocol name and delimiters."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.saveFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
   }
 ]

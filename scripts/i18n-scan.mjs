@@ -41,7 +41,7 @@ function jsCategory(node, file) {
   return file.startsWith("backend/") ? "business" : "interface";
 }
 
-export function scanJavaScript(file, source) {
+export function scanJavaScript(file, source, { allLiterals = false } = {}) {
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
   const entries = [];
   function visit(node) {
@@ -53,7 +53,9 @@ export function scanJavaScript(file, source) {
           ts.SyntaxKind.TemplateMiddle,
           ts.SyntaxKind.TemplateTail,
         ].includes(node.kind)) &&
-      han.test(node.text)
+      (han.test(node.text) ||
+        (allLiterals &&
+          (ts.isJsxText(node) ? node.text.trim() : node.text).length > 0))
     ) {
       entries.push({
         ...location(source, node.getStart(ast)),
@@ -62,7 +64,10 @@ export function scanJavaScript(file, source) {
           : ts.isStringLiteralLike(node)
             ? "string"
             : "template",
-        text: node.text.trim(),
+        text:
+          allLiterals && !han.test(node.text) && !ts.isJsxText(node)
+            ? node.text
+            : node.text.trim(),
         category: jsCategory(node, file),
       });
     }
@@ -139,7 +144,11 @@ export function scanCpp(file, source) {
   return entries;
 }
 
-export function collectInventory(root, exceptions = []) {
+export function collectInventory(
+  root,
+  exceptions = [],
+  { allLiterals = false } = {},
+) {
   const reviewed = new Map();
   for (const entry of exceptions) {
     if (
@@ -167,9 +176,20 @@ export function collectInventory(root, exceptions = []) {
       }
       if (!/\.(?:tsx?|[cm]?js|cpp|h)$/.test(file)) continue;
       const source = fs.readFileSync(path.join(root, file), "utf8");
-      const strings = /\.(?:cpp|h)$/.test(file)
-        ? scanCpp(file, source)
-        : scanJavaScript(file, source);
+      const native = /\.(?:cpp|h)$/.test(file);
+      // Match exceptions against the complete syntax tree even in the default
+      // Han scope. A reviewed ASCII exception stays visible in either mode.
+      const strings = (
+        native
+          ? scanCpp(file, source)
+          : scanJavaScript(file, source, { allLiterals: true })
+      ).filter(
+        (item) =>
+          native ||
+          allLiterals ||
+          han.test(item.text) ||
+          reviewed.has(JSON.stringify([file, item.text])),
+      );
       for (const item of strings) {
         const exception = reviewed.get(JSON.stringify([file, item.text]));
         item.reviewed = !!exception;
@@ -204,7 +224,13 @@ export function collectInventory(root, exceptions = []) {
         .length,
     ]),
   );
-  return { schemaVersion: 2, summary, classification, files };
+  return {
+    schemaVersion: 2,
+    mode: allLiterals ? "all-literals" : "han-native-and-reviewed",
+    summary,
+    classification,
+    files,
+  };
 }
 
 if (
@@ -215,7 +241,9 @@ if (
   const exceptions = JSON.parse(
     fs.readFileSync(path.join(root, "scripts/i18n-exceptions.json"), "utf8"),
   );
-  const result = collectInventory(root, exceptions);
+  const result = collectInventory(root, exceptions, {
+    allLiterals: process.argv.includes("--all-literals"),
+  });
   if (process.argv.includes("--json"))
     console.log(JSON.stringify(result, null, 2));
   else {

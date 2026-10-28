@@ -45,6 +45,63 @@ test("C++ inventory handles wide/adjacent/raw strings, escaped quotes, comments 
   assert.throws(() => scanCpp("test.cpp", 'auto x = L"未闭合'), /unterminated/);
 });
 
+test("all-literals mode exposes ASCII UI, diagnostics and technical templates without treating comments as copy", async () => {
+  const { scanJavaScript } = await import("../scripts/i18n-scan.mjs");
+  const source =
+    '// "Hidden comment"\nconst x = <button title="Start">Run</button>;\nthrow Error("Operation failed");\nconst command = `--path ${name}`;';
+  assert.deepEqual(scanJavaScript("src/Test.tsx", source), []);
+  const entries = scanJavaScript("src/Test.tsx", source, { allLiterals: true });
+  assert.deepEqual(
+    entries.map((e) => e.text),
+    ["Start", "Run", "Operation failed", "--path "],
+  );
+  assert.equal(entries[2].category, "business");
+  assert.equal(entries[3].kind, "template");
+});
+
+test("ASCII exceptions stay exact, visible and stale-checked in both inventory scopes", async () => {
+  const { collectInventory, sourceRoots } =
+    await import("../scripts/i18n-scan.mjs");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-i18n-ascii-"));
+  try {
+    for (const folder of sourceRoots)
+      fs.mkdirSync(path.join(dir, folder), { recursive: true });
+    const file = "src/test.tsx";
+    fs.writeFileSync(
+      path.join(dir, file),
+      'const x = <button title="Start">MMDEncoder</button>;',
+    );
+    const exception = {
+      file,
+      text: "MMDEncoder",
+      category: "technical",
+      reason: "Invariant product name",
+    };
+    const narrow = collectInventory(dir, [exception]);
+    assert.deepEqual(
+      narrow.files[0].strings.map((s) => s.text),
+      ["MMDEncoder"],
+    );
+    assert.equal(narrow.files[0].strings[0].excluded, true);
+    const all = collectInventory(dir, [exception], { allLiterals: true });
+    assert.equal(all.mode, "all-literals");
+    assert.deepEqual(
+      all.files[0].strings.map((s) => s.text),
+      ["Start", "MMDEncoder"],
+    );
+    assert.equal(all.files[0].strings[0].excluded, false);
+    assert.throws(
+      () =>
+        collectInventory(dir, [{ ...exception, text: "Removed" }], {
+          allLiterals: true,
+        }),
+      /Stale exception/,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("reviewed exceptions match exact literals, remain in all four inventories and fail when stale", async () => {
   const { collectInventory, sourceRoots } =
     await import("../scripts/i18n-scan.mjs");
