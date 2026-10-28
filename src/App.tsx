@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   Sun,
   Moon,
-  Monitor,
   ArrowDownToLine,
   Settings2,
   Check,
@@ -53,16 +52,6 @@ const encoderBackend = (id: string) =>
 // Audio files dropped on the video page replace a video's audio.
 const AUDIO_EXT = /\.(wav|flac|mp3|aac|m4a|opus|ogg|mka)$/i;
 export default function App() {
-  const [systemDark, setSystemDark] = useState(
-    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
-  );
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => setSystemDark(query.matches);
-    apply();
-    query.addEventListener("change", apply);
-    return () => query.removeEventListener("change", apply);
-  }, []);
   useEffect(() => {
     try {
       localStorage.removeItem("mmd-auto-align");
@@ -542,21 +531,10 @@ export default function App() {
     } catch {}
   }
   const themePreference =
-    state?.preferences.theme || window.encoder?.initialTheme || "system";
-  const theme =
-    themePreference === "system"
-      ? systemDark
-        ? "dark"
-        : "light"
-      : themePreference;
-  const nextTheme =
-    themePreference === "system"
-      ? "light"
-      : themePreference === "light"
-        ? "dark"
-        : "system";
+    state?.preferences.theme || window.encoder?.initialTheme || "light";
+  const theme = themePreference === "dark" ? "dark" : "light";
+  const nextTheme = theme === "light" ? "dark" : "light";
   const themeNames = {
-    system: t("app.theme.system"),
     light: t("app.theme.lightName"),
     dark: t("app.theme.darkName"),
   };
@@ -626,9 +604,7 @@ export default function App() {
             })}
             onClick={() => action("setTheme", { theme: nextTheme })}
           >
-            {themePreference === "system" ? (
-              <Monitor size={18} />
-            ) : themePreference === "dark" ? (
+            {themePreference === "dark" ? (
               <Moon size={18} />
             ) : (
               <Sun size={18} />

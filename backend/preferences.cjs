@@ -17,10 +17,9 @@ function createPreferences(registry = shippedRegistry) {
   };
 }
 function normalizeTheme(value) {
-  return ["system", "light", "dark"].includes(value) ? value : "system";
+  return ["light", "dark"].includes(value) ? value : "light";
 }
-function resolveTheme(value, systemDark) {
-  const theme = normalizeTheme(value);
-  return theme === "system" ? (systemDark ? "dark" : "light") : theme;
+function resolveTheme(value) {
+  return normalizeTheme(value);
 }
 module.exports = { createPreferences, normalizeTheme, resolveTheme };

@@ -80,69 +80,26 @@ try {
   const choose = async (theme) => {
     for (let n = 0; n < 3 && (await state()).preferences.theme !== theme; n++) {
       const current = (await state()).preferences.theme;
-      const next =
-        current === "system"
-          ? "light"
-          : current === "light"
-            ? "dark"
-            : "system";
+      const next = current === "light" ? "dark" : "light";
       await page.locator(".theme-toggle").click();
       await expect
         .poll(async () => (await state()).preferences.theme)
         .toBe(next);
-      const after =
-        next === "system" ? "light" : next === "light" ? "dark" : "system";
+      const after = next === "light" ? "dark" : "light";
       await expect(page.locator(".theme-toggle")).toHaveAccessibleName(
         source["app.theme.switch"]
-          .replace(
-            "{current}",
-            source[
-              "app.theme." + (next === "system" ? "system" : next + "Name")
-            ],
-          )
-          .replace(
-            "{next}",
-            source[
-              "app.theme." + (after === "system" ? "system" : after + "Name")
-            ],
-          ),
+          .replace("{current}", source["app.theme." + next + "Name"])
+          .replace("{next}", source["app.theme." + after + "Name"]),
       );
     }
     await expect
       .poll(async () => (await state()).preferences.theme)
       .toBe(theme);
   };
-  await choose("system");
+  await choose("dark");
   await app.evaluate(({ nativeTheme }) => (nativeTheme.themeSource = "light"));
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await app.evaluate(({ nativeTheme }) => (nativeTheme.themeSource = "dark"));
-  fs.writeFileSync(
-    path.join(dir, "system-dark-observation.json"),
-    JSON.stringify(
-      {
-        native: await app.evaluate(({ nativeTheme }) => ({
-          source: nativeTheme.themeSource,
-          dark: nativeTheme.shouldUseDarkColors,
-        })),
-        renderer: await page.evaluate(async () => ({
-          media: matchMedia("(prefers-color-scheme: dark)").matches,
-          preference: (await window.encoder.invoke("state")).preferences.theme,
-        })),
-      },
-      null,
-      2,
-    ),
-  );
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  assert.equal(
-    (
-      await app.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0].getBackgroundColor(),
-      )
-    ).toLowerCase(),
-    colors.dark.background,
-  );
-  checks.push("system-mode-reacts-to-native-system-theme-events");
+  checks.push("two-theme-mode-does-not-follow-system");
   await choose("light");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await app.evaluate(({ nativeTheme }) => (nativeTheme.themeSource = "dark"));

@@ -209,7 +209,7 @@ export type Engine = {
   labelParams?: { codec: string; backend: string };
 };
 export type State = {
-  preferences: { locale: string | null; theme: "system" | "light" | "dark" };
+  preferences: { locale: string | null; theme: "light" | "dark" };
   locale: string;
   systemLocale: string;
   jobs: Job[];

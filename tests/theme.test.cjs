@@ -7,12 +7,12 @@ const fs = require("node:fs"),
 const YAML = require("yaml");
 const { normalizeTheme, resolveTheme } = require("../backend/preferences.cjs");
 const { createService } = require("../backend/service.cjs");
-test("theme policy has three explicit modes and defaults to following the system", () => {
-  for (const mode of ["system", "light", "dark"])
+test("theme policy has two explicit modes and defaults to light", () => {
+  for (const mode of ["light", "dark"])
     assert.equal(normalizeTheme(mode), mode);
-  for (const value of [undefined, null, "auto", "", 0])
-    assert.equal(normalizeTheme(value), "system");
-  assert.equal(resolveTheme("system", true), "dark");
+  for (const value of [undefined, null, "auto", "system", "", 0])
+    assert.equal(normalizeTheme(value), "light");
+  assert.equal(resolveTheme("system", true), "light");
   assert.equal(resolveTheme("system", false), "light");
   assert.equal(resolveTheme("light", true), "light");
   assert.equal(resolveTheme("dark", false), "dark");
@@ -21,9 +21,9 @@ test("theme uses the existing preference store, survives restart and leaves enco
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-theme-"));
   let svc = createService({ dataDir: dir });
   try {
-    assert.equal(svc.getState().preferences.theme, "system");
+    assert.equal(svc.getState().preferences.theme, "light");
     const before = svc.getState();
-    for (const theme of ["dark", "light", "system"]) {
+    for (const theme of ["dark", "light"]) {
       const state = await svc.invoke("setTheme", { theme });
       assert.equal(state.preferences.theme, theme);
       for (const key of ["settings", "presets", "jobs", "enhancements", "mmd"])
@@ -54,7 +54,7 @@ test("a rejected theme save rolls back memory and broadcasts no unsaved preferen
   try {
     fs.mkdirSync(path.join(dir, "settings.json"));
     await assert.rejects(svc.invoke("setTheme", { theme: "dark" }));
-    assert.equal(svc.getState().preferences.theme, "system");
+    assert.equal(svc.getState().preferences.theme, "light");
     assert.deepEqual(events, []);
   } finally {
     svc.dispose();

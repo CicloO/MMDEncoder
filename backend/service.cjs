@@ -71,7 +71,7 @@ function createService({
     detectPromise = null,
     locatePromise = null;
   const state = {
-    preferences: { locale: null, theme: "system" },
+    preferences: { locale: null, theme: "light" },
     locale: preferences.resolve(null),
     systemLocale: preferences.resolve(null),
     jobs: [],

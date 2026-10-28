@@ -83,7 +83,7 @@ Product tool for Chinese-speaking MMD creators processing local rendered video. 
 
 ## Colors
 
-Graphite surfaces keep attention on real video metadata. Blue carries safe primary actions, mint indicates completion, amber recoverable issues and rose failures. Status always has text. Theme defaults to following the system; the header cycles system, light and dark. The service's existing settings store persists this preference independently of encoding presets; previous localStorage values are not migrated. Both themes share layout and semantic tokens; forced colors remains operable. Overlay, preview, checkerboard and shadow tokens preserve their previous appearance in both themes. Startup window and document colors use the saved mode before rendering content.
+Graphite surfaces keep attention on real video metadata. Blue carries safe primary actions, mint indicates completion, amber recoverable issues and rose failures. Status always has text. As requested on 2026-10-29, theme defaults to light and the header toggles only light and dark; it does not follow the system. The service's existing settings store persists this preference independently of encoding presets; previous localStorage values are not migrated. Both themes share layout and semantic tokens; forced colors remains operable. Overlay, preview, checkerboard and shadow tokens preserve their previous appearance in both themes. Startup window and document colors use the saved mode before rendering content.
 
 ## Typography
 

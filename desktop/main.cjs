@@ -78,7 +78,7 @@ else {
   app
     .whenReady()
     .then(async () => {
-      let initialPreference = "system";
+      let initialPreference = "light";
       try {
         initialPreference = normalizeTheme(
           createSettingsStore(dataDir).read().preferences?.theme,
