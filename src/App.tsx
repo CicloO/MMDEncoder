@@ -304,6 +304,7 @@ export default function App() {
     notify,
     tasks: videoAlignment,
     actions: { replace: "setAudio", offset: "setAudioOffset" },
+    autoAlign: state?.preferences.autoAlignAudio !== false,
   });
   const pickAudio = (row: Job) => audioReplacement.pickAudio(audioTarget(row));
   const replaceAudio = (row: Job, file: string) =>
@@ -320,13 +321,15 @@ export default function App() {
       current = r?.jobs || current;
     }
     const open = (j?: Job) =>
-      !!j &&
-      !j.audioPath &&
-      !["encoding", "done"].includes(j.status) &&
-      !!j.meta;
+      !!j && !["encoding", "done"].includes(j.status) && !!j.meta;
+    let usedSelection = false;
     for (const file of audio) {
-      const chosen = current.find((j) => j.id === job?.id);
-      const target = open(chosen) ? chosen : current.find((j) => open(j));
+      const chosen = usedSelection
+        ? undefined
+        : current.find((j) => j.id === job?.id);
+      const target = open(chosen)
+        ? chosen
+        : current.find((j) => open(j) && !j.audioPath);
       if (!target) {
         setError({
           code: "VIDEO_AUDIO_TARGET_REQUIRED",
@@ -335,6 +338,7 @@ export default function App() {
         });
         break;
       }
+      usedSelection = true;
       await replaceAudio(target, file);
       current = stateRef.current?.jobs || current;
     }
@@ -666,6 +670,7 @@ export default function App() {
       {workspace === "trim" && (
         <div className="page">
           <TrimTools
+            autoAlignAudio={state.preferences.autoAlignAudio}
             trim={state.trim}
             call={call}
             dropped={trimDrop}
@@ -676,6 +681,7 @@ export default function App() {
       {workspace === "media" && (
         <div className="page">
           <MediaTools
+            autoAlignAudio={state.preferences.autoAlignAudio}
             jobs={state.mediaJobs}
             running={state.running}
             detecting={state.detecting}
@@ -879,6 +885,7 @@ export default function App() {
         appUpdate={appUpdate}
         localePreference={state.preferences.locale}
         systemLocale={state.systemLocale}
+        autoAlignAudio={state.preferences.autoAlignAudio}
         blocked={
           busy || state.running || state.trim?.running ? t("about.busy") : ""
         }

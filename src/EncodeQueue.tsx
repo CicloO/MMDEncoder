@@ -288,9 +288,17 @@ export function EncodeQueue({
                   </button>
                   {!["encoding", "done"].includes(j.status) && (
                     <Button
-                      variant="ghost icon"
+                      variant={`ghost icon${j.audioPath ? " active" : ""}`}
                       aria-label={t("queue.pickAudio", { name: videoName(j) })}
-                      title={t("video.replacementAudio")}
+                      title={t("queue.replaceAudioHint")}
+                      aria-keyshortcuts="Shift+F10"
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        if (!running) {
+                          cancelAlignment(j.id);
+                          action("setAudio", { id: j.id, path: "" });
+                        }
+                      }}
                       disabled={running}
                       onClick={() => pickAudio(j)}
                     >
@@ -304,9 +312,17 @@ export function EncodeQueue({
                       aria-label={t("queue.alignAudio", { name: videoName(j) })}
                       title={
                         j.meta?.audio
-                          ? t("queue.alignHint")
+                          ? t("queue.alignCancelHint")
                           : t("queue.manualAlignmentHint")
                       }
+                      aria-keyshortcuts="Shift+F10"
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        if (!running) {
+                          cancelAlignment(j.id);
+                          action("setAudioOffset", { id: j.id, offset: null });
+                        }
+                      }}
                       disabled={running || !j.meta}
                       aria-busy={aligningIds.has(j.id)}
                       onClick={() => openAlignment(j.id)}
@@ -472,44 +488,6 @@ export function EncodeQueue({
           >
             {job.sequence ? job.sequence.pattern.replace(/%%/g, "%") : job.path}
           </p>
-          {job.audioPath && (
-            <div className="replace-audio">
-              <Music size={14} />
-              <span className="path-text" title={job.audioPath}>
-                {job.audioOffset !== undefined
-                  ? t("queue.replacementAligned", {
-                      path: job.audioPath,
-                      offset: offsetText(job.audioOffset),
-                    })
-                  : t("queue.replacementNamed", { path: job.audioPath })}
-                {frameShiftText(job.audioShiftFrames)}
-              </span>
-              <Button
-                variant="ghost"
-                disabled={running || !job.meta}
-                title={
-                  job.meta?.audio
-                    ? t("queue.alignSelectedHint")
-                    : t("queue.manualAlignmentHint")
-                }
-                aria-busy={aligningIds.has(job.id)}
-                onClick={() => openAlignment(job.id)}
-              >
-                <AlignmentIcon size={14} active={aligningIds.has(job.id)} />
-                {t("queue.align")}
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={running}
-                onClick={() => {
-                  cancelAlignment(job.id);
-                  action("setAudio", { id: job.id, path: "" });
-                }}
-              >
-                {t("queue.originalAudio")}
-              </Button>
-            </div>
-          )}
           {job.error && (
             <div className="inline-error" role="alert">
               {errorMessage(job.errorData || job.error)}

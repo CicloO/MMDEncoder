@@ -305,7 +305,7 @@ try {
     await dialog.locator("#align-step").selectOption("0.001");
     await dialog.getByRole("button", { name: "目标左移", exact: true }).click();
     await dialog
-      .getByRole("checkbox", { name: "导出时截到参考的长度（不够时补静音）" })
+      .getByRole("checkbox", { name: source["align.trim"] })
       .uncheck();
     await expect(dialog.getByText(/目标开头多出 0\.0593 秒/)).toBeVisible();
     await expect(

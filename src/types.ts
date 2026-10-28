@@ -209,7 +209,11 @@ export type Engine = {
   labelParams?: { codec: string; backend: string };
 };
 export type State = {
-  preferences: { locale: string | null; theme: "light" | "dark" };
+  preferences: {
+    locale: string | null;
+    theme: "light" | "dark";
+    autoAlignAudio: boolean;
+  };
   locale: string;
   systemLocale: string;
   jobs: Job[];
@@ -310,7 +314,10 @@ export type State = {
     received: number;
     total: number;
     root: string;
-    installed: Record<string, { version: string; verifiedHash: boolean }>;
+    installed: Record<
+      string,
+      { version: string; verifiedHash: boolean; source?: "local" }
+    >;
     available: { id: string; version: string }[];
   };
 };

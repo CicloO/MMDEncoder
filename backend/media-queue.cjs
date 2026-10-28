@@ -306,6 +306,8 @@ function createMediaQueue({
         if (a.trim) {
           length = reference.videoDuration || reference.audioDuration || 0;
           if (!length) throw appError("MEDIA_REFERENCE_LENGTH");
+          if (!job.meta?.audioOnly && job.meta?.videoDuration > 0)
+            length = Math.min(length, job.meta.videoDuration);
         }
         if (frames && typeof reference.hasVideo !== "boolean")
           throw appError("ALIGN_REFERENCE_READ_FAILED", {

@@ -18,6 +18,54 @@ const deferred = () => {
 };
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
+test("disabled automatic matching still replaces audio in both workflows without applying or clearing a new offset", async () => {
+  const { createAudioReplacement, createMediaAudioReplacement } = load(
+    "src/audioReplacement.ts",
+    { "./i18n": i18n },
+  );
+  for (const mode of ["video", "media"]) {
+    const calls = [];
+    const row = {
+      id: "selected",
+      path: "source.mp4",
+      hasAudio: true,
+      isSequence: false,
+      meta: { audio: {} },
+    };
+    const response = {
+      [mode === "video" ? "jobs" : "mediaJobs"]: [
+        { ...row, audioPath: "second.wav" },
+      ],
+    };
+    const request = async (action, payload) => {
+      calls.push([action, payload]);
+      return response;
+    };
+    let finished = 0;
+    const options = {
+      call: request,
+      run: request,
+      notify: () => assert.fail("No automatic result notice"),
+      actions: { replace: "replace", offset: "offset" },
+      autoAlign: false,
+      tasks: {
+        begin: () => ({
+          current: () => true,
+          finish: () => finished++,
+          run: () => assert.fail("Automatic matching disabled"),
+        }),
+      },
+    };
+    if (mode === "video")
+      await createAudioReplacement(options).replaceAudio(row, "second.wav");
+    else await createMediaAudioReplacement(options).setAudio(row, "second.wav");
+    assert.deepEqual(calls, [
+      ["replace", { id: "selected", path: "second.wav" }],
+    ]);
+    assert.equal(finished, 1);
+  }
+});
+
 test("automatic alignment tracks independent tasks and clears success, low-confidence, failure and cancellation", async () => {
   const runs = new Map(),
     busy = [],

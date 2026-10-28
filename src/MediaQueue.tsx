@@ -35,6 +35,8 @@ export function MediaQueue({
   onPage,
   onPickFiles,
   onPickAudio,
+  onClearAudio,
+  onClearAlignment,
   onAlign,
   aligningIds = new Set<string>(),
   onRequeue,
@@ -54,6 +56,8 @@ export function MediaQueue({
   onPage: (page: number) => void;
   onPickFiles: () => void;
   onPickAudio: (job: MediaJob) => void;
+  onClearAudio?: (id: string) => void;
+  onClearAlignment?: (id: string) => void;
   onAlign: (id: string) => void;
   aligningIds?: ReadonlySet<string>;
   onRequeue: (id: string) => void;
@@ -143,9 +147,14 @@ export function MediaQueue({
       </button>
       {operation === "merge" && j.status === "ready" && (
         <Button
-          variant="ghost icon"
+          variant={`ghost icon${j.audioPath ? " active" : ""}`}
           aria-label={t("media.pickAudio", { name: j.name })}
-          title={t("media.pickAudioTitle")}
+          title={t("queue.replaceAudioHint")}
+          aria-keyshortcuts="Shift+F10"
+          onContextMenu={(event) => {
+            event.preventDefault();
+            if (!locked) onClearAudio?.(j.id);
+          }}
           disabled={locked}
           onClick={() => onPickAudio(j)}
         >
@@ -156,7 +165,12 @@ export function MediaQueue({
         <Button
           variant={`ghost icon${j.audioOffset !== undefined ? " active" : ""}`}
           aria-label={t("media.alignMerge", { name: j.name })}
-          title={t("media.alignMergeTitle")}
+          title={t("queue.alignCancelHint")}
+          aria-keyshortcuts="Shift+F10"
+          onContextMenu={(event) => {
+            event.preventDefault();
+            if (!locked) onClearAlignment?.(j.id);
+          }}
           disabled={locked}
           onClick={() => onAlign(j.id)}
           aria-busy={aligningIds.has(j.id)}
@@ -168,7 +182,12 @@ export function MediaQueue({
         <Button
           variant={`ghost icon${j.align ? " active" : ""}`}
           aria-label={t("media.alignAudio", { name: j.name })}
-          title={j.align ? t("media.alignedTitle") : t("media.alignAudioTitle")}
+          title={t("queue.alignCancelHint")}
+          aria-keyshortcuts="Shift+F10"
+          onContextMenu={(event) => {
+            event.preventDefault();
+            if (!locked) onClearAlignment?.(j.id);
+          }}
           disabled={locked}
           onClick={() => onAlign(j.id)}
         >

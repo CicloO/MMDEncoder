@@ -48,6 +48,7 @@ export function MediaTools({
   call,
   dropped,
   onDropHandled,
+  autoAlignAudio = true,
 }: {
   jobs: MediaJob[];
   running: boolean;
@@ -57,6 +58,7 @@ export function MediaTools({
   call: (action: string, payload?: unknown) => Promise<any>;
   dropped?: { paths: string[]; seq: number };
   onDropHandled?: () => void;
+  autoAlignAudio?: boolean;
 }) {
   const [o, setOptions] = useState<Options>(loadOptions),
     [selectedId, setSelectedId] = useState(""),
@@ -129,12 +131,13 @@ export function MediaTools({
     let current: MediaJob[] = jobs;
     if (media.length)
       current = (await run("mediaAdd", { paths: media }))?.mediaJobs || current;
+    let usedSelection = false;
     for (const path of audio) {
-      const chosen = current.find((j) => j.id === selected?.id);
+      const chosen = usedSelection
+        ? undefined
+        : current.find((j) => j.id === selected?.id);
       const target =
-        (chosen?.status === "ready" && !chosen.audioPath
-          ? chosen
-          : undefined) ||
+        (chosen?.status === "ready" ? chosen : undefined) ||
         current.find((j) => j.status === "ready" && !j.audioPath);
       if (!target) {
         setError({
@@ -144,6 +147,7 @@ export function MediaTools({
         });
         break;
       }
+      usedSelection = true;
       current = (await setAudio(target, path))?.mediaJobs || current;
     }
   }
@@ -203,6 +207,7 @@ export function MediaTools({
     notify: (notice) => setError({ notice }),
     tasks: audioAlignment,
     actions: { replace: "mediaSetAudio", offset: "mediaSetAudioOffset" },
+    autoAlign: autoAlignAudio,
   });
   async function pickFolder() {
     const dir = await run("pickDirectory", {
@@ -235,6 +240,19 @@ export function MediaTools({
               onPage={setPage}
               onPickFiles={pickFiles}
               onPickAudio={pickAudio}
+              onClearAudio={(id) => {
+                void audioAlignment.cancel(id);
+                void run("mediaSetAudio", { id, path: "" });
+              }}
+              onClearAlignment={(id) => {
+                void audioAlignment.cancel(id);
+                void run(
+                  o.operation === "merge"
+                    ? "mediaSetAudioOffset"
+                    : "mediaSetAlign",
+                  { id, offset: null, align: null },
+                );
+              }}
               aligningIds={audioAlignment.active}
               onAlign={(id) => {
                 void audioAlignment.cancel(id);
@@ -467,6 +485,7 @@ export function MediaTools({
         const merge = o.operation === "merge";
         return (
           <AlignDialog
+            autoAlign={autoAlignAudio}
             open={!!j && (!merge || !!j.audioPath)}
             call={call}
             frameShift

@@ -30,11 +30,13 @@ export function TrimTools({
   call,
   dropped,
   onDropHandled,
+  autoAlignAudio = true,
 }: {
   trim: State["trim"];
   call: (action: string, payload?: unknown) => Promise<any>;
   dropped?: { paths: string[]; seq: number };
   onDropHandled?: () => void;
+  autoAlignAudio?: boolean;
 }) {
   const clips = t.clips;
   const [o, setOptions] = useState<Options>(loadOptions),
@@ -208,6 +210,7 @@ export function TrimTools({
     };
     const replace = createReplacementFlow<AudioTarget, void>({
       tasks: alignment,
+      autoAlign: autoAlignAudio,
       replace: async (row) => {
         setAudio((current) =>
           current.reference === row.path
@@ -389,6 +392,7 @@ export function TrimTools({
         onExport={exportTrim}
       />
       <AlignDialog
+        autoAlign={autoAlignAudio}
         open={alignOpen && !!audio.file && !!first}
         call={call}
         onClose={() => setAlignOpen(false)}

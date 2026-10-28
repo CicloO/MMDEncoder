@@ -150,13 +150,20 @@ try {
     const header = await page.locator(".app-header").evaluate((node) => {
       const brand = node.querySelector(".brand-icon").getBoundingClientRect();
       const tab = document.querySelector(".workspace-tabs .button");
-      const label = document.createRange();
-      label.selectNodeContents(tab);
       return {
         iconLeft: brand.left,
-        tabLeft: label.getBoundingClientRect().left,
+        tabLeft: tab.getBoundingClientRect().left,
         gap: parseFloat(getComputedStyle(node.querySelector(".brand")).gap),
         fits: node.scrollWidth <= node.clientWidth,
+        tabPadding: [
+          ...document.querySelectorAll(".workspace-tabs .button"),
+        ].map((tab) => {
+          const style = getComputedStyle(tab);
+          return [
+            parseFloat(style.paddingLeft),
+            parseFloat(style.paddingRight),
+          ];
+        }),
       };
     });
     assert.ok(
@@ -165,12 +172,14 @@ try {
     );
     assert.equal(header.gap, 8);
     assert.equal(header.fits, true);
+    for (const padding of header.tabPadding)
+      assert.deepEqual(padding, [14, 14]);
     await page
       .locator(".app-header")
       .screenshot({ path: path.join(dir, `header-${width}.png`) });
   }
   checks.push(
-    "compact-header-and-navigation-share-left-origin-at-three-widths",
+    "compact-header-and-navigation-keep-natural-margins-and-symmetrical-tabs-at-three-widths",
   );
   await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].setSize(680, 900),

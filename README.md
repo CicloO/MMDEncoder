@@ -21,9 +21,9 @@
 需要 Windows 10 / 11 x64。
 
 1. 从 [Releases](https://github.com/CicloO/MMDEncoder/releases) 下载 `MMDEncoder-<版本>-win-x64.zip`，解压到任意目录，运行 `MMDEncoder.exe`。
-2. 第一次使用时在“编码引擎”里点“下载并安装最新工具”。需要联网，之后可以离线使用。
+2. 第一次使用时在“编码引擎”里点“下载并安装最新工具”；也可点“从压缩包安装”，选择已有的 ZIP / 7z 工具包。安装后可以离线使用。
 
-编码工具（[FFmpeg / ffprobe](https://www.gyan.dev/ffmpeg/builds/)、[NVEncC](https://github.com/rigaya/NVEnc/releases)）不随软件附带，默认装在 `%LOCALAPPDATA%\MMDEncoder\tools`，不需要管理员权限；可以在“编码引擎”里更改位置或检查更新。
+编码工具（[FFmpeg / ffprobe](https://www.gyan.dev/ffmpeg/builds/)、[NVEncC](https://github.com/rigaya/NVEnc/releases)）不随软件附带，默认装在 `%LOCALAPPDATA%\MMDEncoder\tools`，不需要管理员权限；可以在“编码引擎”里更改位置或检查更新。本地 FFmpeg 包需同时包含 `ffmpeg.exe` 和 `ffprobe.exe`；NVEncC 包需包含 `NVEncC.exe` 或 `NVEncC64.exe`。
 
 **软件更新**：在顶栏“关于”中操作。启动时会检查 GitHub Releases，有新版本时点“下载并更新”，校验 SHA-256 后替换程序文件，`data` 文件夹（设置、个人预设、日志）保留不动，失败会自动还原。你改过的内置预设如果在新版里有变化，会询问用新版覆盖还是另存为个人预设。也可以手动下载新版，把旧版的 `data` 复制过去。
 
@@ -40,7 +40,7 @@
 - **PNG 序列**：拖入装有序列的文件夹，或选其中任意一张 PNG。文件名末尾要有连续编号（如 `dance_0001.png`），缺帧会提示。在“当前素材”里选序列帧率（默认 30）。
 - **剪辑友好**（“高级”页）：每秒一个关键帧，方便之后无损剪辑，文件约大 2%~5%。
 - **Hi-Res 音频**（“音频”页，FLAC / PCM）：24-bit，低于 48 kHz 时升到 2 倍采样率。
-- **替换音频**：点队列里视频旁的 ♪ 选择音频文件，按视频时长截取；在“当前素材”里可以改回原音轨。
+- **音频替换**：点队列里视频旁的 ♪，或选中视频后拖入音频；再次拖入会替换选中项现有音频。按视频时长输出，右键 ♪ 取消替换，右键波形按钮取消对齐（键盘可用 Shift+F10）。“关于 → 设置”可关闭默认开启的自动对齐，保留已有偏移，仍可手动对齐。
 
 ### 透明通道
 

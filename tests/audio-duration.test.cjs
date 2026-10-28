@@ -11,6 +11,40 @@ const {
 } = require("../backend/audio-timing.mjs");
 const core = require("../backend/core.cjs");
 const { createService } = require("../backend/service.cjs");
+
+test("reference-length extraction never extends video, while audio-only sources can follow a longer reference", async () => {
+  const { createMediaQueue } = require("../backend/media-queue.cjs");
+  for (const [audioOnly, referenceLength, expected] of [
+    [false, 8, 2],
+    [false, 1, 1],
+    [true, 8, 8],
+  ]) {
+    const job = {
+      id: "source",
+      status: "ready",
+      meta: { audioOnly, videoDuration: audioOnly ? undefined : 2 },
+    };
+    const queue = createMediaQueue({
+      getJobs: () => [job],
+      locate: async () => {},
+      probeMedia: async () => ({
+        hasVideo: false,
+        audioDuration: referenceLength,
+        fpsText: "30/1",
+      }),
+    });
+    await queue.actions.mediaSetAlign({
+      id: job.id,
+      align: {
+        reference: path.resolve("reference.wav"),
+        offset: 0,
+        trim: true,
+      },
+    });
+    assert.equal(job.align.length, expected);
+    assert.equal(job.align.reference, path.resolve("reference.wav"));
+  }
+});
 const { ff, fp, nv, engineDir, runCommand } = require("./engines.cjs");
 
 test("stream duration prefers its own seconds or Matroska tag over the container", () => {

@@ -209,9 +209,7 @@ try {
 
     await dialog.getByRole("button", { name: "应用" }).click();
     await expect(dialog).toBeHidden();
-    await expect(
-      page.getByText(/对齐 \+2\.500 秒 · 截到参考长度/),
-    ).toBeVisible();
+    await expect(page.getByText(/对齐 \+2\.500 秒 · 与参考等长/)).toBeVisible();
     await page.getByLabel("输出音频").selectOption("flac");
     await page.getByRole("button", { name: "开始处理" }).click();
     await expect
@@ -247,7 +245,7 @@ try {
       (p) => window.encoder.invoke("mediaAdd", { paths: [p] }),
       render,
     );
-    await page.getByRole("button", { name: /为 渲染\.mp4 选择音频/ }).click();
+    await page.getByRole("button", { name: /音频替换：渲染\.mp4/ }).click();
     await expect(page.getByText(/对齐 \+2\.500 秒/)).toBeVisible({
       timeout: 60000,
     });
@@ -309,11 +307,11 @@ try {
       .poll(async () => (await state()).jobs[0]?.status)
       .toBe("ready");
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.getByRole("button", { name: /为 渲染\.mp4 选择音频/ }).click();
+    await page.getByRole("button", { name: /音频替换：渲染\.mp4/ }).click();
     await expect
       .poll(async () => (await state()).jobs[0].audioOffset, { timeout: 60000 })
       .toBeCloseTo(2.5, 3);
-    await expect(page.getByText(/替换音频：.*对齐 \+2\.500 秒/)).toBeVisible();
+    await expect(page.getByText(/音频替换：.*对齐 \+2\.500 秒/)).toBeVisible();
     const videoAlignmentButton = page.getByRole("button", {
       name: /对齐 渲染\.mp4 的替换音频/,
     });

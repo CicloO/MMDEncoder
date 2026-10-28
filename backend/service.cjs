@@ -71,7 +71,7 @@ function createService({
     detectPromise = null,
     locatePromise = null;
   const state = {
-    preferences: { locale: null, theme: "light" },
+    preferences: { locale: null, theme: "light", autoAlignAudio: true },
     locale: preferences.resolve(null),
     systemLocale: preferences.resolve(null),
     jobs: [],
@@ -395,6 +395,8 @@ function createService({
     if (saved.version !== 1) throw appError("SETTINGS_VERSION_UNSUPPORTED");
     state.preferences.locale = preferences.normalize(saved.preferences?.locale);
     state.preferences.theme = normalizeTheme(saved.preferences?.theme);
+    state.preferences.autoAlignAudio =
+      saved.preferences?.autoAlignAudio !== false;
     state.locale = preferences.resolve(state.preferences.locale);
     if (saved.mmdExport && typeof saved.mmdExport === "object") {
       if (typeof saved.mmdExport.presetId === "string")
@@ -840,6 +842,19 @@ function createService({
         }
         break;
       }
+      case "setAutoAlignAudio": {
+        if (typeof payload.enabled !== "boolean")
+          throw appError("SETTINGS_FIELD_INVALID", { field: "autoAlignAudio" });
+        const previous = state.preferences.autoAlignAudio;
+        state.preferences.autoAlignAudio = payload.enabled;
+        try {
+          persist({ syncMmd: false });
+        } catch (error) {
+          state.preferences.autoAlignAudio = previous;
+          throw error;
+        }
+        break;
+      }
       case "details":
         return readDetails(payload);
       case "testEnhancements": {
@@ -866,11 +881,14 @@ function createService({
         );
       case "checkTools":
       case "installTools":
+      case "installToolsArchive":
         if (isBusy({ tools: false })) throw appError("TOOLS_MANAGE_BUSY");
         try {
-          await tools.run(action === "installTools");
+          if (action === "installToolsArchive")
+            await tools.installLocal(payload?.path);
+          else await tools.run(action === "installTools");
         } finally {
-          if (action === "installTools") {
+          if (action !== "checkTools") {
             invalidateTools(state.enhancements);
             locatePromise = null;
             await detect({ force: true });

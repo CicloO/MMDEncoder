@@ -26,6 +26,7 @@ export function createReplacementFlow<Row extends { id: string }, Result>({
   applyOffset,
   notify,
   successNotice,
+  autoAlign = true,
 }: {
   tasks: AlignmentTasks;
   replace: (
@@ -39,11 +40,18 @@ export function createReplacementFlow<Row extends { id: string }, Result>({
   ) => Promise<unknown>;
   notify: (notice: MessageDescriptor) => void;
   successNotice?: MessageDescriptor;
+  autoAlign?: boolean;
 }) {
   return async (row: Row, file: string): Promise<Result> => {
     const task = tasks.begin(row.id);
     const { result, target } = await replace(row, file);
-    if (!task.current() || !target || !target.hasAudio || target.isSequence) {
+    if (
+      !task.current() ||
+      !target ||
+      !target.hasAudio ||
+      target.isSequence ||
+      !autoAlign
+    ) {
       task.finish();
       return result;
     }
@@ -63,16 +71,19 @@ export function createAudioReplacement({
   notify,
   tasks,
   actions,
+  autoAlign = true,
 }: {
   call: RequestCall;
   notify: (notice: string | MessageDescriptor) => void;
   tasks: AlignmentTasks;
   actions: ReplacementActions;
+  autoAlign?: boolean;
 }) {
   const replaceAudio = createReplacementFlow<AudioTarget, void>({
     tasks,
     notify,
     successNotice: notification("VIDEO_AUDIO_ALIGNED"),
+    autoAlign,
     replace: async (row, file) => {
       try {
         const r = await call(
@@ -112,12 +123,14 @@ export function createMediaAudioReplacement({
   notify,
   tasks,
   actions,
+  autoAlign = true,
 }: {
   run: RequestCall;
   call: RequestCall;
   notify: (notice: MessageDescriptor) => void;
   tasks: AlignmentTasks;
   actions: ReplacementActions;
+  autoAlign?: boolean;
 }) {
   const setAudio = createReplacementFlow<
     Pick<MediaJob, "id" | "path" | "meta">,
@@ -125,6 +138,7 @@ export function createMediaAudioReplacement({
   >({
     tasks,
     notify,
+    autoAlign,
     replace: async (job, file) => {
       const result = await run(actions.replace, { id: job.id, path: file });
       const updated = result?.mediaJobs?.find(

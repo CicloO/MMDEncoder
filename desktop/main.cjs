@@ -318,6 +318,19 @@ else {
           if (result.canceled) return null;
           return payload?.multiple ? result.filePaths : result.filePaths[0];
         }
+        if (action === "pickToolsArchive") {
+          const result = await dialog.showOpenDialog(win, {
+            title: desktopText("dialog.tools.archive"),
+            properties: ["openFile"],
+            filters: [
+              {
+                name: desktopText("dialog.tools.archiveFiles"),
+                extensions: ["zip", "7z"],
+              },
+            ],
+          });
+          return result.canceled ? null : result.filePaths[0];
+        }
         if (action === "pickMediaOutput") {
           const result = await dialog.showSaveDialog(
             win,
@@ -498,6 +511,8 @@ else {
           "state",
           "setLocale",
           "setTheme",
+          "setAutoAlignAudio",
+          "installToolsArchive",
           "compatibility",
           "testEnhancements",
           "mediaStart",

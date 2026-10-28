@@ -10,6 +10,7 @@ export function AlignmentIcon({
   return (
     <AudioLines
       size={size}
+      strokeWidth={size / 12}
       className={active ? "alignment-wave active" : "alignment-wave"}
     />
   );

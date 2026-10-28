@@ -30,6 +30,7 @@ export function useAlignSession({
   fixedReference,
   initial,
   frameShift = false,
+  autoAlign = true,
   fixedTiming,
   stop,
   release,
@@ -42,6 +43,7 @@ export function useAlignSession({
   fixedReference?: string;
   initial?: Partial<Alignment>;
   frameShift?: boolean;
+  autoAlign?: boolean;
   fixedTiming?: ReferenceTiming;
   stop: () => void;
   release: () => void;
@@ -127,12 +129,13 @@ export function useAlignSession({
       }
       fit(frameShift ? 0 : offset, timing?.duration || r?.duration || 0);
       setBusy("");
-      await run(
-        file,
-        timing?.duration || r?.duration || 0,
-        timing,
-        frameShift ? 0 : Number(frameInput),
-      );
+      if (autoAlign)
+        await run(
+          file,
+          timing?.duration || r?.duration || 0,
+          timing,
+          frameShift ? 0 : Number(frameInput),
+        );
     } catch (e) {
       if (request === generation.current) {
         if (!isCancelled(e)) setError(e);
@@ -140,8 +143,8 @@ export function useAlignSession({
       }
     }
   }
-  // Open: the target's sound, the reference's, and an earlier alignment; a
-  // given reference not yet aligned is aligned at once.
+  // Restore tracks and the saved offset. A fixed video reference never starts
+  // matching merely because the window opened; explicit matching stays available.
   useEffect(() => {
     if (!open || !targetPath) return;
     const request = ++generation.current;
@@ -193,7 +196,12 @@ export function useAlignSession({
         const lo = Math.min(0, -(Number.isFinite(effective) ? effective : 0));
         const pad = (span - lo) * 0.02;
         showRange({ start: lo - pad, span: Math.max(1, span - lo + 2 * pad) });
-        if (ref && initial?.offset === undefined) {
+        if (
+          ref &&
+          !fixedReference &&
+          autoAlign &&
+          initial?.offset === undefined
+        ) {
           setBusy("");
           await run(ref, span, timing, initial?.shiftFrames || 0);
         }

@@ -192,6 +192,7 @@ button {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
+.engine-list:focus-visible,
 summary:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 3px;
@@ -637,18 +638,6 @@ svg {
   color: var(--color-muted);
   overflow-wrap: anywhere;
   margin-top: 14px;
-}
-.replace-audio {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  color: var(--color-muted);
-}
-.replace-audio .path-text {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
 }
 .recovery {
   display: flex;
@@ -1269,10 +1258,12 @@ input:not([type="checkbox"]):hover {
 .spin {
   animation: spin 1.5s linear infinite;
 }
+.alignment-wave path {
+  vector-effect: non-scaling-stroke;
+}
 .alignment-wave.active path {
   transform-box: fill-box;
   transform-origin: center;
-  vector-effect: non-scaling-stroke;
   animation: alignment-wave 0.8s ease-in-out infinite alternate;
 }
 .alignment-wave.active path:nth-child(2n) {
@@ -1638,6 +1629,9 @@ html[data-theme="light"] {
 .checkbox-row:has(.hint) > input {
   margin-top: 3px;
 }
+.about-preferences .checkbox-row {
+  margin: 0;
+}
 /* Lossless trim editor */
 .trim-editor:focus-visible {
   outline: 2px solid var(--color-primary);
@@ -1942,9 +1936,6 @@ html[data-theme="light"] {
   transition:
     color 0.14s,
     box-shadow 0.14s;
-}
-.workspace-tabs .button:first-child {
-  padding-left: 0;
 }
 .workspace-tabs .button:hover:not(:disabled) {
   background: transparent;

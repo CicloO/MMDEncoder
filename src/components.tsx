@@ -9,6 +9,7 @@ export function Button({
   variant = "",
   className = "",
   onClick,
+  onKeyDown,
   ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }) {
   return (
@@ -17,6 +18,20 @@ export function Button({
       onClick={onClick}
       className={`button ${variant} ${className}`}
       {...rest}
+      onKeyDown={(event) => {
+        onKeyDown?.(event);
+        if (
+          !event.defaultPrevented &&
+          rest.onContextMenu &&
+          (event.key === "ContextMenu" ||
+            (event.shiftKey && event.key === "F10"))
+        ) {
+          event.preventDefault();
+          event.currentTarget.dispatchEvent(
+            new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+          );
+        }
+      }}
       data-modal-autofocus={rest.autoFocus || undefined}
     >
       {children}

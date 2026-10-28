@@ -10,7 +10,7 @@ Locale zh-CN, local Windows desktop, offline by default. No accounts or uploads.
 
 AlignDialog 通过 useAlignSession 拥有解码音轨、对齐值、请求阶段、错误与取消清理；波形视图和播放控制仍由弹窗与既有 useAlignPlayer 管理。会话只接文件 / 打开参数与必要回调。打开的弹窗按当前语言刷新按钮、步骤、提示与错误，保留偏移、trim、视图和试听设置，不重新启动请求；取消只由 ALIGN_CANCELLED 决定，未知诊断保持原文。音频偏移按参考实际分数帧率计算；仅音频参考的 30 FPS 回退明确显示。
 
-剪辑替换音频与波形 / 整数帧偏移属于当前剪辑会话，不记入选项。选择或拖入音频即自动匹配，复用共用换音频流程及 AlignmentTasks 取消 / 身份管理；无参考片段时等第一段就绪。波形偏移以整段源视频为基准，帧偏移正数延后、负数提前；导出按实际分数帧率计算，并仅叠加一次第一片段起点。MMD 帧号显示开关只影响片段输入。波形按钮复用 AlignmentIcon 与 reduced-motion 规则；打开窗口先停止后台匹配，应用保存两值，取消保持原值，重新匹配保留帧偏移，换音频重置两值。对齐期间不能导出尚未确定的偏移。
+剪辑替换音频与波形 / 整数帧偏移属于当前剪辑会话，不记入选项。选择或拖入音频在程序级自动对齐开关开启时匹配，复用共用换音频流程及 AlignmentTasks 取消 / 身份管理；无参考片段时等第一段就绪。波形偏移以整段源视频为基准，帧偏移正数延后、负数提前；导出按实际分数帧率计算，并仅叠加一次第一片段起点。MMD 帧号显示开关只影响片段输入。波形按钮复用 AlignmentIcon 与 reduced-motion 规则；打开窗口先停止后台匹配，应用保存两值，取消保持原值，重新匹配保留帧偏移，换音频重置两值。对齐期间不能导出尚未确定的偏移。
 
 音频对齐窗口的“缩放 / 微调 / 音频偏移（帧）”使用同一排控件组，统一标签、控件高度与组间距；帧值输入为紧凑数字框，配同规格左右按钮：左提前一帧、右延后一帧，隐藏原生上下微调器；窄窗口按组自然换行。视频参考不重复显示方向 / FPS 注释，实际分数帧率保留在输入框标题；仅音频参考的 30 FPS 回退提示与校验信息保留，并通过 aria-describedby 关联输入。此布局用于共享对齐窗口的全部入口。
 
@@ -91,3 +91,9 @@ Media extraction/merge uses a separate function page and the same form/button/st
 媒体页的状态、选项、Hi-Res 和反馈在原位随语言刷新；autoAlign 提示保留原始错误参数，显示时格式化，外部日志原样保留。完成行复用 OutputFiles，在用时后显示已提交的实际文件名，路径在 title 中、长名中部省略，重排队清除旧显示。新无声视频与合并输出使用固定英文后缀 _no_audio / _merged，不随 locale 改名；这是用户对原命名不变约束的明确更新，目录和重名编号规则保持原样。
 
 RTX filters are opt-in and NVEncC-only. Selected modes must pass a real test including output dimensions/FPS. VFG requires Windows, NVEncC 9.36+, Ada/Blackwell and installed NVIDIA model/runtime support. Changing relevant parameters invalidates the previous signature. A failed probe never falls back to ordinary resize/frame duplication.
+
+2026-10-29 音频交互：视频压制 / 合并的每次拖入优先替换选中项的音频；同批后续音频分配给尚未配对的项。队列集中“音频替换”和“音频对齐”，已应用以主题主色显示；右键及 Shift+F10 / 菜单键分别取消替换或对齐，取消对齐保留替换音频。详情不再重复替换路径和按钮。打开固定视频参考的对齐窗口只恢复已有值，不重新匹配；显式自动对齐按钮始终可用。波形静止 / 动效共用相同线宽和 reduced-motion 规则。对齐服务只缓存最近两个未变化文件的 PCM，最多64 MiB，文件签名或工具路径变化即失效，关闭服务释放；匹配结果不缓存。
+
+About 的“设置”提供程序级 autoAlignAudio，默认开，通过原 settings-store 保存，失败回滚，不进入预设 / 编码参数 / RTX 签名；关闭保留已有偏移，仅阻止后续选择 / 拖入及选择参考时的自动匹配，仍可手动触发。视频与合并始终按视频长度输出；提取音频的“与参考等长”选项，视频素材取参考与视频时长的较小值，纯音频允许按参考长度裁切 / 补静音。
+
+编码工具管理允许选择本地 ZIP / 7z；main 拥有单文件选择器与取消语义，tools 复用原安装事务。归档内识别 FFmpeg + ffprobe 或 NVEncC / NVEncC64（可同包），逐个执行版本验证后一次激活 active.json；无效包与失败保持原工具可用，本地包不标记官方哈希已验证，保留自身 SHA-256 与 source=local，文件名不作为版本。所有安装入口共享忙碌锁，正在编码 / 剪辑 / 探测时禁用。

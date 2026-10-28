@@ -70,6 +70,7 @@ export function AlignDialog({
   fixedReference,
   initial,
   withTrim = false,
+  autoAlign = true,
   frameShift = false,
   fixedTiming,
   description,
@@ -85,6 +86,7 @@ export function AlignDialog({
   fixedReference?: string;
   initial?: Partial<Alignment>;
   withTrim?: boolean;
+  autoAlign?: boolean;
   frameShift?: boolean;
   fixedTiming?: ReferenceTiming;
   description: string;
@@ -135,6 +137,7 @@ export function AlignDialog({
     referenceInfo,
   } = useAlignSession({
     open,
+    autoAlign,
     targetPath,
     fixedReference,
     initial,

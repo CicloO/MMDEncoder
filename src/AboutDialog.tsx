@@ -45,6 +45,7 @@ export function AboutDialog({
   appUpdate,
   localePreference,
   systemLocale,
+  autoAlignAudio = true,
   blocked,
   onCheck,
   onDownload,
@@ -57,6 +58,7 @@ export function AboutDialog({
   appUpdate: AppUpdate;
   localePreference: string | null;
   systemLocale: string;
+  autoAlignAudio?: boolean;
   // Why installing has to wait (an encode is running), "" when it can go.
   blocked: string;
   onCheck: () => void;
@@ -69,6 +71,21 @@ export function AboutDialog({
   });
   const [languagePending, setLanguagePending] = useState(false);
   const [languageError, setLanguageError] = useState<ErrorData | string>("");
+  const [preferencePending, setPreferencePending] = useState(false);
+  const [preferenceError, setPreferenceError] = useState<ErrorData | null>(
+    null,
+  );
+  async function changeAutoAlign(enabled: boolean) {
+    setPreferencePending(true);
+    setPreferenceError(null);
+    try {
+      await invoke("setAutoAlignAudio", { enabled });
+    } catch (error) {
+      setPreferenceError(serializeError(error));
+    } finally {
+      setPreferencePending(false);
+    }
+  }
   const languageLabel = `${text("about.language")} · Language`;
   const systemName =
     registry.locales.find((l) => l.id === systemLocale)?.name ||
@@ -227,6 +244,33 @@ export function AboutDialog({
         )}
       </section>
 
+      <section
+        className="modal-section about-preferences"
+        aria-label={text("about.preferences")}
+      >
+        <h3>{text("about.preferences")}</h3>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={autoAlignAudio}
+            disabled={preferencePending}
+            aria-label={text("about.autoAlignAudio")}
+            aria-describedby="about-auto-align-hint"
+            onChange={(event) => void changeAutoAlign(event.target.checked)}
+          />
+          <span>
+            {text("about.autoAlignAudio")}
+            <span className="hint" id="about-auto-align-hint">
+              {text("about.autoAlignAudioHint")}
+            </span>
+          </span>
+        </label>
+        {preferenceError && (
+          <p className="inline-error" role="alert">
+            {errorMessage(preferenceError)}
+          </p>
+        )}
+      </section>
       {registry.locales.length >= 2 && (
         <section
           className="modal-section about-language"

@@ -90,6 +90,7 @@ export function EngineManagementDialog({
         >
           <h3>{t("engine.tools")}</h3>
           <p className="hint">{t("engine.sources")}</p>
+          <p className="hint">{t("engine.localArchiveHint")}</p>
           {tools.phase === "downloading" && (
             <p>
               {tools.total
@@ -157,9 +158,11 @@ export function EngineManagementDialog({
                 {Object.entries(tools.installed)
                   .map(([id, tool]) =>
                     t(
-                      tool.verifiedHash
-                        ? "engine.verifiedVersion"
-                        : "engine.unverifiedVersion",
+                      tool.source === "local"
+                        ? "engine.localVersion"
+                        : tool.verifiedHash
+                          ? "engine.verifiedVersion"
+                          : "engine.unverifiedVersion",
                       { id, version: tool.version },
                     ),
                   )
@@ -168,6 +171,18 @@ export function EngineManagementDialog({
               </p>
             </div>
             <div className="row-actions">
+              <Button
+                disabled={tools.busy || running || trimRunning || detecting}
+                onClick={async () => {
+                  try {
+                    const file = await call("pickToolsArchive");
+                    if (file) await call("installToolsArchive", { path: file });
+                  } catch {}
+                }}
+              >
+                <FolderOpen size={15} />
+                {t("engine.installArchive")}
+              </Button>
               <Button
                 disabled={tools.busy || running || trimRunning || detecting}
                 onClick={() => action("checkTools")}
@@ -189,7 +204,12 @@ export function EngineManagementDialog({
           {(running || trimRunning) && <p>{t("engine.waitTasks")}</p>}
         </section>
       )}
-      <div className="engine-list">
+      <div
+        className="engine-list"
+        role="region"
+        aria-label={t("engine.availableList")}
+        tabIndex={0}
+      >
         {engines.map((e) => (
           <div className="engine-item" key={e.id}>
             <Cpu size={17} />
