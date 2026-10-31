@@ -204,7 +204,7 @@ export function MmdExportDialog({
             label={t("mmd.mask")}
             value={mmd.maskMode || "off"}
             disabled={busy}
-            hint={t("mmd.maskHint")}
+            help={t("mmd.maskHint")}
             options={[
               { value: "off", label: t("mmd.maskOff") },
               { value: "with", label: t("mmd.maskWith") },
@@ -217,7 +217,7 @@ export function MmdExportDialog({
             label={t("mmd.fade")}
             value={String(mmd.audioFade)}
             disabled={busy}
-            hint={t("mmd.fadeHint")}
+            help={t("mmd.fadeHint")}
             options={fadeOptions().map(({ value }) => ({
               value,
               label:

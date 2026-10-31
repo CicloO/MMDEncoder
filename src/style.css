@@ -745,6 +745,9 @@ html[lang="en"] .header-actions .button {
   background: transparent;
   color: var(--color-muted);
   cursor: pointer;
+  /* Contains its .sr-only label; otherwise a help button low in a scrolled
+     panel places that label against the page and adds a window scrollbar. */
+  position: relative;
 }
 .sr-only {
   position: absolute;
@@ -776,6 +779,8 @@ html[lang="en"] .header-actions .button {
   width: max-content;
   max-width: min(320px, calc(100vw - 16px));
   padding: 8px 12px;
+  /* Help joined from two sentences keeps its line break. */
+  white-space: pre-line;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-raised);

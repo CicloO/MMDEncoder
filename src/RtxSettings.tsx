@@ -83,7 +83,7 @@ export function RtxSettings({
                 : { vsr: false, upscaler: v as Settings["upscaler"] },
             )
           }
-          hint={
+          help={
             upscaler === "vsr"
               ? t("rtx.vsrHint")
               : upscaler === "artcnn"
@@ -101,7 +101,7 @@ export function RtxSettings({
               { value: "C4F32", label: t("rtx.artcnn32") },
             ]}
             onChange={(v) => set("artcnnModel", v as Settings["artcnnModel"])}
-            hint={t("rtx.artcnnModelHint")}
+            help={t("rtx.artcnnModelHint")}
           />
         )}
         {s.vsr && (
@@ -138,7 +138,7 @@ export function RtxSettings({
                 }),
               }))}
               onChange={(v) => set("vsrQuality", Number(v))}
-              hint={t("rtx.qualityHint")}
+              help={t("rtx.qualityHint")}
             />
           </>
         )}
@@ -178,7 +178,7 @@ export function RtxSettings({
                   }),
                 }))}
                 onChange={(v) => set("vfgMultiplier", Number(v))}
-                hint={t("rtx.multiplierHint", {
+                help={t("rtx.multiplierHint", {
                   value: localeRuntime.number(s.vfgMultiplier),
                 })}
               />
@@ -197,7 +197,7 @@ export function RtxSettings({
             <Field
               id="vfgModelDir"
               label={t("rtx.modelDirectory")}
-              hint={t("rtx.modelDirectoryHint")}
+              help={t("rtx.modelDirectoryHint")}
             >
               <div className="path-picker">
                 <input id="vfgModelDir" readOnly value={s.vfgModelDir} />

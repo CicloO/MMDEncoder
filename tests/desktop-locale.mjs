@@ -289,9 +289,8 @@ try {
   await expect(
     longDialog.getByLabel(labels["mmd.follow"], { exact: false }),
   ).toBeChecked();
-  await expect(
-    longDialog.getByLabel(labels["mmd.mask"], { exact: true }),
-  ).toBeVisible();
+  // The label also names its info button, so address the select by id.
+  await expect(longDialog.locator("#mmd-mask-mode")).toBeVisible();
   await longDialog
     .locator("#mmd-export-preset")
     .selectOption("test-preset-policy");
@@ -393,9 +392,7 @@ try {
   await expect(page.locator('#fps option[value="24000/1001"]')).toContainText(
     "23.976",
   );
-  await expect(
-    page.getByLabel(labels["video.customFPS"], { exact: true }),
-  ).toHaveValue("30000/1001");
+  await expect(page.locator("#custom-fps")).toHaveValue("30000/1001");
   await expect(page.locator(".job-status.encoding")).toContainText(
     labels["stage.video_encoding_with_mask"],
   );
@@ -417,9 +414,17 @@ try {
     .evaluate((node) => getComputedStyle(node).borderTopWidth);
   assert.ok(parseFloat(groupBorder) > 0);
   await page.locator("#upscaler").selectOption("artcnn");
+  // The model explanation is the field's label help, shown on demand.
+  const modelHelp = page
+    .locator(".field", { has: page.locator("#artcnnModel") })
+    .locator(".field-help");
+  await modelHelp.hover();
   await expect(
-    page.getByText(labels["rtx.artcnnModelHint"], { exact: true }),
+    page
+      .getByRole("tooltip")
+      .filter({ hasText: labels["rtx.artcnnModelHint"] }),
   ).toBeVisible();
+  await page.mouse.move(0, 0);
   const firstGroupGap = await page
     .locator(".settings-group")
     .first()

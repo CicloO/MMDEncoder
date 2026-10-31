@@ -115,7 +115,7 @@ export function MediaSettings({
               value={String(o.audioFormat === "copy" ? 0 : o.audioFade)}
               disabled={locked || o.audioFormat === "copy"}
               options={fadeOptions()}
-              hint={
+              help={
                 o.audioFormat === "copy" ? t("media.copyFadeHint") : fadeHint()
               }
               onChange={(v) => set("audioFade", Number(v))}
