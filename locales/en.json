@@ -1414,7 +1414,6 @@
   "about.accent": "Accent color",
   "about.accentBlue": "Cobalt Blue",
   "about.accentCyan": "Neon Cyan",
-  "about.accentHint": "Applies to both Day and Night. Neon Cyan comes from the logo, with a pink tip on progress bars; Cobalt Blue is the earlier palette.",
   "queue.replaceAudioHint": "Replacement audio; right-click or Shift+F10 to remove it",
   "queue.alignCancelHint": "Audio alignment; right-click or Shift+F10 to clear it",
   "engine.installArchive": "Install from archive",
