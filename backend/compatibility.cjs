@@ -52,6 +52,8 @@ function compatibility(s, engines = ENGINES) {
         ...(s.vfg ? { fps: "source" } : {}),
       });
   }
+  if (s.audio === "copy" && s.audioFade)
+    add("copy-fade", "COMPAT_AUDIO_COPY_FADE", { audioFade: 0 });
   if (s.alphaMode === "preserve" && issues.length) {
     // No NVEncC HEVC Alpha fix: Windows editors (After Effects, Premiere)
     // cannot read HEVC alpha, so it is only offered by choosing it manually.
@@ -141,9 +143,12 @@ function compatibility(s, engines = ENGINES) {
     const container = patch.container || s.container;
     if (
       ["mp4", "mov"].includes(container) &&
-      !["aac", "none", ...(container === "mov" ? ["pcm_s16le"] : [])].includes(
-        s.audio,
-      )
+      ![
+        "aac",
+        "copy",
+        "none",
+        ...(container === "mov" ? ["pcm_s16le"] : []),
+      ].includes(s.audio)
     )
       patch.container = "mkv";
     if (

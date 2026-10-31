@@ -399,12 +399,17 @@ function projectWav(pmm) {
 function audioArgs(s) {
   // A mask-only export is the mask alone, without sound.
   if (s.audio === "none" || s.alphaMode === "mask") return null;
-  const args = ["-c:a", s.audio];
-  if (["aac", "libopus"].includes(s.audio))
-    args.push(
-      "-b:a",
-      (s.audioBitrate || (s.audio === "aac" ? 192 : 0) || 192) + "k",
-    );
+  // MMD's audio is PCM (AVI or the project's WAV) and is trimmed here, so
+  // "copy" keeps it as PCM where the container allows, else AAC (logged).
+  const codec =
+    s.audio === "copy"
+      ? s.container === "mp4"
+        ? "aac"
+        : "pcm_s16le"
+      : s.audio;
+  const args = ["-c:a", codec];
+  if (["aac", "libopus"].includes(codec))
+    args.push("-b:a", (s.audioBitrate || 192) + "k");
   return args;
 }
 
@@ -494,6 +499,10 @@ async function finish(
   );
   const aviAudio = !!aviInfo?.streams?.some((x) => x.codec_type === "audio");
   let audio = audioArgs(s);
+  if (audio && s.audio === "copy")
+    note(log, "MMD_AUDIO_COPY_AS", {
+      codec: audio[1] === "aac" ? "AAC" : "PCM",
+    });
   const shift = audioShift(config, job.startFrame);
   let source = "none";
   // The source audio stream, for Hi-Res.
@@ -753,6 +762,7 @@ module.exports = {
   writeConfig,
   readConfig,
   unsupported,
+  audioArgs,
   frameRate,
   plan,
   finish,

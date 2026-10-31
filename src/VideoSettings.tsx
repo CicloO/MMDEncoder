@@ -517,9 +517,11 @@ export function VideoSettings({
             help={
               s.audio === "none"
                 ? t("video.audioBitrateNoneHint")
-                : ["flac", "pcm_s16le"].includes(s.audio)
-                  ? t("video.audioBitrateLosslessHint")
-                  : t("video.audioBitrateHint")
+                : s.audio === "copy"
+                  ? t("video.audioBitrateCopyHint")
+                  : ["flac", "pcm_s16le"].includes(s.audio)
+                    ? t("video.audioBitrateLosslessHint")
+                    : t("video.audioBitrateHint")
             }
           />
           <Select
@@ -527,9 +529,16 @@ export function VideoSettings({
             label={t("video.audioFade")}
             value={String(s.audioFade ?? 0)}
             options={fadeOptions()}
-            disabled={s.audio === "none"}
+            // A fade left on while copying stays editable, so it can be undone.
+            disabled={
+              s.audio === "none" || (s.audio === "copy" && !s.audioFade)
+            }
             help={
-              s.audio === "none" ? t("video.audioFadeNoneHint") : fadeHint()
+              s.audio === "none"
+                ? t("video.audioFadeNoneHint")
+                : s.audio === "copy"
+                  ? t("video.audioFadeCopyHint")
+                  : fadeHint()
             }
             onChange={(v) => set("audioFade", Number(v))}
           />

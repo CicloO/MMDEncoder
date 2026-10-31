@@ -68,6 +68,12 @@
   grid-template-columns: 1fr 1fr;
   gap: 28px;
 }
+/* One line per path so both columns' rows start at the same height. */
+.details-compare .path-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .modal-section {
   display: grid;
   gap: 10px;

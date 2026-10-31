@@ -290,6 +290,16 @@ function buildCommands(job, s, engines, paths) {
     "-color_range",
     s.colorRange,
   ];
+  // Copying keeps the source's own audio packets: nothing to trim, pad or
+  // fade, so it cannot take a replacement, and the codec must fit the file.
+  if (s.audio === "copy" && sourceAudio) {
+    if (job.audioPath) throw appError("AUDIO_COPY_REPLACEMENT");
+    if (!media.copyFits(s.container, sourceAudio.codec))
+      throw appError("AUDIO_COPY_CONTAINER", {
+        codec: sourceAudio.codec,
+        container: s.container.toUpperCase(),
+      });
+  }
   const hiResPlan =
     s.hiRes &&
     sourceAudio &&

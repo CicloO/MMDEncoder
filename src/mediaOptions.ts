@@ -5,12 +5,13 @@ export const OPERATIONS = (): Record<string, string> => ({
   video: t("media.operation.video"),
   merge: t("media.operation.merge"),
 });
+// Same order as the encode page: lossy, lossless, then copy.
 export const FORMATS = (): Record<string, string> => ({
-  wav: t("media.format.wav"),
-  flac: t("media.format.flac"),
   aac: t("media.format.aac"),
   mp3: t("media.format.mp3"),
   opus: t("media.format.opus"),
+  flac: t("media.format.flac"),
+  wav: t("media.format.wav"),
   copy: t("media.format.copy"),
 });
 export const LOSSY = ["aac", "mp3", "opus"];

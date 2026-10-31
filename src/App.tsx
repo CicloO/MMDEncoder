@@ -1,8 +1,9 @@
 import { BrandMark } from "./BrandMark";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   Sun,
   Moon,
+  SunMoon,
   ArrowDownToLine,
   Settings2,
   Check,
@@ -49,6 +50,18 @@ const encoderBackend = (id: string) =>
         : id.endsWith("_amf")
           ? "amf"
           : "cpu";
+// Windows app mode (dark or light), for the "follow system" theme.
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+function useSystemDark() {
+  return useSyncExternalStore(
+    (notify) => {
+      const query = matchMedia(DARK_QUERY);
+      query.addEventListener("change", notify);
+      return () => query.removeEventListener("change", notify);
+    },
+    () => matchMedia(DARK_QUERY).matches,
+  );
+}
 // Audio files dropped on the video page replace a video's audio.
 const AUDIO_EXT = /\.(wav|flac|mp3|aac|m4a|opus|ogg|mka)$/i;
 export default function App() {
@@ -536,12 +549,26 @@ export default function App() {
   }
   const themePreference =
     state?.preferences.theme || window.encoder?.initialTheme || "light";
-  const theme = themePreference === "dark" ? "dark" : "light";
+  const systemDark = useSystemDark();
+  const theme =
+    themePreference === "system"
+      ? systemDark
+        ? "dark"
+        : "light"
+      : themePreference === "dark"
+        ? "dark"
+        : "light";
+  // Click flips Day / Night from what is shown; right-click follows Windows.
   const nextTheme = theme === "light" ? "dark" : "light";
-  const themeNames = {
+  const themeNames: Record<string, string> = {
     light: t("app.theme.lightName"),
     dark: t("app.theme.darkName"),
+    system: t("app.theme.system"),
   };
+  const themeLabel = t("app.theme.switch", {
+    current: themeNames[themePreference] || themeNames.light,
+    next: themeNames[nextTheme],
+  });
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
@@ -605,17 +632,19 @@ export default function App() {
         <div className="header-actions">
           <Button
             className="theme-toggle"
-            aria-label={t("app.theme.switch", {
-              current: themeNames[themePreference],
-              next: themeNames[nextTheme],
-            })}
-            title={t("app.theme.switch", {
-              current: themeNames[themePreference],
-              next: themeNames[nextTheme],
-            })}
+            aria-label={themeLabel}
+            title={themeLabel + "\n" + t("app.theme.systemHint")}
+            aria-keyshortcuts="Shift+F10"
             onClick={() => action("setTheme", { theme: nextTheme })}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              if (themePreference !== "system")
+                action("setTheme", { theme: "system" });
+            }}
           >
-            {themePreference === "dark" ? (
+            {themePreference === "system" ? (
+              <SunMoon size={18} />
+            ) : theme === "dark" ? (
               <Moon size={18} />
             ) : (
               <Sun size={18} />

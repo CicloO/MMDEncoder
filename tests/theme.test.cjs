@@ -61,12 +61,12 @@ test("failed automatic alignment preference persistence rolls back without broad
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
-test("theme policy has two explicit modes and defaults to light", () => {
-  for (const mode of ["light", "dark"])
+test("theme policy has day, night and follow-system, defaulting to light", () => {
+  for (const mode of ["light", "dark", "system"])
     assert.equal(normalizeTheme(mode), mode);
-  for (const value of [undefined, null, "auto", "system", "", 0])
+  for (const value of [undefined, null, "auto", "", 0])
     assert.equal(normalizeTheme(value), "light");
-  assert.equal(resolveTheme("system", true), "light");
+  assert.equal(resolveTheme("system", true), "dark");
   assert.equal(resolveTheme("system", false), "light");
   assert.equal(resolveTheme("light", true), "light");
   assert.equal(resolveTheme("dark", false), "dark");

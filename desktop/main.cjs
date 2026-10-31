@@ -91,11 +91,17 @@ else {
       } catch {
         /* The service reports and backs up unreadable settings. */
       }
+      // The native title bar follows nativeTheme: tie it to Day / Night, or
+      // to Windows only when the app itself follows the system.
+      nativeTheme.themeSource = normalizeTheme(initialPreference);
       let appliedTheme = resolveTheme(
         initialPreference,
         nativeTheme.shouldUseDarkColors,
       );
       const applyWindowTheme = (preference) => {
+        const source = normalizeTheme(preference);
+        if (nativeTheme.themeSource !== source)
+          nativeTheme.themeSource = source;
         const next = resolveTheme(preference, nativeTheme.shouldUseDarkColors);
         if (next !== appliedTheme && win && !win.isDestroyed()) {
           win.setBackgroundColor(themeColors[next].background);
