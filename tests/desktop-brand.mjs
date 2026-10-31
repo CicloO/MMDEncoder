@@ -170,7 +170,7 @@ try {
       Math.abs(header.iconLeft - header.tabLeft) < 1,
       JSON.stringify(header),
     );
-    assert.equal(header.gap, 8);
+    assert.equal(header.gap, 12);
     assert.equal(header.fits, true);
     for (const padding of header.tabPadding)
       assert.deepEqual(padding, [14, 14]);

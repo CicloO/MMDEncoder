@@ -285,10 +285,11 @@ svg {
   border-bottom: 1px solid var(--color-border);
   gap: 20px;
 }
+/* Icon to name: 12px in the header and the About hero alike. */
 .brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 .brand .brand-icon {
   width: 36px;
@@ -498,6 +499,7 @@ html[lang="en"] .header-actions .button {
   align-items: center;
   justify-content: center;
   gap: 4px;
+  flex-shrink: 0;
   color: var(--color-primary);
 }
 .file-tile.complete {
@@ -523,9 +525,25 @@ html[lang="en"] .header-actions .button {
   font-weight: 500;
   font-size: 13px;
 }
-.job-sub {
+.job-sub,
+.job-audio {
   font: 10px/1.7 var(--font-mono);
   color: var(--color-muted);
+}
+.one-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.job-audio {
+  display: flex;
+  min-width: 0;
+  white-space: nowrap;
+}
+.job-audio-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .job-note {
   font-size: 11px;
@@ -1448,7 +1466,10 @@ textarea {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
+}
+.about-hero .brand-icon {
+  width: 36px;
 }
 .about-name {
   margin: 0;

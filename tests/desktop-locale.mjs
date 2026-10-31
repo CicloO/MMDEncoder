@@ -319,7 +319,7 @@ try {
   await page.keyboard.press("Escape");
   await page.evaluate(() => window.localeFixture.choose("unknown"));
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
-  await expect(page).toHaveTitle("MMDEncoder · 视频压制");
+  await expect(page).toHaveTitle("MMDEncoder");
   await expect(presetChoice).toHaveValue("builtin-prores422");
   await expect(page.getByRole("alert")).toHaveText("预设名称须为 1–80 字符");
   await expect(

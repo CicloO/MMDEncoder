@@ -107,6 +107,7 @@ test("completed media rows reuse output filenames after elapsed time and hide st
     },
     "./OutputFiles": { OutputFiles },
     "./AlignmentIcon": load("src/AlignmentIcon.tsx"),
+    "./ReplacementAudio": load("src/ReplacementAudio.tsx"),
     "./FileMeta": { metaSummary: () => "Metadata" },
     "./autoAlign": { offsetText: () => "Offset", frameShiftText: () => "" },
     "./mediaOptions": options,
