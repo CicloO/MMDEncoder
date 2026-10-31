@@ -1,176 +1,179 @@
 # MMDEncoder
 
-面向 MMD 创作者的 Windows 便携视频压制工具：批量压制渲染视频，处理透明通道，AI / RTX 超分与插帧，无损剪辑，并能作为 MMD 的视频编码器直接导出成片。
+**English** | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
-项目地址：<https://github.com/CicloO/MMDEncoder>
+A portable Windows video encoder for MMD creators: batch-encode rendered videos, handle alpha channels, AI / RTX upscaling and frame generation, lossless trimming, and export finished videos straight from MMD as a video encoder.
 
-## 功能
+Project page: <https://github.com/CicloO/MMDEncoder>
 
-- **批量压制**：H.264 / HEVC / AV1 / VP9 / ProRes，MP4 / MKV / MOV / WebM；软件编码、NVENC、NVEncC、Intel QSV、AMD AMF。
-- **预设**：内置上传用（默认 4K / 1080p，硬件与软件各一）和后期素材用（ProRes 4444、H.264 + 遮罩、ProRes 422 HQ）预设；个人预设可保存、导入导出、拖动排序。
-- **透明通道**：保留 Alpha、分离成黑白遮罩、只导出遮罩，或合成到绿幕。
-- **超分补帧**：ArtCNN AI 放大（支持 Vulkan 的任何显卡）、RTX VSR 超分、RTX 插帧。
-- **无损剪辑**：分段裁切、首尾拼接，视频不重新压制；支持帧号、时间和 MMD 帧号定位。
-- **MMD 导出插件**：在 MMD 的“AVI 输出”里选“MMDEncoder”，直接按预设导出带音频的成片，不再生成巨大的 AVI。
-- **音视频工具**：提取、去除、替换音轨，可选 Hi-Res 音频。
-- **PNG 序列**：连续编号的 PNG 当作视频压制，支持透明。
-- **安全输出**：不覆盖源文件和已有输出；硬件编码失败可改用软件重试；可复制实际执行的命令。
+## Features
 
-## 安装
+- **Batch encoding**: H.264 / HEVC / AV1 / VP9 / ProRes in MP4 / MKV / MOV / WebM; software encoding, NVENC, NVEncC, Intel QSV, AMD AMF.
+- **Presets**: built-in presets for uploading (Default 4K / 1080p, one hardware and one software each) and for editing (ProRes 4444, H.264 + mask, ProRes 422 HQ). Personal presets can be saved, imported, exported and reordered by dragging.
+- **Alpha channel**: keep alpha, split it into a black-and-white mask, export the mask only, or composite onto a green screen.
+- **Upscaling and frame generation**: ArtCNN AI upscaling (any GPU with Vulkan), RTX VSR upscaling, RTX frame generation.
+- **Lossless trim**: cut segments and join them end to end without re-encoding the video; seek by frame number, time or MMD frame number.
+- **MMD export plugin**: choose "MMDEncoder" in MMD's AVI output to export a finished video with audio using a preset, instead of a huge AVI.
+- **Audio and video tools**: extract, remove or replace audio tracks, with optional Hi-Res audio.
+- **PNG sequences**: encode consecutively numbered PNGs as a video, with transparency.
+- **Safe output**: never overwrites the source or existing outputs; a failed hardware encode can be retried with software encoding; the command actually run can be copied.
+- **Interface**: English / 简体中文 / 日本語, optionally following the Windows display language; Day / Night themes with a Neon Cyan or Cobalt Blue accent color.
 
-需要 Windows 10 / 11 x64。
+## Installation
 
-1. 从 [Releases](https://github.com/CicloO/MMDEncoder/releases) 下载 `MMDEncoder-<版本>-win-x64.zip`，解压到任意目录，运行 `MMDEncoder.exe`。
-2. 第一次使用时在“编码引擎”里点“下载并安装最新工具”；也可点“从压缩包安装”，选择已有的 ZIP / 7z 工具包。安装后可以离线使用。
+Requires Windows 10 / 11 x64.
 
-编码工具（[FFmpeg / ffprobe](https://www.gyan.dev/ffmpeg/builds/)、[NVEncC](https://github.com/rigaya/NVEnc/releases)）不随软件附带，默认装在 `%LOCALAPPDATA%\MMDEncoder\tools`，不需要管理员权限；可以在“编码引擎”里更改位置或检查更新。本地 FFmpeg 包需同时包含 `ffmpeg.exe` 和 `ffprobe.exe`；NVEncC 包需包含 `NVEncC.exe` 或 `NVEncC64.exe`。
+1. Download `MMDEncoder-<version>-win-x64.zip` from [Releases](https://github.com/CicloO/MMDEncoder/releases), extract it anywhere and run `MMDEncoder.exe`.
+2. On first use, open "Encoding engines" and click "Download and install the latest tools", or click "Install from archive" to choose a ZIP / 7z tool package you already have. After that it works offline.
 
-**软件更新**：在顶栏“关于”中操作。启动时会检查 GitHub Releases，有新版本时点“下载并更新”，校验 SHA-256 后替换程序文件，`data` 文件夹（设置、个人预设、日志）保留不动，失败会自动还原。你改过的内置预设如果在新版里有变化，会询问用新版覆盖还是另存为个人预设。也可以手动下载新版，把旧版的 `data` 复制过去。
+The encoding tools ([FFmpeg / ffprobe](https://www.gyan.dev/ffmpeg/builds/), [NVEncC](https://github.com/rigaya/NVEnc/releases)) are not bundled. They are installed to `%LOCALAPPDATA%\MMDEncoder\tools` by default without administrator rights; you can change the location or check for updates in "Encoding engines". A local FFmpeg package must contain both `ffmpeg.exe` and `ffprobe.exe`; an NVEncC package must contain `NVEncC.exe` or `NVEncC64.exe`.
 
-## 使用
+**Software updates**: open "About & Language" in the top bar. MMDEncoder checks GitHub Releases at startup; when a new version is available, click "Download and update". The download is verified with SHA-256 before the program files are replaced; the `data` folder (settings, personal presets, logs) is left untouched, and a failed update is rolled back automatically. If a built-in preset you edited has changed in the new version, you will be asked whether to overwrite it with the new version or save yours as a personal preset. You can also download the new version manually and copy the old `data` folder into it.
 
-### 视频压制
+## Usage
 
-音频分页支持关闭、0.5、1、2 秒淡入淡出。
+### Encode
 
-添加视频（可拖入），选择预设，检查底部的“预计结果”后开始压制。默认输出到源目录的 `Encoded` 子目录，重名自动编号。
+Audio fades of off, 0.5, 1 or 2 seconds are available on the Audio tab.
 
-- 队列可以拖动排序；已完成或已取消的条目可以“重新导出”。
-- 设置不兼容时，底部提示条会给出一键修正，只改相关设置。
-- **PNG 序列**：拖入装有序列的文件夹，或选其中任意一张 PNG。文件名末尾要有连续编号（如 `dance_0001.png`），缺帧会提示。在“当前素材”里选序列帧率（默认 30）。
-- **剪辑友好**（“高级”页）：每秒一个关键帧，方便之后无损剪辑，文件约大 2%~5%。
-- **Hi-Res 音频**（“音频”页，FLAC / PCM）：24-bit，低于 48 kHz 时升到 2 倍采样率。
-- **音频替换**：点队列里视频旁的 ♪，或选中视频后拖入音频；再次拖入会替换选中项现有音频。按视频时长输出，右键 ♪ 取消替换，右键波形按钮取消对齐（键盘可用 Shift+F10）。“关于 → 设置”可关闭默认开启的自动对齐，保留已有偏移，仍可手动对齐。
+Add videos (drag and drop works), choose a preset, check "Expected result" at the bottom, then start encoding. Output goes to an `Encoded` subfolder next to the source by default; duplicate names are numbered automatically.
 
-### 透明通道
+- The queue can be reordered by dragging; finished or cancelled items can be exported again.
+- When settings are incompatible, the bar at the bottom offers a one-click fix that changes only the settings involved.
+- **PNG sequences**: drag in the folder holding the sequence, or choose any PNG in it. File names must end in consecutive numbers (for example `dance_0001.png`); missing frames are reported. Set the sequence frame rate under "Current source" (default 30).
+- **Edit-friendly** (Advanced tab): one keyframe per second for easier lossless trimming later; files are about 2%–5% larger.
+- **Hi-Res audio** (Audio tab, FLAC / PCM): 24-bit, doubling the sample rate when it is below 48 kHz.
+- **Audio replacement**: click ♪ next to a video in the queue, or select a video and drag in an audio file; dragging in again replaces the selected item's current audio. Output follows the video's length. Right-click ♪ to cancel the replacement and right-click the waveform button to cancel alignment (Shift+F10 on the keyboard). Automatic alignment is on by default and can be turned off in "About → Settings"; existing offsets are kept and manual alignment still works.
 
-“透明通道”页可以选：
+### Alpha channel
 
-- **移除 Alpha**：透明区域按原像素颜色输出。
-- **保留 Alpha**：只能用 ProRes 4444、VP9（WebM / MKV）或 NVEncC HEVC。
-- **分离 Alpha**：彩色视频加一个同名 `_alpha` 无损黑白遮罩，任何格式都可以。
-- **仅黑白遮罩**：只导出 `_alpha` 遮罩。
-- **合成到绿幕**：透明区域填成 #00FF00。
+On the Alpha tab you can choose:
 
-| 格式        | 能读到透明                                      | 读不到透明                                     |
-| ----------- | ----------------------------------------------- | ---------------------------------------------- |
-| ProRes 4444 | After Effects、Premiere、DaVinci、Final Cut     | 基本没有                                       |
-| VP9（WebM） | Chrome、Firefox、OBS 浏览器源                   | After Effects、Premiere                        |
-| HEVC Alpha  | macOS 系统解码器、Safari、Mac 版 Final Cut / AE | Windows 版 After Effects、Premiere、系统播放器 |
+- **Remove alpha**: transparent areas are output with their original pixel colors.
+- **Keep alpha**: ProRes 4444, VP9 (WebM / MKV) or NVEncC HEVC only.
+- **Separate alpha**: a color video plus a lossless black-and-white `_alpha` mask with the same name; works with any format.
+- **B/W mask only**: exports only the `_alpha` mask.
+- **Composite onto green screen**: fills transparent areas with #00FF00.
 
-在 Windows 上做后期，选 ProRes 4444（内置预设“保留 Alpha · ProRes 4444”）或“分离 Alpha”。保留 Alpha 失败时不会悄悄丢掉透明度。
+| Format      | Reads transparency                                   | Does not read transparency                           |
+| ----------- | ---------------------------------------------------- | ---------------------------------------------------- |
+| ProRes 4444 | After Effects, Premiere, DaVinci, Final Cut          | Practically none                                     |
+| VP9 (WebM)  | Chrome, Firefox, OBS browser source                  | After Effects, Premiere                              |
+| HEVC Alpha  | macOS system decoder, Safari, Final Cut / AE for Mac | After Effects / Premiere for Windows, system players |
 
-### 超分补帧
+For post-production on Windows, choose ProRes 4444 (built-in preset "Keep Alpha · ProRes 4444") or "Separate alpha". If keeping alpha fails, transparency is never silently dropped.
 
-**放大算法**（目标尺寸在“画质”页的“输出分辨率”设置）：
+### Enhance
 
-- **Lanczos**（默认）：普通缩放，速度快，画面偏软。
-- **ArtCNN**（推荐）：AI 放大，线条更清晰，保留原有颗粒质感。在显卡上运行（NVIDIA / AMD / Intel，需要 Vulkan），任何编码器都能用。它是 2 倍放大模型，1080p → 4K 效果最好，其他尺寸先放大 2 倍再缩放到目标；宽、高都要放大超过 1.3 倍才会用到 AI，否则自动改用 Lanczos。1080p → 4K 本机实测约为 Lanczos 速度的 80%。**不建议用于带透明通道的素材**：保留 Alpha 时只有 Lanczos 的三分之一左右。模型可选 C4F16（默认、推荐）或 C4F32，实测画质几乎相同，C4F32 慢约 30%–40%。
-- **RTX VSR**：NVIDIA 超分，放大 1–4 倍，由“VSR 倍率”决定尺寸。
+**Upscaler** (set the target size with "Output resolution" on the Quality tab):
 
-**RTX VSR / VFG 插帧**只能配合 NVEncC 编码器，选好后先点“验证本机 RTX 设置”。VFG 插帧（2–8 倍）需要 RTX 40 / 50 显卡和 NVIDIA VFX 运行库与模型。两者暂不能和保留 Alpha、独立遮罩一起用。
+- **Lanczos** (default): regular scaling; fast, slightly soft.
+- **ArtCNN** (recommended): AI upscaling with crisper lines that keeps the original grain. Runs on the GPU (NVIDIA / AMD / Intel, Vulkan required) and works with any encoder. It is a 2× model and works best for 1080p → 4K; other sizes are upscaled 2× and then scaled to the target. AI is used only when both width and height are enlarged by more than 1.3×; otherwise Lanczos is used automatically. 1080p → 4K runs at about 80% of Lanczos speed on the development machine. **Not recommended for footage with alpha**: when keeping alpha it is only about a third of Lanczos speed. Models: C4F16 (default, recommended) or C4F32; quality is nearly identical in tests and C4F32 is about 30%–40% slower.
+- **RTX VSR**: NVIDIA upscaling at 1–4×; the size is set by the VSR scale.
 
-VSR 的“QualityLevel”：MMD 这类干净的渲染画面放大选 **4**（倍率 2）；描边出现白边或过锐时把强度从 1 降到 0.5–0.7。8–11 去噪、12–15 去模糊、16–19 补细节（这三组都保持原尺寸），21 / 23 修复直播压缩，MMD 一般用不上。
+**RTX VSR / VFG frame generation** works only with the NVEncC encoder; after choosing it, click "Verify RTX settings on this computer" first. VFG frame generation (2–8×) needs an RTX 40 / 50 GPU and the NVIDIA VFX runtime and models. Neither can be combined with keeping alpha or a separate mask yet.
 
-### 无损剪辑
+VSR "QualityLevel": for clean renders such as MMD, use **4** (scale 2) for upscaling; if outlines get white halos or look over-sharpened, lower the strength from 1 to 0.5–0.7. 8–11 denoise, 12–15 deblur, 16–19 add detail (these three keep the original size), and 21 / 23 repair live-stream compression, which MMD rarely needs.
 
-支持成片首尾音频淡入淡出，片段接缝不淡化。
+### Lossless Trim
 
-把一个或多个视频切段、首尾相接，视频逐包复制，画质不变。
+Audio fade-in and fade-out at the start and end of the result are supported; joins between segments are not faded.
 
-1. 拖入视频。同一文件可以点复制按钮再切一段。
-2. 拖动滑块或用 ←/→ 逐帧查看，↑/↓ 跳到上一个 / 下一个可切位置，I / O 设入点 / 出点；未开启智能剪切时，拖动滑块会吸附到最近的可切位置；也可以输入帧号、时间，或勾选“按 MMD 帧号输入”。
-3. 选择音频方式，点“导出”，输出名为“第一段名_剪辑”。
+Cut one or more videos into segments and join them end to end. Video packets are copied as is, so quality is unchanged.
 
-- **切点**：H.264 / HEVC 只能在 IDR 帧切开（开启“剪辑友好”后约每秒一个），ProRes、UtVideo 每帧都可以。输入位置会吸附到最近的可切位置。开放 GOP、VP9 / AV1、可变帧率（VFR）视频不支持。
-- **MMD 帧号**：MMD 导出的文件名带 `_0400-0600f` 这样的帧范围，加入时自动识别起始帧；其他文件可以手动填写。
-- **智能剪切**（默认关闭）：按输入的帧精确切开，切点附近几帧用原片参数重新编码（这几帧有损）。需要 MMDEncoder 1.5.0 起导出的 H.264 / HEVC。
-- **音频**：保留原音频（按采样点截取后重新编码）、替换为外部音频或不要音频，总长度始终与视频一致。
-- 不同文件拼接时，编码参数必须完全一致，否则列出不同之处并且不导出。
+1. Drag in videos. Click the copy button to cut another segment from the same file.
+2. Drag the slider or use ←/→ to step frame by frame, ↑/↓ to jump to the previous / next cuttable position, and I / O to set the in / out points. With smart cut off, dragging the slider snaps to the nearest cuttable position. You can also type a frame number or time, or check "Enter MMD frame numbers".
+3. Choose the audio mode and click "Export". The output is named "<first segment name>_trimmed".
 
-### MMD 导出插件
+- **Cut points**: H.264 / HEVC can only be cut at IDR frames (about once per second with Edit-friendly on); ProRes and UtVideo can be cut at any frame. Entered positions snap to the nearest cuttable position. Open-GOP, VP9 / AV1 and variable frame rate (VFR) videos are not supported.
+- **MMD frame numbers**: files exported by MMD carry a frame range such as `_0400-0600f` in the name, and the start frame is detected when they are added; for other files you can enter it manually.
+- **Smart cut** (off by default): cuts at exactly the entered frames, re-encoding a few frames near each cut with the source's parameters (those frames are lossy). Requires H.264 / HEVC exported by MMDEncoder 1.5.0 or later.
+- **Audio**: keep the original audio (cut at the sample and re-encoded), replace it with external audio, or drop audio; the total length always matches the video.
+- When joining different files, their encoding parameters must match exactly; otherwise the differences are listed and nothing is exported.
 
-这里的选项都优先于预设。从 1.6.1 升级到 1.6.3 后请更新插件。
+### MMD Export plugin
 
-1. 点右上角“MMD 导出”→“安装到 MMD”（只为当前 Windows 用户注册，不需要管理员；MMD 开着的话重启 MMD）。
-2. 选择导出预设，可以先点“测试编码”。
-3. 在 MMD 里 文件 → AVI 输出，视频编码选“MMDEncoder”，照常输出。
+Options here take precedence over the preset. After upgrading from 1.6.1, update the plugin.
 
-成片保存在 AVI 路径旁边、同名（已有文件不覆盖），渲染结束后自动合成音频并删除占位 AVI。也可以在 MMD 里点“詳細設定”改预设和选项，两边同步。
+1. Click "MMD Export" at the top right, then "Install into MMD" (registered for the current Windows user only, no administrator needed; restart MMD if it is open).
+2. Choose an export preset; you can click "Test encode" first.
+3. In MMD, go to File → AVI output, choose "MMDEncoder" as the video codec and export as usual.
 
-“詳細設定”里的“编码测试”使用窗口中当前显示的预设与选项，测试成功或失败后会显示结果；测试不会保存选项，点“确定”才保存，点“取消”保持原来的设置。
+The finished video is saved next to the AVI path with the same name (existing files are not overwritten); after rendering, audio is muxed in automatically and the placeholder AVI is deleted. You can also click "詳細設定" (settings) in MMD to change the preset and options; both sides stay in sync.
 
-- **音频**：从第 0 帧导出时用 AVI 的音频；从其他帧开始时自动从工程（.pmm）的 WAV 截取对应片段，工程需要先保存过。
-- **分辨率和帧率跟随 MMD**（默认开启）：用 MMD 设定的尺寸和帧率，其他按预设。
-- **Alpha 遮罩**：不导出 / 同时导出 / 仅导出，优先于预设自带的设置。
-- **帧范围后缀**（默认开启）：文件名加 `_0400-0600f`，方便无损剪辑时按 MMD 帧号定位。
-- **意外中断**：MMD 崩溃或被关闭时，已导出的部分会保留，下次打开 MMDEncoder 可以补完或删除。
-- **NVEncC / RTX**：支持 NVEncC 预设。需要预设的分辨率、帧率或 RTX 超分 / 补帧时，关闭“分辨率和帧率跟随 MMD”；跟随开启时仍按 MMD 的尺寸与帧率输出。RTX 所需显卡、运行库及 Alpha 限制与视频压制页相同。
-- 只支持 64 位 MMD。插件装在 `%LOCALAPPDATA%\MMDEncoder\mmd-plugin`，不改动 MMD 文件夹；移动了 MMDEncoder 文件夹后重新打开一次即可。日志可在“MMD 导出”里打开。
+"Test encode" in "詳細設定" uses the preset and options currently shown in that window and shows the result when it succeeds or fails. Testing does not save the options: click "OK" to save, or "Cancel" to keep the previous settings.
 
-### 音视频提取与合并
+- **Audio**: exports starting at frame 0 use the AVI's audio; exports starting at another frame automatically cut the matching part of the project's (.pmm) WAV. The project must have been saved first.
+- **Use MMD's resolution and frame rate** (on by default): uses the size and frame rate set in MMD; everything else follows the preset.
+- **Alpha mask**: don't export / export alongside / export only; overrides the preset's own setting.
+- **Frame range suffix** (on by default): adds `_0400-0600f` to the file name so lossless trimming can seek by MMD frame number.
+- **Unexpected interruption**: if MMD crashes or is closed, the exported part is kept; next time MMDEncoder opens you can finish or delete it.
+- **NVEncC / RTX**: NVEncC presets are supported. To use the preset's resolution, frame rate or RTX upscaling / frame generation, turn off "Use MMD's resolution and frame rate"; while it is on, output still follows MMD's size and frame rate. RTX GPU, runtime and alpha requirements are the same as on the Encode page.
+- 64-bit MMD only. The plugin is installed to `%LOCALAPPDATA%\MMDEncoder\mmd-plugin` and does not touch the MMD folder; if you move the MMDEncoder folder, just open it once again. Logs can be opened from "MMD Export".
 
-支持音频淡入淡出；复制原音轨时不可用。
+### Extract & Merge
 
-批量导出音频（WAV / FLAC / AAC / MP3 / Opus 或复制原音轨）、去除音轨、用外部音频替换音轨，视频不重新压制，输出 MP4 或 MKV（放不进 MP4 时自动改用 MKV）。AAC / MP3 / Opus 默认跟随源码率。WAV / FLAC 可选 Hi-Res（24-bit，低于 48 kHz 时升到 2 倍采样率；升采样不会让音质变好）。
+Audio fades are supported, except when copying the original track.
 
-## 内置预设
+Batch-export audio (WAV / FLAC / AAC / MP3 / Opus, or copy the original track), remove audio tracks, or replace them with external audio, without re-encoding the video. Output is MP4 or MKV (MKV is used automatically when the audio does not fit in MP4). AAC / MP3 / Opus follow the source bitrate by default. WAV / FLAC can use Hi-Res (24-bit, doubling the sample rate when it is below 48 kHz; upsampling does not improve sound quality).
 
-| 预设                     | 编码                              | 分辨率           | 用途                       |
-| ------------------------ | --------------------------------- | ---------------- | -------------------------- |
-| 默认 4K / 1080p · 硬件   | H.264 NVENC p4，CQ 29，AAC 320k   | 长边 3840 / 1920 | 上传 B站、抖音、YouTube 等 |
-| 默认 4K / 1080p · 软件   | x264 medium，CRF 21，AAC 320k     | 长边 3840 / 1920 | 同上，没有 NVIDIA 显卡时   |
-| 保留 Alpha · ProRes 4444 | ProRes 4444，量化 12，PCM，MOV    | 源分辨率         | AE / PR 直接读透明         |
-| 分离 Alpha · H.264 MP4   | H.264 NVENC CQ 19 + `_alpha` 遮罩 | 源分辨率         | 文件最小的透明后期素材     |
-| 剪辑素材 · ProRes 422 HQ | ProRes 422 HQ，量化 12，PCM，MOV  | 源分辨率         | 不需要透明的后期素材       |
+## Built-in presets
 
-“长边”缩放会自动识别横竖屏（1920×1080 → 3840×2160，1080×1920 → 2160×3840）。内置预设可以改名、更新、隐藏和恢复。参数依据见 [docs/平台上传预设.md](docs/平台上传预设.md)，速度与画质实测见 [docs/编码器实测对比.md](docs/编码器实测对比.md)。
+| Preset                         | Encoding                          | Resolution            | Use                                          |
+| ------------------------------ | --------------------------------- | --------------------- | -------------------------------------------- |
+| Default 4K / 1080p · Hardware  | H.264 NVENC p4, CQ 29, AAC 320k   | Long side 3840 / 1920 | Uploading to Bilibili, Douyin, YouTube, etc. |
+| Default 4K / 1080p · Software  | x264 medium, CRF 21, AAC 320k     | Long side 3840 / 1920 | Same, without an NVIDIA GPU                  |
+| Keep Alpha · ProRes 4444       | ProRes 4444, quant 12, PCM, MOV   | Source                | Transparency read directly by AE / PR        |
+| Separate Alpha · H.264 MP4     | H.264 NVENC CQ 19 + `_alpha` mask | Source                | Smallest transparent editing source          |
+| Editing Source · ProRes 422 HQ | ProRes 422 HQ, quant 12, PCM, MOV | Source                | Editing source without transparency          |
 
-## 数据位置
+"Long side" scaling detects landscape and portrait automatically (1920×1080 → 3840×2160, 1080×1920 → 2160×3840). Built-in presets can be renamed, updated, hidden and restored. The reasoning behind the parameters is in [docs/平台上传预设.md](docs/平台上传预设.md), and speed and quality measurements are in [docs/编码器实测对比.md](docs/编码器实测对比.md) (both in Chinese).
 
-| 内容                 | 位置                                   |
-| -------------------- | -------------------------------------- |
-| 设置、个人预设、日志 | 软件目录下的 `data`（更新软件时保留）  |
-| 编码工具             | `%LOCALAPPDATA%\MMDEncoder\tools`      |
-| MMD 导出插件         | `%LOCALAPPDATA%\MMDEncoder\mmd-plugin` |
+## Data locations
 
-## 从源码构建
+| Contents                         | Location                                           |
+| -------------------------------- | -------------------------------------------------- |
+| Settings, personal presets, logs | `data` in the program folder (kept across updates) |
+| Encoding tools                   | `%LOCALAPPDATA%\MMDEncoder\tools`                  |
+| MMD export plugin                | `%LOCALAPPDATA%\MMDEncoder\mmd-plugin`             |
 
-需要 Node.js 22+、pnpm 和 Windows x64。
+## Building from source
+
+Requires Node.js 22+, pnpm and Windows x64.
 
 ```powershell
 pnpm install
-pnpm build             # 类型检查并构建界面
-pnpm start             # 启动开发版
-mmd-plugin\build.cmd   # 编译 MMD 导出插件（需要 VS 2022 C++ 生成工具）
-pnpm package           # 打包便携版
+pnpm build             # type-check and build the UI
+pnpm start             # run the development build
+mmd-plugin\build.cmd   # build the MMD export plugin (needs VS 2022 C++ Build Tools)
+pnpm package           # package the portable build
 node scripts/zip-portable.mjs
 ```
 
-压缩脚本同时生成完整包 `MMDEncoder-x.y.z-win-x64.zip`、程序包 `MMDEncoder-x.y.z-app.zip`、各自的 `.sha256` 和 `MMDEncoder-x.y.z-update.json` 清单；它会解包核对两种包内的 `resources/app` 完全一致。已有同版本文件须显式加 `--replace`。隔离验收可用 `MMD_PACKAGE_DEST` 指定新的便携目录，再用 `MMD_ARCHIVE_DEST` 指定独立的压缩包目录。
+The zip script produces the full package `MMDEncoder-x.y.z-win-x64.zip`, the app package `MMDEncoder-x.y.z-app.zip`, a `.sha256` for each and the `MMDEncoder-x.y.z-update.json` manifest; it unpacks both packages to check that their `resources/app` is identical. Existing files of the same version require an explicit `--replace`. For isolated acceptance runs, set `MMD_PACKAGE_DEST` to a new portable folder and `MMD_ARCHIVE_DEST` to a separate archive folder.
 
-自动更新在 Electron 版本相同时只下载程序包；运行环境不符、清单缺失或程序包未能通过下载校验时改用完整包。程序包只替换 `resources/app`，完整包替换程序目录；两者都保留 `data`，安装失败还原旧文件，日志在 `data/logs/update.log`。
+When the Electron version is unchanged, automatic updates download only the app package; if the runtime does not match, the manifest is missing or the app package fails verification, the full package is used. The app package replaces only `resources/app`, the full package replaces the program folder; both keep `data`, roll back on failure and log to `data/logs/update.log`.
 
-测试（`MMD_TEST_TOOLS_ROOT` 指向编码工具目录）：
+Tests (`MMD_TEST_TOOLS_ROOT` points to the encoding tools folder):
 
 ```powershell
-node --test tests/*.test.cjs     # 单元测试和真实引擎测试
-node tests/desktop.mjs           # 桌面流程
-node tests/desktop-tools.mjs     # 工具安装与设置页
-node tests/desktop-recovery.mjs  # 出错恢复与重启
-node mmd-plugin/tests/e2e.mjs    # MMD 导出插件
+node --test tests/*.test.cjs     # unit tests and real-engine tests
+node tests/desktop.mjs           # desktop workflows
+node tests/desktop-tools.mjs     # tool installation and settings pages
+node tests/desktop-recovery.mjs  # error recovery and restart
+node mmd-plugin/tests/e2e.mjs    # MMD export plugin
 ```
 
-代码结构：`backend/`（编码命令、工具、任务服务）、`desktop/`（Electron 主进程）、`src/`（React 界面）、`mmd-plugin/`（C++ DMO 编码器）、`tests/`、`scripts/`、`assets/`（图标、7-Zip、ArtCNN 着色器）、`docs/`（更新日志、第三方声明、实测）。
+Code layout: `backend/` (encoding commands, tools, job service), `desktop/` (Electron main process), `src/` (React UI), `mmd-plugin/` (C++ DMO encoder), `tests/`, `scripts/`, `assets/` (icons, 7-Zip, ArtCNN shaders), `docs/` (changelog, third-party notices, measurements).
 
-## 许可证
+## License
 
-Copyright (c) 2026 CicloO。本项目以 [Mozilla Public License 2.0](LICENSE) 发布：可以自由使用、修改和分发，包括用在闭源或商业软件中；修改了本项目的源文件并分发时，这些文件须继续以 MPL 2.0 公开。发行包里的协议全文是 `LICENSE-MMDEncoder.txt`（同目录的 `LICENSE` 是 Electron 的）。1.4.3 及以前的版本以 MIT 许可证发布。
+Copyright (c) 2026 CicloO. This project is released under the [Mozilla Public License 2.0](LICENSE): you may freely use, modify and distribute it, including in closed-source or commercial software; if you distribute modified source files of this project, those files must remain available under MPL 2.0. The full license text in the release package is `LICENSE-MMDEncoder.txt` (the `LICENSE` in the same folder belongs to Electron). Versions 1.4.3 and earlier were released under the MIT License.
 
-FFmpeg、NVEncC 等编码工具由用户另行下载，遵循各自的许可证；附带的第三方组件见 [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md)，版本变化见 [发行说明](https://github.com/CicloO/MMDEncoder/releases)。
+FFmpeg, NVEncC and other encoding tools are downloaded separately by the user and follow their own licenses; bundled third-party components are listed in [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md), and version changes are in the [release notes](https://github.com/CicloO/MMDEncoder/releases).
 
-本项目参考了 [XPRAMT/MMD2FFMPEG](https://github.com/XPRAMT/MMD2FFMPEG) 的编码设置。
+This project draws on the encoding settings of [XPRAMT/MMD2FFMPEG](https://github.com/XPRAMT/MMD2FFMPEG).
 
-## 作者
+## Author
 
-作者：CicloO　协作：Claude、ChatGPT、DeepSeek
+Author: CicloO　Collaborators: Claude, ChatGPT, DeepSeek
