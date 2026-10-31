@@ -744,10 +744,34 @@
     "reason": "Product and codec name; the name is identical in every language."
   },
   {
-    "file": "mmd-plugin/src/settings.cpp",
+    "file": "mmd-plugin/src/messages.cpp",
     "text": "Microsoft YaHei UI",
     "category": "technical",
-    "reason": "Windows font family identifier; choose fonts by locale later instead of translating this identifier."
+    "reason": "Windows font family identifier chosen for the Chinese plugin snapshot; not translated."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "ja",
+    "category": "technical",
+    "reason": "Locale ID prefix used to choose the dialog font; not visible text."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "zh",
+    "category": "technical",
+    "reason": "Locale ID prefix used to choose the dialog font; not visible text."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "Yu Gothic UI",
+    "category": "technical",
+    "reason": "Windows font family identifier chosen for the Japanese plugin snapshot; not translated."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "Segoe UI",
+    "category": "technical",
+    "reason": "Windows font family identifier chosen for the English plugin snapshot; not translated."
   },
   {
     "file": "mmd-plugin/src/settings.cpp",

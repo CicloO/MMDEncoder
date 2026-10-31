@@ -73,18 +73,30 @@ test("locale runtime refreshes subscriptions, supports plural forms and falls ba
   );
 });
 
-test("preparation defaults to Chinese, reserves system mode and ignores unsupported locale values", () => {
+test("shipped locales resolve explicitly, follow the system and reject unknown values", () => {
   const preferences = createPreferences();
   assert.equal(preferences.normalize(undefined), null);
   assert.equal(preferences.normalize(null), null);
-  for (const value of ["ja", "en", "unknown", 42, {}, false]) {
+  for (const value of ["zh-CN", "ja", "en"]) {
+    assert.equal(preferences.normalize(value), value);
+    assert.equal(preferences.resolve(value), value);
+  }
+  for (const value of ["unknown", 42, {}, false]) {
     assert.equal(preferences.normalize(value), "zh-CN");
     assert.equal(preferences.resolve(value), "zh-CN");
   }
+  // No system language list (tests, preparation): the default locale.
   assert.equal(preferences.resolve(null), "zh-CN");
+  const system = (languages) =>
+    createPreferences(registry, languages).resolve(null);
+  assert.equal(system(["ja-JP", "en-US"]), "ja");
+  assert.equal(system(["en-GB"]), "en");
+  assert.equal(system(["zh-TW"]), "zh-CN");
+  assert.equal(system(["fr-FR", "ja"]), "ja");
+  assert.equal(system(["fr-FR", "de-DE"]), "en");
   assert.deepEqual(
     registry.locales.map((l) => l.id),
-    ["zh-CN"],
+    ["zh-CN", "ja", "en"],
   );
 });
 

@@ -47,6 +47,7 @@ function createService({
   toolOptions = {},
   localeRegistry,
   localeCatalogs,
+  systemLanguages = [],
   formatCopiedCommand,
   // MMD export plugin DLL shipped with the app (packaged) or built locally (dev).
   mmdPluginDll = [
@@ -58,7 +59,7 @@ function createService({
 } = {}) {
   dataDir = dataDir || path.join(os.tmpdir(), "mmd-encoder");
   const settingsStore = createSettingsStore(dataDir);
-  const preferences = createPreferences(localeRegistry);
+  const preferences = createPreferences(localeRegistry, systemLanguages);
   const children = new Set();
   const pendingLogs = new Map();
   let evidenceTimer = null,
@@ -73,7 +74,7 @@ function createService({
   const state = {
     preferences: { locale: null, theme: "light", autoAlignAudio: true },
     locale: preferences.resolve(null),
-    systemLocale: preferences.resolve(null),
+    systemLocale: preferences.system,
     jobs: [],
     settings: { ...core.DEFAULTS },
     presets: clone(core.BUILTINS),

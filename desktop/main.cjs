@@ -137,6 +137,7 @@ else {
         engineDir,
         dataDir,
         localeCatalogs,
+        systemLanguages: app.getPreferredSystemLanguages(),
         formatCopiedCommand: (commands, locale) => {
           desktopLocale.setLocale(locale);
           return commandText(commands, {

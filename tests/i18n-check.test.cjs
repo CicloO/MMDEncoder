@@ -82,7 +82,7 @@ test("the shipped catalogs and complete pseudo catalog agree without shipping a 
   const { checkProject } = await import("../scripts/i18n-check.mjs");
   const report = await checkProject(path.resolve(__dirname, ".."));
   assert.deepEqual(report.errors, []);
-  assert.deepEqual(report.registeredLocales, ["zh-CN"]);
+  assert.deepEqual(report.registeredLocales, ["zh-CN", "ja", "en"]);
   assert.ok(report.references.length > 1000);
   assert.ok(
     report.reviewRequired > 0,

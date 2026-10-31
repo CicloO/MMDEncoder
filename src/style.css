@@ -277,7 +277,7 @@ svg {
   padding: 7px;
 }
 .app-header {
-  height: 72px;
+  height: 88px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -329,6 +329,17 @@ svg {
 /* One font for Latin and Chinese, so "MMD 导出" matches its neighbours. */
 .header-actions .button {
   font-family: "Microsoft YaHei UI", sans-serif;
+}
+/* Japanese kanji need a Japanese face; Chinese faces draw Chinese shapes. */
+html[lang="ja"] {
+  --font-body: Segoe UI, Yu Gothic UI, Meiryo UI, sans-serif;
+  --font-display: Bahnschrift, Yu Gothic UI, Meiryo UI, sans-serif;
+}
+html[lang="ja"] .header-actions .button {
+  font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
+}
+html[lang="en"] .header-actions .button {
+  font-family: "Segoe UI", sans-serif;
 }
 .status-dot {
   width: 6px;
@@ -1314,8 +1325,8 @@ textarea {
   }
   .app-header {
     height: auto;
-    min-height: 72px;
-    padding: 12px 18px;
+    min-height: 84px;
+    padding: 16px 18px;
     flex-wrap: wrap;
     gap: 12px;
   }

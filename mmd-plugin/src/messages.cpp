@@ -60,3 +60,9 @@ std::wstring PluginMessages::result(const Json& data, const wchar_t* prefix, con
   }
   return output;
 }
+
+const wchar_t* PluginMessages::font() const {
+  if (locale_.rfind(L"ja", 0) == 0) return L"Yu Gothic UI";
+  if (locale_.rfind(L"zh", 0) == 0) return L"Microsoft YaHei UI";
+  return L"Segoe UI";
+}

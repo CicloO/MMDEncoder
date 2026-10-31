@@ -93,7 +93,7 @@ static bool readSettings(HWND dlg, SettingsContext* ctx) {
 // In-memory dialog template (no .rc file needed).
 class DialogTemplate {
  public:
-  DialogTemplate(const wchar_t* title, short w, short h) {
+  DialogTemplate(const wchar_t* title, short w, short h, const wchar_t* font) {
     align(4);
     DLGTEMPLATE t{};
     t.style = DS_MODALFRAME | DS_SETFONT | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
@@ -104,7 +104,7 @@ class DialogTemplate {
     word(0);  // default class
     text(title);
     word(9);  // font size
-    text(L"Microsoft YaHei UI");
+    text(font);
   }
   void control(WORD id, WORD cls, DWORD style, short x, short y, short w, short h, const wchar_t* text_) {
     align(4);
@@ -274,7 +274,7 @@ void showSettings(HWND parent, HINSTANCE module, const std::wstring& dir, Proces
   ctx.appExe = config[L"appExe"].s;
   ctx.helper = config[L"helper"].s;
 
-  DialogTemplate t(ctx.messages.text(L"plugin.title").c_str(), 270, 188);
+  DialogTemplate t(ctx.messages.text(L"plugin.title").c_str(), 270, 188, ctx.messages.font());
   const WORD STATIC_ = 0x0082, BUTTON_ = 0x0080, COMBO_ = 0x0085, EDIT_ = 0x0081;
   t.control(0xFFFF, STATIC_, SS_LEFT, 10, 8, 250, 9, ctx.messages.text(L"plugin.preset").c_str());
   t.control(IDC_PRESET, COMBO_, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 10, 19, 250, 160, L"");

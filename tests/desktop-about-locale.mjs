@@ -105,6 +105,8 @@ try {
   assert.deepEqual(await language.locator("option").allTextContents(), [
     "跟随系统（简体中文）",
     "简体中文",
+    "日本語",
+    "English",
     "Test English",
   ]);
   await page.evaluate(() => {
@@ -142,7 +144,7 @@ try {
   assert.equal(state.systemLocale, "zh-CN");
   assert.deepEqual(
     (await changed.locator("option").allTextContents()).slice(1),
-    ["简体中文", "Test English"],
+    ["简体中文", "日本語", "English", "Test English"],
   );
   await changed.selectOption("system");
   await expect(

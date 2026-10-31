@@ -1,4 +1,6 @@
 import zhCN from "../locales/zh-CN.json";
+import ja from "../locales/ja.json";
+import en from "../locales/en.json";
 import registry from "../locales/registry.json";
 import { createTranslator } from "../locales/runtime.mjs";
 import { formatVideoSummary } from "../locales/video-summary.mjs";
@@ -28,7 +30,7 @@ import type { MessageParams } from "../locales/runtime.mjs";
 export type MessageKey = keyof typeof zhCN;
 export const localeRuntime = createTranslator({
   sourceLocale: registry.sourceLocale,
-  catalogs: { "zh-CN": zhCN },
+  catalogs: { "zh-CN": zhCN, ja, en },
 });
 export const {
   getLocale,

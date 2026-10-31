@@ -1,8 +1,8 @@
 {
   "common.moreInfo": "说明",
   "app.theme.system": "跟随系统",
-  "app.theme.lightName": "浅色",
-  "app.theme.darkName": "深色",
+  "app.theme.lightName": "白天",
+  "app.theme.darkName": "黑夜",
   "app.theme.switch": "主题：{current}，切换为{next}",
   "about.description": "版本与更新、程序设置、界面语言、作者与支持。",
   "about.releases": "发行说明",

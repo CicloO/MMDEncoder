@@ -162,13 +162,13 @@ try {
     "aria-label",
     pseudo["app.theme.switch"]
       .replace("{current}", pseudo["app.theme.darkName"])
-      .replace("{next}", pseudo["app.theme.system"]),
+      .replace("{next}", pseudo["app.theme.lightName"]),
   );
   await expect(page.locator(".theme-toggle")).toHaveAttribute(
     "title",
     pseudo["app.theme.switch"]
       .replace("{current}", pseudo["app.theme.darkName"])
-      .replace("{next}", pseudo["app.theme.system"]),
+      .replace("{next}", pseudo["app.theme.lightName"]),
   );
   await expect(page.locator(".brand h1")).toHaveText("MMDEncoder");
   assert.equal(
