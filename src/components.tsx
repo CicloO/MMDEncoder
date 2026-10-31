@@ -133,6 +133,23 @@ export function Select({
   );
 }
 // Shared pointer/keyboard explanation for label help and unavailable controls.
+// A wrapped max-content box keeps its full max-width, so CJK line-break rules
+// leave empty space on the right. Narrow the box to its longest line.
+function shrinkToLines(node: HTMLElement) {
+  node.style.width = "";
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  const lines = [...range.getClientRects()];
+  if (lines.length < 2) return;
+  const box = node.getBoundingClientRect(),
+    style = getComputedStyle(node),
+    inner =
+      box.right -
+      parseFloat(style.paddingRight) -
+      parseFloat(style.borderRightWidth);
+  const unused = inner - Math.max(...lines.map((r) => r.right));
+  if (unused > 1) node.style.width = `${Math.ceil(box.width - unused)}px`;
+}
 export function Tooltip({
   id,
   text,
@@ -152,6 +169,7 @@ export function Tooltip({
     if (!open || !anchor.current || !popup.current) return;
     const positionPopup = () => {
       if (!anchor.current || !popup.current) return;
+      shrinkToLines(popup.current);
       const a = anchor.current.getBoundingClientRect(),
         p = popup.current.getBoundingClientRect();
       const left = Math.max(

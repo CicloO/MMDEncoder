@@ -745,6 +745,9 @@ html[lang="en"] .header-actions .button {
   background: transparent;
   color: var(--color-muted);
   cursor: pointer;
+  /* Contains its .sr-only label; otherwise a help button low in a scrolled
+     panel places that label against the page and adds a window scrollbar. */
+  position: relative;
 }
 .sr-only {
   position: absolute;
