@@ -585,6 +585,23 @@ html[lang="en"] .header-actions .button {
   height: 3px;
   accent-color: var(--color-primary);
 }
+/* Neon Cyan (default accent): the logo's cyan-to-pink sweep, on progress bars only. */
+:root:not([data-accent="blue"]) progress {
+  appearance: none;
+  border: 0;
+  background: var(--color-border);
+}
+:root:not([data-accent="blue"]) progress::-webkit-progress-bar {
+  background: var(--color-border);
+}
+:root:not([data-accent="blue"]) progress::-webkit-progress-value {
+  /* oklch keeps the midpoint bright instead of a grey sRGB blend. */
+  background: linear-gradient(
+    90deg in oklch,
+    var(--color-logoCyan),
+    var(--color-logoPink)
+  );
+}
 .queue-pagination {
   display: flex;
   align-items: center;

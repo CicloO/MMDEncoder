@@ -4,6 +4,7 @@ const allowed = new Set([
   "state",
   "setLocale",
   "setTheme",
+  "setAccent",
   "setAutoAlignAudio",
   "pickToolsArchive",
   "installToolsArchive",
@@ -93,9 +94,13 @@ const allowed = new Set([
 const initialTheme = process.argv.includes("--mmd-theme=dark")
   ? "dark"
   : "light";
+const initialAccent = process.argv.includes("--mmd-accent=blue")
+  ? "blue"
+  : "cyan";
 const applyInitialTheme = () => {
   if (!document.documentElement) return false;
   document.documentElement.dataset.theme = initialTheme;
+  document.documentElement.dataset.accent = initialAccent;
   return true;
 };
 if (!applyInitialTheme()) {
@@ -106,6 +111,7 @@ if (!applyInitialTheme()) {
 }
 contextBridge.exposeInMainWorld("encoder", {
   initialTheme,
+  initialAccent,
   // Structured replies cross contextBridge as plain data. Custom properties
   // on a rejected Error do not reliably survive that second Electron boundary.
   invokeResult(action, payload) {

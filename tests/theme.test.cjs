@@ -5,7 +5,11 @@ const fs = require("node:fs"),
   os = require("node:os"),
   path = require("node:path");
 const YAML = require("yaml");
-const { normalizeTheme, resolveTheme } = require("../backend/preferences.cjs");
+const {
+  normalizeTheme,
+  normalizeAccent,
+  resolveTheme,
+} = require("../backend/preferences.cjs");
 const { createService } = require("../backend/service.cjs");
 
 test("automatic audio alignment is a persisted program preference, separate from encoder and MMD settings", async () => {
@@ -89,6 +93,29 @@ test("theme uses the existing preference store, survives restart and leaves enco
       assert.equal(svc.getState().preferences.theme, theme);
     }
     assert.equal(svc.getState().preferences.locale, null);
+  } finally {
+    svc.dispose();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+test("accent defaults to Neon Cyan, persists and rolls back on a failed save", async () => {
+  for (const value of [undefined, null, "pink", "", "cyan"])
+    assert.equal(normalizeAccent(value), "cyan");
+  assert.equal(normalizeAccent("blue"), "blue");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-accent-"));
+  let svc = createService({ dataDir: dir });
+  try {
+    assert.equal(svc.getState().preferences.accent, "cyan");
+    await svc.invoke("setAccent", { accent: "blue" });
+    svc.dispose();
+    svc = createService({ dataDir: dir });
+    assert.equal(svc.getState().preferences.accent, "blue");
+    assert.equal(svc.getState().preferences.theme, "light");
+    const settings = path.join(dir, "settings.json");
+    fs.renameSync(settings, settings + ".held");
+    fs.mkdirSync(settings);
+    await assert.rejects(svc.invoke("setAccent", { accent: "cyan" }));
+    assert.equal(svc.getState().preferences.accent, "blue");
   } finally {
     svc.dispose();
     fs.rmSync(dir, { recursive: true, force: true });

@@ -212,6 +212,7 @@ export type State = {
   preferences: {
     locale: string | null;
     theme: "light" | "dark";
+    accent: "blue" | "cyan";
     autoAlignAudio: boolean;
   };
   locale: string;
@@ -343,6 +344,7 @@ declare global {
   interface Window {
     encoder: {
       initialTheme?: "light" | "dark";
+      initialAccent?: "blue" | "cyan";
       invokeResult: (action: string, payload?: unknown) => Promise<any>;
       invoke: (action: string, payload?: unknown) => Promise<any>;
       onCloseRequest: (fn: () => void) => () => void;

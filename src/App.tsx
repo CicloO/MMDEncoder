@@ -545,6 +545,13 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+  const accent =
+    (state?.preferences.accent || window.encoder?.initialAccent) === "blue"
+      ? "blue"
+      : "cyan";
+  useEffect(() => {
+    document.documentElement.dataset.accent = accent;
+  }, [accent]);
   if (!s || !state)
     return (
       <main className="startup">
@@ -885,6 +892,7 @@ export default function App() {
         appUpdate={appUpdate}
         localePreference={state.preferences.locale}
         systemLocale={state.systemLocale}
+        accent={accent}
         autoAlignAudio={state.preferences.autoAlignAudio}
         blocked={
           busy || state.running || state.trim?.running ? t("about.busy") : ""

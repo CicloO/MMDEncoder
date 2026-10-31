@@ -4,6 +4,10 @@ import { format } from "prettier";
 const raw = fs.readFileSync(new URL("../DESIGN.md", import.meta.url), "utf8");
 const t = YAML.parse(raw.split("---")[1]);
 const lines = [];
+const vars = (colors) =>
+  Object.entries(colors)
+    .map(([key, value]) => `--color-${key}:${value};`)
+    .join("\n");
 for (const [key, value] of Object.entries(t.colors))
   lines.push(`--color-${key}:${value};`);
 for (const [key, value] of Object.entries(t.typography))
@@ -20,9 +24,15 @@ fs.writeFileSync(
     "/* Generated from DESIGN.md. */\n:root{\n" +
       lines.join("\n") +
       "\n}\n" +
-      `:root[data-theme="light"]{${Object.entries(t.lightColors)
-        .map(([key, value]) => `--color-${key}:${value};`)
-        .join("\n")}}`,
+      `:root[data-theme="light"]{${vars(t.lightColors)}}` +
+      // Accent after the light base; the light+accent rule is more specific.
+      Object.entries(t.accents)
+        .map(
+          ([name, { dark, light }]) =>
+            `:root[data-accent="${name}"]{${vars(dark)}}` +
+            `:root[data-theme="light"][data-accent="${name}"]{${vars(light)}}`,
+        )
+        .join(""),
     { parser: "css" },
   ),
 );

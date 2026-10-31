@@ -45,6 +45,7 @@ export function AboutDialog({
   appUpdate,
   localePreference,
   systemLocale,
+  accent = "cyan",
   autoAlignAudio = true,
   blocked,
   onCheck,
@@ -58,6 +59,7 @@ export function AboutDialog({
   appUpdate: AppUpdate;
   localePreference: string | null;
   systemLocale: string;
+  accent?: "blue" | "cyan";
   autoAlignAudio?: boolean;
   // Why installing has to wait (an encode is running), "" when it can go.
   blocked: string;
@@ -75,11 +77,11 @@ export function AboutDialog({
   const [preferenceError, setPreferenceError] = useState<ErrorData | null>(
     null,
   );
-  async function changeAutoAlign(enabled: boolean) {
+  async function changePreference(name: string, payload: unknown) {
     setPreferencePending(true);
     setPreferenceError(null);
     try {
-      await invoke("setAutoAlignAudio", { enabled });
+      await invoke(name, payload);
     } catch (error) {
       setPreferenceError(serializeError(error));
     } finally {
@@ -256,7 +258,11 @@ export function AboutDialog({
             disabled={preferencePending}
             aria-label={text("about.autoAlignAudio")}
             aria-describedby="about-auto-align-hint"
-            onChange={(event) => void changeAutoAlign(event.target.checked)}
+            onChange={(event) =>
+              void changePreference("setAutoAlignAudio", {
+                enabled: event.target.checked,
+              })
+            }
           />
           <span>
             {text("about.autoAlignAudio")}
@@ -265,6 +271,20 @@ export function AboutDialog({
             </span>
           </span>
         </label>
+        <Select
+          id="about-accent"
+          label={text("about.accent")}
+          value={accent}
+          disabled={preferencePending}
+          options={[
+            { value: "cyan", label: text("about.accentCyan") },
+            { value: "blue", label: text("about.accentBlue") },
+          ]}
+          onChange={(value) =>
+            void changePreference("setAccent", { accent: value })
+          }
+          hint={text("about.accentHint")}
+        />
         {preferenceError && (
           <p className="inline-error" role="alert">
             {errorMessage(preferenceError)}

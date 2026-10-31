@@ -30,7 +30,11 @@ const { createAlignService } = require("./align-service.cjs");
 const { createTrimQueue } = require("./trim-queue.cjs");
 const { commit } = require("./commit.cjs");
 const { createSettingsStore } = require("./settings-store.cjs");
-const { createPreferences, normalizeTheme } = require("./preferences.cjs");
+const {
+  createPreferences,
+  normalizeTheme,
+  normalizeAccent,
+} = require("./preferences.cjs");
 const { createPresetOperations } = require("./presets.cjs");
 const {
   testEnhancements,
@@ -72,7 +76,12 @@ function createService({
     detectPromise = null,
     locatePromise = null;
   const state = {
-    preferences: { locale: null, theme: "light", autoAlignAudio: true },
+    preferences: {
+      locale: null,
+      theme: "light",
+      accent: "cyan",
+      autoAlignAudio: true,
+    },
     locale: preferences.resolve(null),
     systemLocale: preferences.system,
     jobs: [],
@@ -396,6 +405,7 @@ function createService({
     if (saved.version !== 1) throw appError("SETTINGS_VERSION_UNSUPPORTED");
     state.preferences.locale = preferences.normalize(saved.preferences?.locale);
     state.preferences.theme = normalizeTheme(saved.preferences?.theme);
+    state.preferences.accent = normalizeAccent(saved.preferences?.accent);
     state.preferences.autoAlignAudio =
       saved.preferences?.autoAlignAudio !== false;
     state.locale = preferences.resolve(state.preferences.locale);
@@ -839,6 +849,17 @@ function createService({
           persist({ syncMmd: false });
         } catch (error) {
           state.preferences.theme = previous;
+          throw error;
+        }
+        break;
+      }
+      case "setAccent": {
+        const previous = state.preferences.accent;
+        state.preferences.accent = normalizeAccent(payload.accent);
+        try {
+          persist({ syncMmd: false });
+        } catch (error) {
+          state.preferences.accent = previous;
           throw error;
         }
         break;

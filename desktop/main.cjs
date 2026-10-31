@@ -24,7 +24,11 @@ const { commandText } = require("../backend/command-text.cjs");
 const { createTranslator } = require("../locales/runtime.mjs");
 const localeRegistry = require("../locales/registry.json");
 const { createSettingsStore } = require("../backend/settings-store.cjs");
-const { normalizeTheme, resolveTheme } = require("../backend/preferences.cjs");
+const {
+  normalizeTheme,
+  normalizeAccent,
+  resolveTheme,
+} = require("../backend/preferences.cjs");
 const themeColors = require("./theme-colors.json");
 const localeCatalogs = Object.fromEntries(
   localeRegistry.locales.map((entry) => [
@@ -78,11 +82,12 @@ else {
   app
     .whenReady()
     .then(async () => {
-      let initialPreference = "light";
+      let initialPreference = "light",
+        initialAccent = "cyan";
       try {
-        initialPreference = normalizeTheme(
-          createSettingsStore(dataDir).read().preferences?.theme,
-        );
+        const saved = createSettingsStore(dataDir).read().preferences;
+        initialPreference = normalizeTheme(saved?.theme);
+        initialAccent = normalizeAccent(saved?.accent);
       } catch {
         /* The service reports and backs up unreadable settings. */
       }
@@ -113,7 +118,10 @@ else {
           nodeIntegration: false,
           sandbox: true,
           backgroundThrottling: false,
-          additionalArguments: [`--mmd-theme=${appliedTheme}`],
+          additionalArguments: [
+            `--mmd-theme=${appliedTheme}`,
+            `--mmd-accent=${initialAccent}`,
+          ],
         },
       });
       nativeTheme.on("updated", () =>
@@ -512,6 +520,7 @@ else {
           "state",
           "setLocale",
           "setTheme",
+          "setAccent",
           "setAutoAlignAudio",
           "installToolsArchive",
           "compatibility",

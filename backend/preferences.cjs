@@ -42,9 +42,15 @@ function normalizeTheme(value) {
 function resolveTheme(value) {
   return normalizeTheme(value);
 }
+// Accent colours combine with either day or night. Neon Cyan is the default;
+// Cobalt Blue is the original palette.
+function normalizeAccent(value) {
+  return value === "blue" ? "blue" : "cyan";
+}
 module.exports = {
   createPreferences,
   systemLocale,
   normalizeTheme,
+  normalizeAccent,
   resolveTheme,
 };

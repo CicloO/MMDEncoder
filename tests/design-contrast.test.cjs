@@ -48,3 +48,21 @@ for (const [theme, colors] of [
       `${theme} primary button label`,
     );
   });
+// The default accent lives in colors/lightColors; others only override them.
+for (const [accent, modes] of [
+  ["default", { dark: {}, light: {} }],
+  ...Object.entries(design.accents),
+])
+  for (const [theme, base] of [
+    ["dark", design.colors],
+    ["light", design.lightColors],
+  ])
+    test(`${accent} accent keeps primary text and button labels readable in ${theme}`, () => {
+      const colors = { ...base, ...modes[theme] };
+      assert.ok(contrast(colors.onPrimary, colors.primary) >= 4.5);
+      for (const background of ["background", "surface", "raised"])
+        assert.ok(
+          contrast(colors.primary, colors[background]) >= 4.5,
+          `${accent} ${theme} primary on ${background}: ${contrast(colors.primary, colors[background])}`,
+        );
+    });
