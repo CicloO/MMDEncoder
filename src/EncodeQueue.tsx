@@ -37,6 +37,7 @@ import {
   targetLabel,
   videoName,
 } from "./presentation";
+import { OneLine, ReplacementAudio } from "./ReplacementAudio";
 import type { RequestCall } from "./actions";
 import type { Job, Settings, State } from "./types";
 
@@ -211,19 +212,24 @@ export function EncodeQueue({
                     </span>
                     <span className="job-copy">
                       <strong title={videoName(j)}>{videoName(j)}</strong>
-                      <span className="job-sub">
+                      <OneLine className="job-sub">
                         {j.meta ? metaSummary(j.meta) : t("queue.metaReading")}
-                        {j.audioPath &&
-                          (j.audioOffset !== undefined
-                            ? t("queue.audioAligned", {
-                                file: baseName(j.audioPath),
-                                offset: offsetText(j.audioOffset),
-                              })
-                            : t("queue.audioNamed", {
-                                file: baseName(j.audioPath),
-                              }))}
-                        {j.audioPath && frameShiftText(j.audioShiftFrames)}
-                      </span>
+                      </OneLine>
+                      {j.audioPath && (
+                        <ReplacementAudio
+                          path={j.audioPath}
+                          name={baseName(j.audioPath)}
+                          label={(file) =>
+                            j.audioOffset !== undefined
+                              ? t("queue.audioAligned", {
+                                  file,
+                                  offset: offsetText(j.audioOffset),
+                                })
+                              : t("queue.audioNamed", { file })
+                          }
+                          shift={frameShiftText(j.audioShiftFrames)}
+                        />
+                      )}
                       {(() => {
                         const own = j.ownSettings;
                         return (

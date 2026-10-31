@@ -20,6 +20,7 @@ import { formatDuration } from "./presentation";
 import { metaSummary } from "./FileMeta";
 import { frameShiftText, offsetText } from "./autoAlign";
 import { AUDIO_EXT, STATUS, baseName } from "./mediaOptions";
+import { OneLine, ReplacementAudio } from "./ReplacementAudio";
 import type { MediaJob } from "./types";
 export function MediaQueue({
   jobs,
@@ -89,39 +90,39 @@ export function MediaQueue({
         </span>
         <span className="job-copy">
           <strong title={j.path}>{j.name}</strong>
-          <span className="job-sub">
-            {j.meta
+          <OneLine className="job-sub">
+            {(j.meta
               ? metaSummary(j.meta)
               : j.metaErrorData
                 ? errorMessage(j.metaErrorData)
-                : j.metaError || t("media.reading")}
-            {operation === "merge" &&
-              (j.audioPath
+                : j.metaError || t("media.reading")) +
+              (operation === "merge" && !j.audioPath
+                ? t("media.audioMissing")
+                : "") +
+              (operation === "audio" && j.align
                 ? t(
-                    j.audioOffset !== undefined
-                      ? "media.attachedAlignedAudio"
-                      : "media.attachedAudio",
-                    {
-                      name: baseName(j.audioPath),
-                      offset: offsetText(j.audioOffset || 0),
-                    },
-                  )
-                : t("media.audioMissing"))}
-            {operation === "merge" &&
-              j.audioPath &&
-              frameShiftText(j.audioShiftFrames)}
-            {operation === "audio" &&
-              j.align &&
-              t(
-                j.align.length
-                  ? "media.extractionTrimmed"
-                  : "media.extractionAligned",
-                { offset: offsetText(j.align.offset) },
-              )}
-            {operation === "audio" &&
-              j.align &&
-              frameShiftText(j.align.shiftFrames)}
-          </span>
+                    j.align.length
+                      ? "media.extractionTrimmed"
+                      : "media.extractionAligned",
+                    { offset: offsetText(j.align.offset) },
+                  ) + frameShiftText(j.align.shiftFrames)
+                : "")}
+          </OneLine>
+          {operation === "merge" && j.audioPath && (
+            <ReplacementAudio
+              path={j.audioPath}
+              name={baseName(j.audioPath)}
+              label={(name) =>
+                t(
+                  j.audioOffset !== undefined
+                    ? "media.attachedAlignedAudio"
+                    : "media.attachedAudio",
+                  { name, offset: offsetText(j.audioOffset || 0) },
+                )
+              }
+              shift={frameShiftText(j.audioShiftFrames)}
+            />
+          )}
           <span
             className={`job-status ${j.status}`}
             title={jobError(j) || undefined}
