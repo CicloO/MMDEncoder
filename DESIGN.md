@@ -95,7 +95,7 @@ Product tool for Chinese-speaking MMD creators processing local rendered video. 
 
 Graphite surfaces keep attention on real video metadata. The primary accent carries safe primary actions, mint indicates completion, amber recoverable issues and rose failures. Status always has text. As requested on 2026-10-29, theme defaults to light and the header toggles only light and dark; it does not follow the system. The service's existing settings store persists this preference independently of encoding presets; previous localStorage values are not migrated. Both themes share layout and semantic tokens; forced colors remains operable. Overlay, preview, checkerboard and shadow tokens preserve their previous appearance in both themes. Startup window and document colors use the saved mode before rendering content.
 
-Accent (2026-10-31, user request): an About setting independent of day/night. Neon Cyan is the default and takes its pair from the logo cyan; only progress bars carry the logo's cyan-to-pink gradient (oklch interpolation, so the midpoint stays bright). Cobalt Blue restores the original blue pair through `data-accent="blue"`. Danger stays rose in both accents, so pink never appears on a control.
+Accent (2026-10-31, user request): an About setting independent of day/night. Neon Cyan is the default and takes its pair from the logo cyan; only progress bars echo the logo: cyan, turning pink over the last 32px of the leading edge (two colors, no hue sweep). Cobalt Blue restores the original blue pair through `data-accent="blue"`. Danger stays rose in both accents, so pink never appears on a control.
 
 ## Typography
 

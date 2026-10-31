@@ -1410,7 +1410,7 @@
   "about.accent": "主题色",
   "about.accentBlue": "钴蓝",
   "about.accentCyan": "霓虹青",
-  "about.accentHint": "白天与黑夜都适用。霓虹青取自图标配色，进度条为青到粉渐变；钴蓝为早期配色。",
+  "about.accentHint": "白天与黑夜都适用。霓虹青取自图标配色，进度条前端带粉色；钴蓝为早期配色。",
   "queue.replaceAudioHint": "音频替换；右键或 Shift+F10 取消替换",
   "queue.alignCancelHint": "音频对齐；右键或 Shift+F10 取消对齐",
   "engine.installArchive": "从压缩包安装",
