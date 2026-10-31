@@ -1,58 +1,46 @@
 "use strict";
-// NVEncC presets in the MMD export plugin. The plugin starts one process and
-// writes MMD's raw frames to its stdin; NVEncC needs FFmpeg in front of it
-// (frame conversion, the optional mask) and FFmpeg after it (the container
-// and its tags). So the plugin starts MMDEncoder.exe in Node mode with this
-// script, which runs those steps: the first with MMD's frames on FFmpeg's
-// stdin, piped on to NVEncC, then the rest one after another.
-// MMD_PIPE_JOB = { steps: [{ exe, args, pipeFrom?: { exe, args } }],
-// temporary: [files to delete at the end] }. FFmpeg's and NVEncC's messages
-// go to this process's stderr (the plugin's FFmpeg log).
+// One MMD render feeds a concurrent FFmpeg -> NVEncC -> FFmpeg chain.
+// The plugin's process job owns this helper and all descendants. The helper
+// waits for every member; only a successful chain can reach MMD's finish step.
 const fs = require("node:fs");
-const { spawn } = require("node:child_process");
-
+const { createRunner } = require("./process-runner.cjs");
+const { commandProcesses } = require("./command-processes.cjs");
+const { appError } = require("./errors.cjs");
 const job = JSON.parse(process.env.MMD_PIPE_JOB || "{}");
-const exited = (child) =>
-  new Promise((resolve) => {
-    child.on("error", (e) => {
-      process.stderr.write(e.message + "\n");
-      resolve(1);
-    });
-    child.on("close", (code) => resolve(code ?? 1));
-  });
-async function run(step) {
-  if (!step.pipeFrom) {
-    const child = spawn(step.exe, step.args, {
-      windowsHide: true,
-      stdio: ["ignore", "ignore", "inherit"],
-    });
-    return exited(child);
-  }
-  const source = spawn(step.pipeFrom.exe, step.pipeFrom.args, {
-    windowsHide: true,
-    stdio: ["inherit", "pipe", "inherit"],
-  });
-  const encoder = spawn(step.exe, step.args, {
-    windowsHide: true,
-    stdio: ["pipe", "ignore", "inherit"],
-  });
-  // Drain the parent's readable stream as well as feeding the encoder. Passing
-  // source.stdout as a child descriptor leaves its 'close' event pending on
-  // Windows, and Node can exit with an unresolved promise before the remux.
-  source.stdout.pipe(encoder.stdin);
-  encoder.stdin.on("error", () => source.kill());
-  encoder.once("close", () => {
-    if (source.exitCode === null) source.kill();
-  });
-  const [a, b] = await Promise.all([exited(source), exited(encoder)]);
-  return a || b;
-}
+let active;
+const run = createRunner({
+  isDisposed: () => false,
+  children: new Set(),
+  getActive: () => active,
+  setActive: (value) => {
+    active = value;
+  },
+});
+const cancel = () => active?.kill();
+process.on("SIGINT", cancel);
+process.on("SIGTERM", cancel);
 (async () => {
-  let code = 0;
-  for (const step of job.steps || []) {
-    code = await run(step);
-    if (code) break;
+  let started = false;
+  try {
+    // A previous interrupted render may still be recoverable. Refuse it
+    // before launching; failure cleanup must never delete that older file.
+    for (const file of job.outputs || []) {
+      if (fs.existsSync(file)) throw appError("MMD_PIPE_OUTPUT_EXISTS");
+    }
+    started = true;
+    for (const step of job.steps || []) {
+      const options = {
+        encoding: true,
+        onData: (s) => process.stderr.write(s),
+      };
+      if (commandProcesses(step).length > 1)
+        await run.piped(step, { ...options, stdin: "inherit" });
+      else await run(step.exe, step.args, options);
+    }
+  } catch (e) {
+    process.stderr.write(e.message + "\n");
+    if (started)
+      for (const file of job.outputs || []) fs.rmSync(file, { force: true });
+    process.exitCode = 1;
   }
-  for (const file of job.temporary || []) fs.rmSync(file, { force: true });
-  process.exit(code);
 })();

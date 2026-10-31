@@ -1,133 +1,48 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useDragSort } from "./components";
+import { createReplacementFlow, type AudioTarget } from "./audioReplacement";
+import { useAlignmentTasks } from "./useAlignmentTasks";
+import { AUDIO_EXT } from "./mediaOptions";
 import {
-  AudioLines,
-  Wand2,
-  ArrowDownToLine,
-  ArrowRight,
-  ChevronFirst,
-  ChevronLast,
-  ChevronLeft,
-  ChevronRight,
-  Copy,
-  FileVideo,
-  Film,
-  FolderOpen,
-  LoaderCircle,
-  Plus,
-  Play,
-  Scissors,
-  SlidersHorizontal,
-  Square,
-  X,
-} from "lucide-react";
-import { Button, Field, Select, useDragSort } from "./components";
-import { fadeOptions } from "./presentation";
-import { autoAlign } from "./autoAlign";
+  t as textLabel,
+  summaryMessage,
+  notification,
+  errorMessage,
+  type ErrorData,
+} from "./i18n";
+import { serializeError } from "../locales/messages.mjs";
 import { AlignDialog } from "./AlignDialog";
-import type { State, TrimClip } from "./types";
-
-const OPTIONS_KEY = "mmd-trim-options";
-type Options = {
-  audioMode: string;
-  audioCodec: string;
-  kbps: number;
-  audioFile: string;
-  offset: string;
-  // Seconds of fade in at the start and out at the end of the whole result.
-  fade: number;
-  mmdFrames: boolean;
-  location: string;
-  outputDir: string;
-};
-const DEFAULT_OPTIONS: Options = {
-  audioMode: "reencode",
-  audioCodec: "aac",
-  kbps: 320,
-  audioFile: "",
-  offset: "0",
-  fade: 0,
-  mmdFrames: false,
-  location: "source",
-  outputDir: "",
-};
-const AUDIO_MODES: Record<string, string> = {
-  reencode: "保留原音频（重新编码，精确到采样点）",
-  replace: "替换为外部音频",
-  none: "无音频",
-};
-const AUDIO_CODECS: Record<string, string> = {
-  aac: "AAC",
-  flac: "FLAC · 无损",
-  pcm: "PCM 16-bit · 无损（MOV / MKV）",
-};
-const LOCATIONS: Record<string, string> = {
-  source: "与第一个片段同目录",
-  encoded: "其目录下的 Encoded 子文件夹",
-  custom: "自定义文件夹",
-};
-// Choices are remembered between sessions, but not a replacement audio
-// file or its offset: they belong to the clips of that session.
-function loadOptions(): Options {
-  try {
-    const saved = JSON.parse(localStorage.getItem(OPTIONS_KEY) || "{}");
-    delete saved.audioFile;
-    delete saved.offset;
-    if (saved.audioMode === "replace") delete saved.audioMode;
-    return { ...DEFAULT_OPTIONS, ...saved };
-  } catch {
-    return DEFAULT_OPTIONS;
-  }
-}
-
-// Frame <-> time on a clip's rational frame rate.
-const seconds = (c: TrimClip, frame: number) =>
-  c.fps ? (frame * c.fps.den) / c.fps.num : 0;
-function clock(sec: number) {
-  const ms = Math.round(sec * 1000);
-  const h = Math.floor(ms / 3600000),
-    m = Math.floor(ms / 60000) % 60,
-    s = Math.floor(ms / 1000) % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(ms % 1000).padStart(3, "0")}`;
-}
-// "1234" is a frame number (or an MMD frame on the 30 fps timeline when
-// mmd is on); "1:02.5" / "00:01:02.500" is a time. Returns a video frame.
-function parsePosition(text: string, c: TrimClip, mmd: boolean) {
-  const t = text.trim();
-  if (!t || !c.fps) return null;
-  if (/^\d+$/.test(t)) {
-    const n = Number(t);
-    return mmd
-      ? Math.round(((n - (c.mmdStart ?? 0)) * c.fps.num) / (c.fps.den * 30))
-      : n;
-  }
-  const parts = t.split(":").map(Number);
-  if (parts.some((p) => !Number.isFinite(p)) || parts.length > 3) return null;
-  const sec = parts.reduce((a, p) => a * 60 + p, 0);
-  return Math.round((sec * c.fps.num) / c.fps.den);
-}
-// The MMD frame a video frame shows: the clip's MMD start plus 30 fps time.
-const mmdFrame = (c: TrimClip, frame: number) =>
-  (c.mmdStart ?? 0) +
-  (c.fps ? Math.round((frame * c.fps.den * 30) / c.fps.num) : frame);
+import { TrimQueue } from "./TrimQueue";
+import { TrimEditor } from "./TrimEditor";
+import { TrimSettings } from "./TrimSettings";
+import { TrimFooter } from "./TrimFooter";
+import { OPTIONS_KEY, loadOptions, type Options } from "./trimOptions";
+import {
+  seconds,
+  parsePosition,
+  mmdFrame,
+  replacementOffset,
+} from "./trimCoordinates";
+import type { State } from "./types";
 
 export function TrimTools({
-  state,
+  trim: t,
   call,
   dropped,
   onDropHandled,
+  autoAlignAudio = true,
 }: {
-  state: State;
+  trim: State["trim"];
   call: (action: string, payload?: unknown) => Promise<any>;
   dropped?: { paths: string[]; seq: number };
   onDropHandled?: () => void;
+  autoAlignAudio?: boolean;
 }) {
-  const t = state.trim;
   const clips = t.clips;
   const [o, setOptions] = useState<Options>(loadOptions),
     [selectedId, setSelectedId] = useState(""),
-    [error, setError] = useState(""),
+    [error, setError] = useState<string | ErrorData>(""),
     [cursor, setCursor] = useState<Record<string, number>>({}),
-    [image, setImage] = useState(""),
     [inText, setInText] = useState(""),
     [outText, setOutText] = useState("");
   const selected = clips.find((c) => c.id === selectedId) || clips[0];
@@ -147,7 +62,7 @@ export function TrimTools({
     try {
       return await call(action, payload);
     } catch (e) {
-      setError((e as Error).message);
+      setError(serializeError(e));
     }
   }
   const sortClip = useDragSort(
@@ -158,23 +73,15 @@ export function TrimTools({
   useEffect(() => {
     if (!dropped) return;
     onDropHandled?.();
-    if (!t.running) void run("trimAdd", { paths: dropped.paths });
+    if (!t.running) {
+      const files = dropped.paths.filter((path) => !AUDIO_EXT.test(path));
+      if (files.length) void run("trimAdd", { paths: files });
+      const audioFile = dropped.paths.find((path) => AUDIO_EXT.test(path));
+      if (audioFile) chooseAudio(audioFile);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dropped?.seq]);
 
-  // The picture at the cursor: the newest request wins, older answers are dropped.
-  const request = useRef(0);
-  useEffect(() => {
-    if (!ready) return setImage("");
-    const n = ++request.current;
-    const timer = setTimeout(() => {
-      call("trimFrame", { id: ready.id, frame })
-        .then((src) => n === request.current && src && setImage(src))
-        .catch(() => {});
-    }, 120);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready?.id, frame]);
   // Range fields follow the clip's snapped range.
   useEffect(() => {
     if (!ready) return;
@@ -184,13 +91,21 @@ export function TrimTools({
   }, [ready?.id, ready?.from, ready?.to, o.mmdFrames]);
 
   const cuts = ready && ready.cuts !== "all" ? (ready.cuts as number[]) : null;
-  // Without smart cut (or where it can't be used) a cut can only start at
-  // these frames, so the slider snaps to them.
-  const snapping = !!cuts && (!t.smart || !!ready?.smartBlocker);
-  const nearestCut = (f: number) =>
-    cuts!.reduce((best, c) =>
+  // Smart cut frees preview navigation even when this source cannot be
+  // smart-cut. The backend still owns the actual safe in/out points.
+  const snapping = !!cuts && !t.smart;
+  const nearestCut = (f: number, end = false) => {
+    const point = cuts!.reduce((best, c) =>
       Math.abs(c - f) < Math.abs(best - f) ? c : best,
     );
+    return end && ready?.frames && ready.frames - f < Math.abs(point - f)
+      ? ready.frames
+      : point;
+  };
+  const landing =
+    t.smart && cuts && ready?.smartBlocker
+      ? { from: nearestCut(frame), to: nearestCut(frame, true) }
+      : undefined;
   const move = (to: number) =>
     ready &&
     setCursor({
@@ -211,11 +126,18 @@ export function TrimTools({
   function applyText(which: "in" | "out") {
     if (!ready) return;
     const text = which === "in" ? inText : outText;
-    if (which === "out" && /^(end|结尾)$/i.test(text.trim()))
+    if (
+      which === "out" &&
+      (/^end$/i.test(text.trim()) || text.trim() === textLabel("trim.end"))
+    )
       return setRange(ready.from ?? 0, "end");
     const f = parsePosition(text, ready, o.mmdFrames);
     if (f === null)
-      return setError("请输入帧号或时间（如 1234 或 00:00:41.133）");
+      return setError({
+        code: "TRIM_POSITION_INVALID",
+        params: {},
+        message: textLabel("error.TRIM_POSITION_INVALID"),
+      });
     if (which === "in")
       setRange(f, ready.to === ready.frames ? "end" : (ready.to ?? 0));
     else setRange(ready.from ?? 0, f);
@@ -245,30 +167,84 @@ export function TrimTools({
   }
 
   const exportable = clips.filter((c) => c.status === "ready" && !c.empty);
-  // 音频对齐 for the replacement audio: where the first clip's start falls
-  // in the audio, from the clip's own sound (one clip, or clips in order
-  // from one take, line up throughout).
-  const [aligning, setAligning] = useState(false);
-  // The first clip's start in its own file (seconds): 起点偏移 counts the
-  // audio from there, the alignment from the file's start.
-  const clipStart = () => {
-    const first = exportable[0];
-    return first?.fps ? (first.from ?? 0) / (first.fps.num / first.fps.den) : 0;
-  };
-  const setOffsetSeconds = (at: number) =>
-    set("offset", o.mmdFrames ? String(Math.round(at * 30)) : at.toFixed(3));
+  const first = exportable[0];
+  // Replacement audio and both offsets belong to this trim session.
+  const [audio, setAudio] = useState({
+    file: "",
+    reference: "",
+    offset: 0,
+    shiftFrames: 0,
+    selection: 0,
+  });
   const [alignOpen, setAlignOpen] = useState(false);
-  async function fillOffset() {
-    const first = exportable[0];
-    if (!first || !o.audioFile || !first.fps) return;
-    setAligning(true);
+  const alignment = useAlignmentTasks(
+    "trim",
+    first && audio.file && o.audioMode === "replace"
+      ? [{ id: first.path, target: audio.file }]
+      : [],
+  );
+  const aligning = !!first && alignment.active.has(first.path);
+  function chooseAudio(file: string) {
+    setAlignOpen(false);
     setError("");
-    const note = await autoAlign(first.path, o.audioFile, async (offset) =>
-      setOffsetSeconds(offset + clipStart()),
-    );
-    setAligning(false);
-    if (note) setError(note.replace("可点波形按钮检视对齐", "请手动填写"));
+    setAudio((current) => ({
+      file,
+      reference: "",
+      offset: 0,
+      shiftFrames: 0,
+      selection: current.selection + 1,
+    }));
+    set("audioMode", "replace");
   }
+  // Also handles audio chosen before a clip was ready. Changing the clip's
+  // in point does not rerun the whole-source match or round its result.
+  useEffect(() => {
+    if (!first?.fps || !audio.file || o.audioMode !== "replace") return;
+    setError("");
+    setAlignOpen(false);
+    const target: AudioTarget = {
+      id: first.path,
+      path: first.path,
+      hasAudio: true,
+      isSequence: false,
+    };
+    const replace = createReplacementFlow<AudioTarget, void>({
+      tasks: alignment,
+      autoAlign: autoAlignAudio,
+      replace: async (row) => {
+        setAudio((current) =>
+          current.reference === row.path
+            ? current
+            : {
+                ...current,
+                reference: row.path,
+                offset: 0,
+                shiftFrames: 0,
+              },
+        );
+        return { result: undefined, target: row };
+      },
+      applyOffset: async (row, file, offset) =>
+        setAudio((current) =>
+          current.file === file && current.reference === row.path
+            ? { ...current, offset }
+            : current,
+        ),
+      notify: (note) =>
+        setError(
+          note.code === "AUTO_ALIGN_LOW_CONFIDENCE"
+            ? notification("AUTO_ALIGN_LOW_CONFIDENCE_TRIM")
+            : note,
+        ),
+    });
+    void replace(target, audio.file);
+    return () => {
+      void alignment.cancel(target.id);
+    };
+    // These are the replacement identity; matching never depends on its
+    // resulting offset, display units, locale, range or other options.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [first?.path, audio.selection, o.audioMode]);
   const totalFrames = exportable.reduce(
     (a, c) => a + ((c.to ?? 0) - (c.from ?? 0)),
     0,
@@ -281,75 +257,8 @@ export function TrimTools({
     !t.running &&
     exportable.length > 0 &&
     !clips.some((c) => c.status === "indexing") &&
-    (o.audioMode !== "replace" || !!o.audioFile) &&
+    (o.audioMode !== "replace" || (!!audio.file && !aligning)) &&
     (o.location !== "custom" || !!o.outputDir);
-  const offsetSeconds = () => {
-    const n = Number(o.offset) || 0;
-    return o.mmdFrames ? n / 30 : n;
-  };
-
-  const row = (c: TrimClip, i: number) => (
-    <li
-      key={c.id}
-      className={`job-row ${c.id === selected?.id ? "selected" : ""}`}
-      {...sortClip(c.id)}
-    >
-      <button
-        className="job-select"
-        onClick={() => setSelectedId(c.id)}
-        aria-pressed={c.id === selected?.id}
-      >
-        <span className="file-tile">
-          <FileVideo size={23} />
-          <small>{i + 1}</small>
-        </span>
-        <span className="job-copy">
-          <strong title={c.path}>{c.name}</strong>
-          <span className="job-sub">
-            {c.status === "ready"
-              ? `第 ${c.from}–${c.to === c.frames ? "结尾" : c.to} 帧 · ${(c.to ?? 0) - (c.from ?? 0)} 帧 · ${clock(seconds(c, (c.to ?? 0) - (c.from ?? 0)))}`
-              : c.status === "indexing"
-                ? "正在读取关键帧…"
-                : c.error}
-          </span>
-          <span
-            className={`job-status ${c.status === "invalid" ? "failed" : c.empty ? "failed" : "ready"}`}
-          >
-            {c.status === "indexing" && (
-              <LoaderCircle size={12} className="spin" />
-            )}
-            {c.status === "ready"
-              ? c.empty
-                ? "吸附后片段为空"
-                : `${c.codec?.toUpperCase()} · ${c.width}×${c.height} · ${c.cuts === "all" ? "逐帧可切" : `${(c.cuts as number[]).length} 个可切位置`}`
-              : c.status === "indexing"
-                ? "读取中"
-                : "不能无损裁切"}
-          </span>
-        </span>
-      </button>
-      {c.status === "ready" && (
-        <Button
-          variant="ghost icon"
-          aria-label={`再切一段 ${c.name}`}
-          title="再切一段：同一文件的另一段"
-          disabled={t.running}
-          onClick={() => run("trimDuplicate", { id: c.id })}
-        >
-          <Copy size={16} />
-        </Button>
-      )}
-      <Button
-        variant="ghost icon"
-        aria-label={`移除 ${c.name}`}
-        title="从列表移除"
-        disabled={t.running}
-        onClick={() => run("trimRemove", { id: c.id })}
-      >
-        <X size={16} />
-      </Button>
-    </li>
-  );
 
   // Position on the slider: frame 0 at the thumb's leftmost centre, the
   // last frame at its rightmost (the marks layer is inset by half a thumb).
@@ -360,587 +269,157 @@ export function TrimTools({
       : "0%";
   };
 
+  async function pickFiles() {
+    const files = await run("pickMedia", { multiple: true });
+    if (Array.isArray(files)) await run("trimAdd", { paths: files });
+  }
+  async function pickAudio() {
+    const file = await run("pickMedia", {});
+    if (typeof file === "string") chooseAudio(file);
+  }
+  async function pickFolder() {
+    const dir = await run("pickDirectory", {
+      title: textLabel("trim.chooseOutputFolder"),
+    });
+    if (dir) set("outputDir", dir);
+  }
+  function exportTrim() {
+    return run("trimExport", {
+      audio: {
+        mode: o.audioMode,
+        codec: o.audioCodec,
+        kbps: o.kbps,
+        file: audio.file,
+        offset: first
+          ? replacementOffset(first, audio.offset, audio.shiftFrames)
+          : 0,
+        fade: o.fade ?? 0,
+      },
+      location: o.location,
+      outputDir: o.outputDir,
+    });
+  }
+
   return (
     <>
       <div className="page-scroll">
         <main className="workspace">
-          <section className="queue-column" aria-label="片段">
-            <div className="section-heading">
-              <div>
-                <span className="eyebrow">工作区</span>
-                <h2>
-                  片段 <span className="count">{clips.length}</span>
-                </h2>
-              </div>
-              <Button
-                variant="primary"
-                disabled={t.running}
-                onClick={async () => {
-                  const files = await run("pickMedia", { multiple: true });
-                  if (Array.isArray(files))
-                    await run("trimAdd", { paths: files });
-                }}
-              >
-                <Plus size={17} />
-                添加视频
-              </Button>
-            </div>
-            <div className="queue-panel">
-              <div className="queue-toolbar">
-                <span>
-                  <Scissors size={15} /> 按顺序首尾相接
-                </span>
-                <Button
-                  variant="ghost"
-                  disabled={!clips.length || t.running}
-                  onClick={() => run("trimClear")}
-                >
-                  清空
-                </Button>
-              </div>
-              {!clips.length ? (
-                <div className="empty-queue">
-                  <div className="film-emblem">
-                    <Film size={42} />
-                    <div className="frame-ticks" />
-                  </div>
-                  <h3>把要剪的视频放进来</h3>
-                  <p>
-                    视频逐包复制、不重新压制，画质完全不变
-                    <br />
-                    入点和出点会吸附到能无损切开的位置。
-                  </p>
-                  <Button
-                    onClick={async () => {
-                      const files = await run("pickMedia", { multiple: true });
-                      if (Array.isArray(files))
-                        await run("trimAdd", { paths: files });
-                    }}
-                  >
-                    <FolderOpen size={17} />
-                    选择视频
-                  </Button>
-                  <small>H.264 · HEVC · ProRes · UtVideo · FFV1</small>
-                </div>
-              ) : (
-                <ol className="job-list">{clips.map(row)}</ol>
-              )}
-            </div>
+          <section
+            className="queue-column"
+            aria-label={textLabel("trim.clips")}
+          >
+            <TrimQueue
+              clips={clips}
+              selectedId={selected?.id}
+              running={t.running}
+              sortClip={sortClip}
+              onSelect={setSelectedId}
+              onDuplicate={(id) => run("trimDuplicate", { id })}
+              onRemove={(id) => run("trimRemove", { id })}
+              onAdd={pickFiles}
+              onClear={() => run("trimClear")}
+            />
             {ready && (
-              <section
-                className="detail-card trim-editor"
-                aria-label="片段编辑"
-                tabIndex={0}
-                onKeyDown={onKey}
-              >
-                <div className="detail-title">
-                  <span className="eyebrow">编辑片段</span>
-                  <div className="detail-actions">
-                    <Button
-                      variant="ghost"
-                      onClick={() => run("reveal", { path: ready.path })}
-                    >
-                      <FolderOpen size={14} />
-                      打开位置
-                    </Button>
-                  </div>
-                </div>
-                <h3 title={ready.path}>{ready.name}</h3>
-                <div className="trim-preview">
-                  {image ? (
-                    <img src={image} alt={`第 ${frame} 帧`} />
-                  ) : (
-                    <LoaderCircle size={22} className="spin" />
-                  )}
-                </div>
-                {o.mmdFrames && (
-                  <div className="file-pick mmd-start">
-                    <span>视频第 0 帧 = MMD 第</span>
-                    <input
-                      aria-label="视频第 0 帧对应的 MMD 帧"
-                      inputMode="numeric"
-                      key={ready.id + ":" + ready.mmdStart}
-                      defaultValue={String(ready.mmdStart ?? 0)}
-                      disabled={t.running}
-                      onBlur={(e) =>
-                        Number(e.target.value) !== (ready.mmdStart ?? 0) &&
-                        run("trimSet", {
-                          id: ready.id,
-                          mmdStart: Number(e.target.value),
-                        })
-                      }
-                      onKeyDown={(e) =>
-                        e.key === "Enter" &&
-                        (e.target as HTMLInputElement).blur()
-                      }
-                    />
-                    <span className="hint">
-                      帧
-                      {ready.mmdStartFrom === "tag"
-                        ? "（来自 MMDEncoder 导出时记录的信息）"
-                        : ready.mmdStartFrom === "name"
-                          ? "（来自文件名里的帧范围）"
-                          : ready.mmdStartFrom === "manual"
-                            ? "（手动填写）"
-                            : "（没有识别到，按 0 计算，可以手动填写）"}
-                    </span>
-                  </div>
-                )}
-                <div className="trim-position">
-                  <strong>
-                    第 {frame} 帧
-                    {o.mmdFrames && ` · MMD 第 ${mmdFrame(ready, frame)} 帧`}
-                  </strong>
-                  <span>{clock(seconds(ready, frame))}</span>
-                  {(ready.cuts === "all" || cuts?.includes(frame)) && (
-                    <span className="cut-badge">可切</span>
-                  )}
-                </div>
-                <div className="trim-track">
-                  <div className="trim-marks" aria-hidden="true">
-                    <div className="trim-rail" />
-                    <div
-                      className="trim-range"
-                      style={{
-                        left: pct(ready.from ?? 0),
-                        right: `calc(100% - ${pct((ready.to ?? 1) - 1)})`,
-                      }}
-                    />
-                    {cuts &&
-                      cuts.length <= 400 &&
-                      cuts.map((c) => (
-                        <i
-                          key={c}
-                          className="trim-tick"
-                          style={{ left: pct(c) }}
-                        />
-                      ))}
-                  </div>
-                  <input
-                    type="range"
-                    aria-label="当前帧"
-                    aria-valuetext={`第 ${frame} 帧`}
-                    min={0}
-                    max={(ready.frames || 1) - 1}
-                    value={frame}
-                    onChange={(e) => {
-                      // Pointer drags and clicks (keys are handled by onKey).
-                      const v = Number(e.target.value);
-                      move(snapping ? nearestCut(v) : v);
-                    }}
-                  />
-                </div>
-                <div className="trim-buttons">
-                  <Button
-                    variant="ghost icon"
-                    aria-label="上一个可切位置"
-                    title="上一个可切位置（↑）"
-                    onClick={() => jump(-1)}
-                  >
-                    <ChevronFirst size={16} />
-                  </Button>
-                  <Button
-                    variant="ghost icon"
-                    aria-label="上一帧"
-                    title="上一帧（←）"
-                    onClick={() => move(frame - 1)}
-                  >
-                    <ChevronLeft size={16} />
-                  </Button>
-                  <Button
-                    variant="ghost icon"
-                    aria-label="下一帧"
-                    title="下一帧（→）"
-                    onClick={() => move(frame + 1)}
-                  >
-                    <ChevronRight size={16} />
-                  </Button>
-                  <Button
-                    variant="ghost icon"
-                    aria-label="下一个可切位置"
-                    title="下一个可切位置（↓）"
-                    onClick={() => jump(1)}
-                  >
-                    <ChevronLast size={16} />
-                  </Button>
-                  <Button
-                    disabled={t.running}
-                    title="I"
-                    onClick={() =>
-                      setRange(
-                        frame,
-                        ready.to === ready.frames ? "end" : (ready.to ?? 0),
-                      )
-                    }
-                  >
-                    设为入点
-                  </Button>
-                  <Button
-                    disabled={t.running}
-                    title="O"
-                    onClick={() => setRange(ready.from ?? 0, frame)}
-                  >
-                    设为出点
-                  </Button>
-                </div>
-                <div className="form-row">
-                  <Field
-                    id="trim-in"
-                    label={
-                      o.mmdFrames
-                        ? "入点 · MMD 帧号或时间"
-                        : "入点 · 帧号或时间"
-                    }
-                  >
-                    <input
-                      id="trim-in"
-                      value={inText}
-                      disabled={t.running}
-                      onChange={(e) => setInText(e.target.value)}
-                      onBlur={() => applyText("in")}
-                      onKeyDown={(e) => e.key === "Enter" && applyText("in")}
-                    />
-                  </Field>
-                  <Field id="trim-out" label="出点（不含这一帧；end 为结尾）">
-                    <input
-                      id="trim-out"
-                      value={outText}
-                      disabled={t.running}
-                      onChange={(e) => setOutText(e.target.value)}
-                      onBlur={() => applyText("out")}
-                      onKeyDown={(e) => e.key === "Enter" && applyText("out")}
-                    />
-                  </Field>
-                </div>
-                <p className="hint">
-                  实际：第 {ready.from} –{" "}
-                  {ready.to === ready.frames ? "结尾" : `${ready.to}`} 帧，共{" "}
-                  {(ready.to ?? 0) - (ready.from ?? 0)} 帧（
-                  {clock(seconds(ready, (ready.to ?? 0) - (ready.from ?? 0)))}）
-                  {ready.requested &&
-                    (ready.requested.from !== ready.from ||
-                      (ready.requested.to !== ready.to &&
-                        ready.to !== ready.frames)) &&
-                    `。已吸附到最近的可切位置（输入 ${ready.requested.from} – ${ready.requested.to}）`}
-                  。
-                  {ready.cuts === "all"
-                    ? "这个文件每一帧都可以切。"
-                    : `可切位置共 ${cuts?.length} 处${cuts && cuts.length > 1 ? `，约每 ${Math.round((ready.frames || 0) / cuts.length)} 帧一处` : "（只能从开头切）"}。`}
-                  {t.smart &&
-                    ready.cuts !== "all" &&
-                    (ready.smartBlocker
-                      ? ` 这个文件不能智能剪切：${ready.smartBlocker}，仍吸附到可切位置。`
-                      : (() => {
-                          const list = (ready.cuts as number[]) || [];
-                          const from = ready.from ?? 0,
-                            to = ready.to ?? 0;
-                          const a =
-                            list.find((x) => x >= from) ?? (ready.frames || 0);
-                          const b =
-                            to === ready.frames
-                              ? to
-                              : ([...list].reverse().find((x) => x <= to) ?? 0);
-                          if (a >= b)
-                            return ` 智能剪切：这一段第 ${from}–${to - 1} 帧全部重新编码。`;
-                          const parts = [
-                            from < a ? `第 ${from}–${a - 1} 帧` : "",
-                            b < to ? `第 ${b}–${to - 1} 帧` : "",
-                          ].filter(Boolean);
-                          return parts.length
-                            ? ` 智能剪切：${parts.join("、")}重新编码，其余直接复制。`
-                            : " 智能剪切：切点正好在关键帧上，全部直接复制。";
-                        })())}
-                  {ready.refused?.length
-                    ? ` 其他关键帧不能切：${ready.refused.join("；")}。`
-                    : ""}
-                </p>
-              </section>
+              <TrimEditor
+                ready={ready}
+                frame={frame}
+                readFrame={(id, frame) => call("trimFrame", { id, frame })}
+                running={t.running}
+                smart={t.smart}
+                mmdFrames={o.mmdFrames}
+                cuts={cuts}
+                landing={landing}
+                inText={inText}
+                outText={outText}
+                onKey={onKey}
+                onReveal={() => run("reveal", { path: ready.path })}
+                onMmdStart={(mmdStart) =>
+                  run("trimSet", { id: ready.id, mmdStart })
+                }
+                onSeek={(value) => move(snapping ? nearestCut(value) : value)}
+                move={move}
+                jump={jump}
+                setRange={setRange}
+                setInText={setInText}
+                setOutText={setOutText}
+                applyText={applyText}
+                pct={pct}
+              />
             )}
           </section>
-          <aside className="settings-column" aria-label="导出设置">
-            <div className="section-heading">
-              <div>
-                <span className="eyebrow">输出控制</span>
-                <h2>导出设置</h2>
-              </div>
-              <SlidersHorizontal size={20} className="muted" />
-            </div>
-            <div className="settings-panel">
-              <form
-                noValidate
-                onSubmit={(e) => e.preventDefault()}
-                className="settings-body"
-              >
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={t.smart}
-                    disabled={t.running}
-                    onChange={(e) =>
-                      run("trimSmart", { smart: e.target.checked })
-                    }
-                  />
-                  <span>
-                    智能剪切
-                    <small className="hint hires-hint">
-                      切点精确到帧：只重新编码切点附近几帧，其余直接复制。仅限
-                      MMDEncoder 1.5.0 起导出的 H.264 / HEVC。
-                    </small>
-                  </span>
-                </label>
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={o.mmdFrames}
-                    onChange={(e) => set("mmdFrames", e.target.checked)}
-                  />
-                  <span>
-                    按 MMD 帧号输入
-                    <small className="hint hires-hint">
-                      按 MMD 30 FPS 时间轴，从片段的起始帧算起；MMDEncoder
-                      导出的文件自动识别。
-                    </small>
-                  </span>
-                </label>
-                <Select
-                  id="trim-audio"
-                  label="音频"
-                  value={o.audioMode}
-                  disabled={t.running}
-                  options={Object.entries(AUDIO_MODES).map(
-                    ([value, label]) => ({
-                      value,
-                      label,
-                    }),
-                  )}
-                  onChange={(v) => set("audioMode", v)}
-                />
-                {o.audioMode === "replace" && (
-                  <>
-                    <div className="file-pick">
-                      <Button
-                        disabled={t.running}
-                        onClick={async () => {
-                          const file = await run("pickMedia", {});
-                          if (typeof file === "string") set("audioFile", file);
-                        }}
-                      >
-                        <FolderOpen size={15} />
-                        选择音频
-                      </Button>
-                      <span className="path-text" title={o.audioFile}>
-                        {o.audioFile || "尚未选择"}
-                      </span>
-                    </div>
-                    <Field
-                      id="trim-offset"
-                      label={
-                        o.mmdFrames ? "起点偏移 · MMD 帧" : "起点偏移 · 秒"
-                      }
-                      hint="正数：从音频此处开始；负数：视频开头先留空。"
-                    >
-                      <div className="path-picker">
-                        <input
-                          id="trim-offset"
-                          inputMode="decimal"
-                          value={o.offset}
-                          disabled={t.running}
-                          onChange={(e) => set("offset", e.target.value)}
-                        />
-                        <Button
-                          disabled={
-                            t.running ||
-                            !o.audioFile ||
-                            !exportable.length ||
-                            !!aligning
-                          }
-                          title="以第一个片段的原视频声音为参考，自动算出起点偏移"
-                          onClick={fillOffset}
-                        >
-                          <Wand2 size={15} />
-                          {aligning ? "对齐中…" : "自动填写"}
-                        </Button>
-                        <Button
-                          variant="ghost icon"
-                          aria-label="音频对齐"
-                          title="音频对齐：以第一个片段原视频的声音为参考检视、微调"
-                          disabled={
-                            t.running || !o.audioFile || !exportable.length
-                          }
-                          onClick={() => setAlignOpen(true)}
-                        >
-                          <AudioLines size={16} />
-                        </Button>
-                      </div>
-                    </Field>
-                  </>
-                )}
-                {o.audioMode !== "none" && (
-                  <Select
-                    id="trim-audio-codec"
-                    label="音频格式"
-                    value={o.audioCodec}
-                    disabled={t.running}
-                    options={Object.entries(AUDIO_CODECS).map(
-                      ([value, label]) => ({ value, label }),
-                    )}
-                    onChange={(v) => set("audioCodec", v)}
-                  />
-                )}
-                {o.audioMode !== "none" && (
-                  <Select
-                    id="trim-fade"
-                    label="音频淡入淡出"
-                    value={String(o.fade ?? 0)}
-                    disabled={t.running}
-                    options={fadeOptions}
-                    hint="只淡化成片首尾，片段接缝不淡化。"
-                    onChange={(v) => set("fade", Number(v))}
-                  />
-                )}
-                {o.audioMode !== "none" && o.audioCodec === "aac" && (
-                  <Select
-                    id="trim-kbps"
-                    label="音频码率"
-                    value={String(o.kbps)}
-                    disabled={t.running}
-                    options={[128, 192, 256, 320, 384, 512].map((b) => ({
-                      value: String(b),
-                      label: `${b} kbps`,
-                    }))}
-                    onChange={(v) => set("kbps", Number(v))}
-                  />
-                )}
-                <Select
-                  id="trim-location"
-                  label="输出位置"
-                  value={o.location}
-                  disabled={t.running}
-                  options={Object.entries(LOCATIONS).map(([value, label]) => ({
-                    value,
-                    label,
-                  }))}
-                  onChange={(v) => set("location", v)}
-                />
-                {o.location === "custom" && (
-                  <div className="file-pick">
-                    <Button
-                      disabled={t.running}
-                      onClick={async () => {
-                        const dir = await run("pickDirectory", {
-                          title: "选择输出文件夹",
-                        });
-                        if (dir) set("outputDir", dir);
-                      }}
-                    >
-                      <FolderOpen size={15} />
-                      选择文件夹
-                    </Button>
-                    <span className="path-text" title={o.outputDir}>
-                      {o.outputDir || "尚未选择"}
-                    </span>
-                  </div>
-                )}
-                <p className="hint">
-                  {t.smart
-                    ? "视频只重新编码切点附近几帧，其余直接复制；"
-                    : "视频直接复制，不重新压制；"}
-                  音频按采样点拼接，不足处补静音。不同文件的片段须编码参数一致。
-                </p>
-                {(error || t.error) && (
-                  <p role="alert" className="inline-error">
-                    {error || t.error}
-                  </p>
-                )}
-              </form>
-            </div>
-          </aside>
+          <TrimSettings
+            o={o}
+            running={t.running}
+            smart={t.smart}
+            error={
+              typeof error === "object" && error.code?.startsWith("AUTO_ALIGN_")
+                ? summaryMessage({
+                    code: error.code,
+                    params: error.params,
+                    message: error.message,
+                  })
+                : errorMessage(error || t.errorData || t.error)
+            }
+            aligning={aligning}
+            audioFile={audio.file}
+            hasExportable={!!exportable.length}
+            set={set}
+            onSmart={(smart) => run("trimSmart", { smart })}
+            onPickAudio={pickAudio}
+            onAlign={() => {
+              if (first) void alignment.cancel(first.path);
+              setAlignOpen(true);
+            }}
+            onPickFolder={pickFolder}
+          />
         </main>
       </div>
-      <footer className="output-strip">
-        <div className="output-icon">
-          <ArrowDownToLine size={23} />
-        </div>
-        <div className="output-summary">
-          <span className="eyebrow">预计结果</span>
-          <strong>
-            {exportable.length ? `${exportable.length} 段` : "添加片段"}{" "}
-            <ArrowRight size={15} />
-            <span>
-              {totalFrames} 帧 · {clock(totalSeconds)}
-            </span>
-          </strong>
-          <span className="output-facts">
-            视频 → 直接复制
-            <i /> 音频 → {AUDIO_MODES[o.audioMode].split("（")[0]}
-            {o.audioMode !== "none" &&
-              ` · ${AUDIO_CODECS[o.audioCodec].split(" ·")[0]}`}
-            <i /> 位置 → {LOCATIONS[o.location]}
-          </span>
-          <span className="output-path" title={t.output}>
-            {t.running
-              ? `${t.stage} · ${t.progress}%`
-              : t.output
-                ? `已保存：${t.output}`
-                : t.stage === "已取消"
-                  ? "已取消"
-                  : "保存为“第一个片段名_剪辑”，不覆盖已有文件"}
-          </span>
-        </div>
-        <div className="run-actions">
-          {t.output && !t.running && (
-            <Button
-              variant="ghost"
-              onClick={() => run("reveal", { path: t.output })}
-            >
-              <FolderOpen size={15} />
-              打开位置
-            </Button>
-          )}
-          {t.running ? (
-            <Button variant="stop" onClick={() => run("trimCancel")}>
-              <Square size={16} />
-              取消导出
-            </Button>
-          ) : (
-            <Button
-              variant="primary run"
-              disabled={!canExport}
-              onClick={() =>
-                run("trimExport", {
-                  audio: {
-                    mode: o.audioMode,
-                    codec: o.audioCodec,
-                    kbps: o.kbps,
-                    file: o.audioFile,
-                    offset: offsetSeconds(),
-                    fade: o.fade ?? 0,
-                  },
-                  location: o.location,
-                  outputDir: o.outputDir,
-                })
-              }
-            >
-              <Play size={17} />
-              导出
-            </Button>
-          )}
-        </div>
-      </footer>
+      <TrimFooter
+        clipCount={exportable.length}
+        totalFrames={totalFrames}
+        totalSeconds={totalSeconds}
+        audioMode={o.audioMode}
+        audioCodec={o.audioCodec}
+        location={o.location}
+        running={t.running}
+        stage={t.stage}
+        progress={t.progress}
+        output={t.output}
+        elapsed={t.elapsed}
+        canExport={canExport}
+        onReveal={() => run("reveal", { path: t.output })}
+        onCancel={() => run("trimCancel")}
+        onExport={exportTrim}
+      />
       <AlignDialog
-        open={alignOpen && !!o.audioFile && !!exportable.length}
+        autoAlign={autoAlignAudio}
+        open={alignOpen && !!audio.file && !!first}
         call={call}
         onClose={() => setAlignOpen(false)}
-        targetPath={o.audioFile}
-        fixedReference={exportable[0]?.path}
-        initial={
-          Number(o.offset)
-            ? { offset: offsetSeconds() - clipStart() }
+        frameShift
+        targetPath={audio.file}
+        fixedReference={first?.path}
+        initial={{ offset: audio.offset, shiftFrames: audio.shiftFrames }}
+        description={textLabel("trim.alignDescription", {
+          name: first?.name || "",
+        })}
+        onApply={async (a) =>
+          setAudio((current) => ({
+            ...current,
+            offset: a.offset,
+            shiftFrames: a.shiftFrames || 0,
+          }))
+        }
+        onClear={
+          audio.offset || audio.shiftFrames
+            ? async () =>
+                setAudio((current) => ({
+                  ...current,
+                  offset: 0,
+                  shiftFrames: 0,
+                }))
             : undefined
         }
-        description={`把替换音频对齐到“${exportable[0]?.name || ""}”自带的声音；应用后填入起点偏移（按第一个片段的起点换算）。`}
-        onApply={async (a) => setOffsetSeconds(a.offset + clipStart())}
-        onClear={Number(o.offset) ? async () => set("offset", "0") : undefined}
       />
     </>
   );

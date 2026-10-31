@@ -91,14 +91,13 @@ test("single pass: one FFmpeg writes both outputs; with NVEncC the frame feeder 
       paths,
     ),
   );
-  assert.equal(nv.length, 2, "NVEncC and packaging, no separate mask run");
+  assert.equal(nv.length, 1, "one chain, no separate mask run");
   const feed = nv[0].pipeFrom.args;
   assert.ok(nv[0].mask);
-  assert.equal(count(feed, "-progress"), 1);
+  assert.equal(count(feed, "-progress"), 0);
   assert.equal(
-    feed[feed.indexOf("-progress") + 1],
-    "pipe:2",
-    "stdout stays the frames",
+    nv[0].pipeTo.args[nv[0].pipeTo.args.indexOf("-progress") + 1],
+    "pipe:1",
   );
   assert.equal(feed.at(-1), paths.maskOutput);
   // Mask only and no mask: nothing to join.

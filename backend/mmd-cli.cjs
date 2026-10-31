@@ -1,15 +1,30 @@
 "use strict";
+const { appError, serializeError } = require("./errors.cjs");
 // CLI used by the plugin: MMD_EXPORT_MODE=plan|finish, MMD_EXPORT_JOB=<json>.
 async function main({ plan, finish, remember, readConfig }) {
   const mode = process.env.MMD_EXPORT_MODE;
-  const job = JSON.parse(process.env.MMD_EXPORT_JOB || "{}");
+  const failure = (error, fallback) => {
+    const data = serializeError(
+      error?.code ? error : appError(fallback, { detail: error.message }),
+    );
+    process.stdout.write(
+      JSON.stringify({ ok: false, error: data.message, errorData: data }),
+    );
+  };
+  let job;
+  try {
+    job = JSON.parse(process.env.MMD_EXPORT_JOB || "{}");
+  } catch (error) {
+    failure(error, "MMD_REQUEST_INVALID");
+    return;
+  }
   if (mode === "test") {
     try {
       const config = job.selection ? readConfig(job.selection) : readConfig();
       const result = await require("./mmd-test.cjs").testExport(config);
       process.stdout.write(JSON.stringify(result));
     } catch (e) {
-      process.stdout.write(JSON.stringify({ ok: false, error: e.message }));
+      failure(e, "MMD_TEST_FAILED");
     }
     return;
   }
@@ -17,13 +32,17 @@ async function main({ plan, finish, remember, readConfig }) {
     try {
       process.stdout.write(JSON.stringify({ ok: true, ...plan(job) }));
     } catch (e) {
-      process.stdout.write(JSON.stringify({ ok: false, error: e.message }));
+      failure(e, "MMD_PLAN_FAILED");
     }
     return;
   }
   if (mode === "finish") {
     const lines = [];
-    const log = (m) => lines.push(m);
+    const notesData = [];
+    const log = (m, data) => {
+      lines.push(m);
+      if (data) notesData.push(data);
+    };
     const started = Date.now();
     try {
       const r = await finish(job, undefined, log);
@@ -44,14 +63,17 @@ async function main({ plan, finish, remember, readConfig }) {
             }
           : {}),
         notes: lines,
+        ...(notesData.length ? { notesData } : {}),
       });
     } catch (e) {
       remember({
         ok: false,
         error: e.message,
+        errorData: serializeError(e),
         output: job.output,
         avi: job.avi,
         notes: lines,
+        ...(notesData.length ? { notesData } : {}),
       });
       process.exitCode = 1;
     }

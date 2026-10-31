@@ -192,6 +192,7 @@ button {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
+.engine-list:focus-visible,
 summary:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 3px;
@@ -217,13 +218,13 @@ svg {
   flex-shrink: 0;
   vertical-align: middle;
 }
-.muted,
-.hint {
+.muted {
   color: var(--color-muted);
 }
 .hint {
+  color: var(--color-caption);
   font-size: 12px;
-  line-height: 1.7;
+  line-height: 1.5;
 }
 .button {
   display: inline-flex;
@@ -276,7 +277,7 @@ svg {
   padding: 7px;
 }
 .app-header {
-  height: 98px;
+  height: 88px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -287,30 +288,30 @@ svg {
 .brand {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 8px;
+}
+.brand .brand-icon {
+  width: 36px;
+  height: 40px;
 }
 .brand-icon {
   width: 42px;
   height: 46px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  color: var(--color-primary);
-  background: var(--color-surface);
+}
+.brand-mark {
+  width: 36px;
+  height: 36px;
 }
 .brand h1 {
-  font: 600 24px/1.2 var(--font-display);
+  font: 600 24px/36px var(--font-display);
+  padding-top: 3px;
   letter-spacing: 0.2px;
 }
 .brand h1 span {
   font-weight: 400;
-}
-.brand p {
-  font-size: 11px;
-  color: var(--color-muted);
-  letter-spacing: 1.5px;
-  margin-top: 5px;
+  color: var(--color-primary);
 }
 .version {
   font-family: var(--font-mono);
@@ -319,8 +320,6 @@ svg {
   color: var(--color-muted);
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  align-self: flex-start;
-  margin-top: 4px;
 }
 .header-actions {
   display: flex;
@@ -330,6 +329,17 @@ svg {
 /* One font for Latin and Chinese, so "MMD 导出" matches its neighbours. */
 .header-actions .button {
   font-family: "Microsoft YaHei UI", sans-serif;
+}
+/* Japanese kanji need a Japanese face; Chinese faces draw Chinese shapes. */
+html[lang="ja"] {
+  --font-body: Segoe UI, Yu Gothic UI, Meiryo UI, sans-serif;
+  --font-display: Bahnschrift, Yu Gothic UI, Meiryo UI, sans-serif;
+}
+html[lang="ja"] .header-actions .button {
+  font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
+}
+html[lang="en"] .header-actions .button {
+  font-family: "Segoe UI", sans-serif;
 }
 .status-dot {
   width: 6px;
@@ -462,6 +472,7 @@ svg {
   min-height: 111px;
 }
 .job-row.selected {
+  --color-caption: var(--color-captionRaised);
   background: var(--color-raised);
   border-left-color: var(--color-primary);
 }
@@ -502,6 +513,9 @@ svg {
   flex-direction: column;
   gap: 3px;
 }
+.queue-column {
+  min-width: 0;
+}
 .job-copy strong {
   white-space: nowrap;
   overflow: hidden;
@@ -513,12 +527,39 @@ svg {
   font: 10px/1.7 var(--font-mono);
   color: var(--color-muted);
 }
+.job-note {
+  font-size: 11px;
+  color: var(--color-warning);
+  overflow-wrap: anywhere;
+}
 .job-status {
   font-size: 11px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 5px;
   color: var(--color-muted);
+}
+.output-files,
+.output-file,
+.output-file-name {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+.output-file-name {
+  flex: 1;
+}
+.output-file-lead {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.output-file-tail,
+.output-file-separator {
+  flex: none;
+  white-space: pre;
 }
 .job-status.done {
   color: var(--color-success);
@@ -543,6 +584,23 @@ svg {
   width: 100%;
   height: 3px;
   accent-color: var(--color-primary);
+}
+/* Neon Cyan (default accent): progress bars stay cyan and turn pink only at
+   the leading edge, echoing the logo. */
+:root:not([data-accent="blue"]) progress {
+  appearance: none;
+  border: 0;
+  background: var(--color-border);
+}
+:root:not([data-accent="blue"]) progress::-webkit-progress-bar {
+  background: var(--color-border);
+}
+:root:not([data-accent="blue"]) progress::-webkit-progress-value {
+  background: linear-gradient(
+    90deg,
+    var(--color-logoCyan) 70%,
+    var(--color-logoPink)
+  );
 }
 .queue-pagination {
   display: flex;
@@ -609,18 +667,6 @@ svg {
   overflow-wrap: anywhere;
   margin-top: 14px;
 }
-.replace-audio {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  color: var(--color-muted);
-}
-.replace-audio .path-text {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-}
 .recovery {
   display: flex;
   gap: 7px;
@@ -646,6 +692,7 @@ svg {
   margin-top: 4px;
 }
 .preset-bar {
+  --color-caption: var(--color-captionRaised);
   display: flex;
   align-items: flex-end;
   gap: 10px;
@@ -662,13 +709,81 @@ svg {
 .field {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  margin-bottom: 17px;
+  gap: 4px;
+  margin-bottom: 20px;
   min-width: 0;
 }
 .field label {
   font-size: 12px;
   color: var(--color-muted);
+}
+.field > label,
+.field-heading,
+.field-label {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-muted);
+  margin-bottom: 3px;
+}
+.field-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.field-heading > label {
+  font: inherit;
+  color: inherit;
+}
+.field-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.field-help:hover {
+  color: var(--color-primary);
+}
+.tooltip-anchor {
+  display: inline-flex;
+}
+.control-tooltip {
+  display: block;
+  min-width: 0;
+}
+.control-tooltip > input:disabled {
+  pointer-events: none;
+}
+.field-tooltip {
+  position: fixed;
+  z-index: 120;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-raised);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 input:not([type="checkbox"]),
 select {
@@ -726,9 +841,16 @@ input:not([type="checkbox"]):hover {
   grid-template-columns: 1fr 1fr;
   gap: 14px;
 }
-.quality-hint {
-  margin-top: -9px;
-  margin-bottom: 17px;
+.form-row:has(+ .hint) .field {
+  margin-bottom: 0;
+}
+.field:has(+ .hint) {
+  margin-bottom: 0;
+}
+.form-row + .hint,
+.settings-body > .hint,
+.field + .hint {
+  margin: 4px 0 20px;
 }
 .divider {
   border-top: 1px solid var(--color-border);
@@ -750,6 +872,7 @@ input:not([type="checkbox"]):hover {
   margin-bottom: 20px;
 }
 .help-box {
+  --color-caption: var(--color-captionRaised);
   background: var(--color-raised);
   border-radius: 8px;
   padding: 13px;
@@ -780,14 +903,23 @@ input:not([type="checkbox"]):hover {
   cursor: pointer;
 }
 .check-card strong {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--color-text);
   display: block;
+}
+.check-card > span {
+  min-width: 0;
+}
+.check-card > input {
+  margin-top: 3px;
 }
 .check-card small {
   display: block;
-  color: var(--color-muted);
-  font-size: 10px;
+  color: var(--color-caption);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
   margin-top: 4px;
 }
 .alpha-diagram {
@@ -812,8 +944,12 @@ input:not([type="checkbox"]):hover {
   color: var(--color-onPrimary);
 }
 .alpha-swatch.mask {
-  background: linear-gradient(90deg, #fff 0 50%, #000 50%);
-  color: #888;
+  background: linear-gradient(
+    90deg,
+    var(--color-checkerLight) 0 50%,
+    var(--color-checkerDark) 50%
+  );
+  color: var(--color-checkerText);
 }
 .input-action {
   display: flex;
@@ -935,6 +1071,16 @@ input:not([type="checkbox"]):hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.trim-completion {
+  display: flex;
+  align-items: baseline;
+}
+.trim-completion-label {
+  flex: none;
+}
+.trim-completion > .output-files {
+  flex: 0 1 auto;
+}
 .run-actions {
   display: flex;
   align-items: center;
@@ -962,6 +1108,7 @@ input:not([type="checkbox"]):hover {
   right: 36px;
   z-index: 15;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   border: 1px solid var(--color-danger);
@@ -970,10 +1117,19 @@ input:not([type="checkbox"]):hover {
   color: var(--color-danger);
   padding: 8px 12px;
   font-size: 12px;
-  box-shadow: 0 8px 20px #0004;
+  box-shadow: 0 8px 20px var(--color-shadowSmall);
 }
 .error-banner span {
-  flex: 1;
+  white-space: pre-line;
+  flex: 1 1 260px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.error-banner > .button {
+  white-space: normal;
+}
+.error-banner > .button:last-child {
+  flex: none;
 }
 .toast {
   position: fixed;
@@ -999,7 +1155,7 @@ input:not([type="checkbox"]):hover {
 .overlay {
   position: fixed;
   inset: 0;
-  background: #080b12bb;
+  background: var(--color-overlay);
   z-index: 40;
 }
 .modal {
@@ -1017,7 +1173,7 @@ input:not([type="checkbox"]):hover {
   flex-direction: column;
   z-index: 41;
   padding: 0;
-  box-shadow: 0 20px 70px #0008;
+  box-shadow: 0 20px 70px var(--color-shadowLarge);
 }
 .modal-head {
   display: flex;
@@ -1130,6 +1286,28 @@ input:not([type="checkbox"]):hover {
 .spin {
   animation: spin 1.5s linear infinite;
 }
+.alignment-wave path {
+  vector-effect: non-scaling-stroke;
+}
+.alignment-wave.active path {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: alignment-wave 0.8s ease-in-out infinite alternate;
+}
+.alignment-wave.active path:nth-child(2n) {
+  animation-delay: -0.3s;
+}
+.alignment-wave.active path:nth-child(3n) {
+  animation-delay: -0.6s;
+}
+@keyframes alignment-wave {
+  from {
+    transform: scaleY(0.65);
+  }
+  to {
+    transform: scaleY(1.1);
+  }
+}
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -1164,9 +1342,10 @@ textarea {
   }
   .app-header {
     height: auto;
-    min-height: 90px;
-    padding: 18px;
+    min-height: 84px;
+    padding: 16px 18px;
     flex-wrap: wrap;
+    gap: 12px;
   }
   .brand h1 {
     font-size: 21px;
@@ -1220,12 +1399,7 @@ textarea {
 }
 .about-name span {
   font-weight: 400;
-}
-.about-tagline {
-  margin: 4px 0 0;
-  font-size: 11px;
-  letter-spacing: 1.5px;
-  color: var(--color-muted);
+  color: var(--color-primary);
 }
 .about-version {
   margin: 0;
@@ -1275,55 +1449,22 @@ textarea {
 .about-status.danger .status-dot {
   background: var(--color-danger);
 }
-.about-notes {
-  display: grid;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-background);
-}
-.release-notes {
-  max-height: 280px;
-  overflow: auto;
-  font-size: 13px;
-  line-height: 1.7;
-  padding-right: 6px;
-}
-.release-notes:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-.release-notes h4 {
-  margin: 10px 0 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-muted);
-  letter-spacing: 1px;
-}
-.release-notes h4:first-child {
-  margin-top: 0;
-}
-.release-notes ul {
-  margin: 0;
-  padding-left: 18px;
-}
-.release-notes li + li {
-  margin-top: 4px;
-}
-.release-notes ul ul {
-  margin-top: 4px;
-  color: var(--color-muted);
-}
-.release-notes code {
-  font: 12px var(--font-mono);
-}
 .about-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px 20px;
   margin: 0;
+}
+.about-language-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.about-language .field {
+  margin-bottom: 0;
 }
 .about-facts div {
   display: grid;
@@ -1390,14 +1531,6 @@ textarea {
   }
 }
 @media (forced-colors: active) {
-  .trim-track input[type="range"]::-webkit-slider-thumb {
-    background: Highlight;
-    border-color: Canvas;
-  }
-  .trim-rail,
-  .trim-tick {
-    background: CanvasText;
-  }
   html {
     scrollbar-color: auto;
   }
@@ -1507,12 +1640,25 @@ html[data-theme="light"] {
   max-width: 240px;
   margin-top: 14px;
 }
-.checkbox-row .hires-hint {
+.checkbox-row > span {
+  min-width: 0;
+  font-size: 14px;
+  color: var(--color-text);
+}
+.checkbox-row .hint {
   display: block;
   margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
 }
-.checkbox-row:has(.hires-hint) {
+.checkbox-row:has(.hint) {
   align-items: flex-start;
+}
+.checkbox-row:has(.hint) > input {
+  margin-top: 3px;
+}
+.about-preferences .checkbox-row {
+  margin: 0;
 }
 /* Lossless trim editor */
 .trim-editor:focus-visible {
@@ -1520,17 +1666,21 @@ html[data-theme="light"] {
   outline-offset: 2px;
 }
 .trim-preview {
+  position: relative;
   display: grid;
   place-items: center;
-  height: 280px;
+  aspect-ratio: 16 / 9;
   margin: 12px 0;
   border-radius: 8px;
-  background: #101318;
+  background: var(--color-preview);
   overflow: hidden;
 }
-.trim-preview img {
-  max-width: 100%;
-  max-height: 100%;
+.trim-preview img,
+.trim-preview video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 .trim-position {
@@ -1594,6 +1744,7 @@ html[data-theme="light"] {
   position: relative;
   width: 100%;
   height: 28px;
+  min-height: 0;
   margin: 0;
   background: transparent;
   -webkit-appearance: none;
@@ -1626,6 +1777,25 @@ html[data-theme="light"] {
   box-shadow:
     0 0 0 1px var(--color-primary),
     0 0 0 4px color-mix(in srgb, var(--color-primary) 40%, transparent);
+}
+@media (forced-colors: active) {
+  .trim-marks {
+    forced-color-adjust: none;
+  }
+  .trim-rail,
+  .trim-tick {
+    background: CanvasText;
+    opacity: 1;
+  }
+  .trim-range {
+    background: Highlight;
+  }
+  .trim-track input[type="range"]::-webkit-slider-thumb {
+    forced-color-adjust: none;
+    background: Highlight;
+    border-color: Canvas;
+    box-shadow: 0 0 0 1px CanvasText;
+  }
 }
 .trim-buttons {
   display: flex;
@@ -1680,11 +1850,6 @@ html[data-theme="light"] {
 }
 .engine-list {
   max-height: 180px;
-}
-.release-notes {
-  height: 156px;
-  max-height: 156px;
-  scrollbar-gutter: stable;
 }
 
 /* 超分补帧: two titled groups (放大 / 补帧) and the RTX check box. */
@@ -1774,32 +1939,6 @@ html[data-theme="light"] {
 .modal-fixed:not(:has(.preset-list, .engine-list)) .modal-body > :last-child {
   margin-top: auto;
 }
-/* About: the release notes take the height the dialog has to spare and
-   shrink with it, like the lists in the other header dialogs. */
-.modal-fixed .modal-body:has(.about-hero) {
-  flex: 1 1 auto;
-}
-.modal-fixed .modal-body:has(.about-hero) > section[aria-label="本版更新日志"] {
-  flex: 1 1 auto;
-  /* Never shorter than its heading plus the notes' minimum, so the next
-     section cannot slide over it; below that the dialog scrolls instead. */
-  min-height: 160px;
-  display: flex;
-  flex-direction: column;
-}
-.modal-fixed
-  .modal-body:has(.about-hero)
-  > section[aria-label="本版更新日志"]
-  > .status-row {
-  flex-shrink: 0;
-}
-.modal-fixed .modal-body:has(.about-hero) .release-notes {
-  flex: 1 1 auto;
-  height: auto;
-  min-height: 96px;
-  max-height: none;
-}
-
 /* Page tabs: one strip under the header that ends the fixed top area with a
    single line; content scrolling beneath it gets a soft shade once moved. */
 .app-header {
@@ -1867,6 +2006,11 @@ html[data-theme="light"] {
 @keyframes page-shade {
   to {
     opacity: 1;
+  }
+}
+@media (max-width: 1100px) {
+  .workspace-tabs {
+    padding: 0 22px;
   }
 }
 @media (max-width: 850px) {
@@ -2095,6 +2239,22 @@ html[data-theme="light"] {
 .align-row .align-group {
   align-items: center;
 }
+.align-row .button {
+  min-height: 38px;
+}
+.align-group .align-shift-input {
+  width: 112px;
+  flex: 0 0 112px;
+  appearance: textfield;
+}
+.align-shift-input::-webkit-inner-spin-button,
+.align-shift-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.align-shift-feedback .hint {
+  margin: 0;
+}
 .align-row-label {
   font-size: 12px;
   font-weight: 600;
@@ -2175,10 +2335,6 @@ html[data-theme="light"] {
   color: var(--color-primary);
 }
 /* 合成到纯色: preset colours, a picker and the #RRGGBB text. */
-.field-label {
-  font-size: 12px;
-  color: var(--color-muted);
-}
 .background-color {
   display: flex;
   flex-wrap: wrap;

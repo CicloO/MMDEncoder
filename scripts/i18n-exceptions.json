@@ -1,0 +1,1724 @@
+[
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "json.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "platform.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "true",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "false",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "null",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "+-0123456789.eE",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "\\\\u",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "\\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/json.cpp",
+    "text": "\\\\u%04x",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/platform.cpp",
+    "text": "platform.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/platform.cpp",
+    "text": "\\\\MMDEncoder\\\\mmd-plugin",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "json.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "platform.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "processes.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "settings.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "msdmo.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "dmoguids.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "strmiids.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "ole32.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "uuid.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "shell32.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "advapi32.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "user32.lib",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "{DC3F6BD1-923F-467A-BF73-F115AF705033}",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "DC3F6BD1-923F-467A-BF73-F115AF705033",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "MMDEncoder",
+    "category": "technical",
+    "reason": "Product and codec name; the name is identical in every language."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "33d9a760-90c8-11d0-bd43-00a0c911ce86",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "[%02d:%02d:%02d.%03d] ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\r\\n",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\logs",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\plugin-%04d%02d%02d-%02d%02d%02d-%lu.log",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\xEF\\xBB\\xBF",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": " ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "ELECTRON_RUN_AS_NODE",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "1",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "MMD_EXPORT_MODE",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "finish",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "MMD_EXPORT_JOB",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "cannot start finish step (error %lu)",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "ntdll.dll",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "NtQuerySystemInformation",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ".avi",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\\\\\?\\\\UNC\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\\\\\?\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "RecWindow",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ".pmm",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "MMDE",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "FAILED: %s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "render start in %s: %ldx%ld %d-bit %s, AvgTimePerFrame=%lld, frames %ld-%ld, avi=%s, pmm=%s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "bottom-up",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "top-down",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\mmd-export.json",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "appExe",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "helper",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"width\\\":%ld,\\\"height\\\":%ld,\\\"bits\\\":%d,\\\"bottomUp\\\":%s,\\\"avgTimePerFrame\\\":%lld,\\\"startFrame\\\":%ld}",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "true",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "false",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "{\\\"avi\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"pmm\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plan",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "ok",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "error",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "temp",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "output",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "exe",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "args",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "output %s (preset %s)",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "presetName",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "maskOutput",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "alpha mask %s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "notes",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "note: %s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "ffmpeg: %s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "-ffmpeg.log",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "NUL",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "env",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "render end: %llu frames, ffmpeg exit %lu",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "timing: setup %.2f s, render %.2f s (%.1f fps), waiting for FFmpeg %.2f s (%.1f%%, longest %.0f ms), ",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "FFmpeg finished %.2f s after the last frame",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"frames\\\":%llu,\\\"avgTimePerFrame\\\":%lld,\\\"startFrame\\\":%ld,\\\"timing\\\":{\\\"setup\\\":%.3f,",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\"render\\\":%.3f,\\\"waited\\\":%.3f,\\\"longestWait\\\":%.3f,\\\"encoderTail\\\":%.3f}}",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"temp\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"output\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "finish step started for %s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "Software\\\\Classes\\\\CLSID\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "Software\\\\Classes\\\\DirectShow\\\\MediaObjects\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "Software\\\\Classes\\\\DirectShow\\\\MediaObjects\\\\Categories\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "{\\\"at\\\":\\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\",\\\"event\\\":\\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\",\\\"dll\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"host\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"parent\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": ",\\\"pid\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "}\\n",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\install.log",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "dll-register",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "\\\\InprocServer32",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "ThreadingModel",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "Both",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "InputTypes",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "OutputTypes",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "dll-unregister",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "processes.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "platform.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": " \\t\\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "\\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "=",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": " ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "ELECTRON_RUN_AS_NODE",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "1",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "MMD_EXPORT_MODE",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "MMD_EXPORT_JOB",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "cannot start helper %s (error %lu)",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/processes.cpp",
+    "text": "helper %s gave no answer within %lu ms; stopped",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "settings.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "json.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "platform.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "off",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "with",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "only",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "MMDEncoder",
+    "category": "technical",
+    "reason": "Product and codec name; the name is identical in every language."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "Microsoft YaHei UI",
+    "category": "technical",
+    "reason": "Windows font family identifier chosen for the Chinese plugin snapshot; not translated."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "ja",
+    "category": "technical",
+    "reason": "Locale ID prefix used to choose the dialog font; not visible text."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "zh",
+    "category": "technical",
+    "reason": "Locale ID prefix used to choose the dialog font; not visible text."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "Yu Gothic UI",
+    "category": "technical",
+    "reason": "Windows font family identifier chosen for the Japanese plugin snapshot; not translated."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "Segoe UI",
+    "category": "technical",
+    "reason": "Windows font family identifier chosen for the English plugin snapshot; not translated."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "builtin-prores422",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "%g",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "{\\\"selection\\\":{\\\"presetId\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\\"followMmd\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "true",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "false",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\\"maskMode\\\":\\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "\\\",\\\"audioFade\\\":",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "}}",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "test",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "ok",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "message",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "error",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "encoding test: %s",
+    "category": "diagnostic",
+    "reason": "Plugin diagnostic log format; preserve technical evidence and printf arguments."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "\\\\/",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "open",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "\\\\mmd-export.json",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "version",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "presets",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "unsupported",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "id",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "name",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "\\\\mmd-selection.json",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "presetId",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "followMmd",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "rangeSuffix",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "audioFade",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "maskMode",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "appExe",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "helper",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "{\\n  \\\"presetId\\\": ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\n  \\\"followMmd\\\": ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\n  \\\"maskMode\\\": \\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "\\\",\\n  \\\"rangeSuffix\\\": ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\n  \\\"audioFade\\\": ",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\n  \\\"savedAt\\\": \\\"",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "\\\"\\n}\\n",
+    "category": "technical",
+    "reason": "JSON/helper protocol, command serialization or Windows API value; keep the literal unchanged."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ".tmp",
+    "category": "technical",
+    "reason": "Filesystem, registry, escape sequence or serialization literal; localization must not change its bytes."
+  },
+  {
+    "file": "mmd-plugin/src/settings.h",
+    "text": "processes.h",
+    "category": "technical",
+    "reason": "C++ build dependency name, not displayed application copy."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "messages.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "../build/plugin-messages.generated.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "locale",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "zh-CN",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "messages",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": ".",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": ",",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "%.*f",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "seconds",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "true",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "false",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "code",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "params",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "error",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "detail",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "error.",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "message",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "issues",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.cpp",
+    "text": "\\n",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/messages.h",
+    "text": "json.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "messages.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.aviMissing",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.configMissing",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.configIncomplete",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.planMissing",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "detail",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.presetFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "errorData",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "error.",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "notesData",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "message.",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.pipeFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.encoderStartFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "path",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.frameSizeInvalid",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.encoderExited",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.encoderTimeout",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.encoderFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "exitCode",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.finishStartFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/plugin.cpp",
+    "text": "plugin.exportFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings-layout.cpp",
+    "text": "settings-layout.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/settings-layout.cpp",
+    "text": "-9007199254740991",
+    "category": "technical",
+    "reason": "Numeric edit default or worst-case layout measurement sample, not a translated label."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "messages.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "settings-layout.h",
+    "category": "technical",
+    "reason": "C++ include/generated-header dependency; not runtime display text."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.maskOff",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.maskWith",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.maskOnly",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "error.MMD_AUDIO_SHIFT_INVALID",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.presetRequired",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.fadeSeconds",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "seconds",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.fadeOff",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.testPassedShort",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.test",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.testing",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.testFailedShort",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\\"rangeSuffix\\\":",
+    "category": "technical",
+    "reason": "Selection JSON field serialization; preserves the fixed English protocol name and delimiters."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\\"audioShiftFrames\\\":",
+    "category": "technical",
+    "reason": "Selection JSON field serialization; preserves the fixed English protocol name and delimiters."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\\"audioAutoShift\\\":",
+    "category": "technical",
+    "reason": "Selection JSON field serialization; preserves the fixed English protocol name and delimiters."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "message.",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.testFailure",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "detail",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "errorData",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "error.",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.noTestResult",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.appMissing",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.configMissing",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "displayName",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "audioShiftFrames",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "audioAutoShift",
+    "category": "technical",
+    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.title",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.preset",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.follow",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.suffix",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.mask",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.fade",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.audioShift",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "0",
+    "category": "technical",
+    "reason": "Numeric edit default or worst-case layout measurement sample, not a translated label."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.audioAutoShift",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.note",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.openApp",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.ok",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.cancel",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\n  \\\"audioShiftFrames\\\": ",
+    "category": "technical",
+    "reason": "Selection JSON field serialization; preserves the fixed English protocol name and delimiters."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": ",\\n  \\\"audioAutoShift\\\": ",
+    "category": "technical",
+    "reason": "Selection JSON field serialization; preserves the fixed English protocol name and delimiters."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.saveFailed",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "src/AboutDialog.tsx",
+    "text": "MMD",
+    "category": "technical",
+    "reason": "Product/author/license proper name; preserved as an identity, including the approved two-part wordmark."
+  },
+  {
+    "file": "src/AboutDialog.tsx",
+    "text": "Encoder",
+    "category": "technical",
+    "reason": "Product/author/license proper name; preserved as an identity, including the approved two-part wordmark."
+  },
+  {
+    "file": "src/AboutDialog.tsx",
+    "text": "CicloO",
+    "category": "technical",
+    "reason": "Product/author/license proper name; preserved as an identity, including the approved two-part wordmark."
+  },
+  {
+    "file": "src/AboutDialog.tsx",
+    "text": "Mozilla Public License 2.0",
+    "category": "technical",
+    "reason": "Product/author/license proper name; preserved as an identity, including the approved two-part wordmark."
+  },
+  {
+    "file": "src/App.tsx",
+    "text": "MMDEncoder",
+    "category": "technical",
+    "reason": "Product identity and approved wordmark; the Encoder segment uses theme accent but its spelling does not localize."
+  },
+  {
+    "file": "src/App.tsx",
+    "text": "MMD",
+    "category": "technical",
+    "reason": "Product identity and approved wordmark; the Encoder segment uses theme accent but its spelling does not localize."
+  },
+  {
+    "file": "src/App.tsx",
+    "text": "Encoder",
+    "category": "technical",
+    "reason": "Product identity and approved wordmark; the Encoder segment uses theme accent but its spelling does not localize."
+  },
+  {
+    "file": "src/AlignDialog.tsx",
+    "text": "←",
+    "category": "technical",
+    "reason": "Direction glyph on frame adjustment controls; accessible names are localized separately."
+  },
+  {
+    "file": "src/AlignDialog.tsx",
+    "text": "→",
+    "category": "technical",
+    "reason": "Direction glyph on frame adjustment controls; accessible names are localized separately."
+  },
+  {
+    "file": "src/EncodeFooter.tsx",
+    "text": "·",
+    "category": "technical",
+    "reason": "Visual separator glyph, not linguistic copy."
+  },
+  {
+    "file": "src/EncodeQueue.tsx",
+    "text": "→",
+    "category": "technical",
+    "reason": "Source-to-result direction glyph; descriptive text is localized separately."
+  },
+  {
+    "file": "src/FileMeta.tsx",
+    "text": "×",
+    "category": "technical",
+    "reason": "Dimension separator and standard bitrate unit symbol; numeric values use locale formatting."
+  },
+  {
+    "file": "src/FileMeta.tsx",
+    "text": "Mbps",
+    "category": "technical",
+    "reason": "Dimension separator and standard bitrate unit symbol; numeric values use locale formatting."
+  },
+  {
+    "file": "src/MediaDetails.tsx",
+    "text": "·",
+    "category": "technical",
+    "reason": "Visual metadata separator glyph."
+  },
+  {
+    "file": "src/MediaTools.tsx",
+    "text": "→",
+    "category": "technical",
+    "reason": "Source-to-result direction glyph."
+  },
+  {
+    "file": "src/PresetList.tsx",
+    "text": "·",
+    "category": "technical",
+    "reason": "Visual metadata separator glyph."
+  },
+  {
+    "file": "src/TrimQueue.tsx",
+    "text": "H.264 · HEVC · ProRes · UtVideo · FFV1",
+    "category": "technical",
+    "reason": "Supported codec proper names in the empty-state hint; format names are invariant technical labels."
+  },
+  {
+    "file": "src/VideoSettings.tsx",
+    "text": "RGB",
+    "category": "technical",
+    "reason": "Color/Alpha diagram symbols and chroma-subsampling notation; these technical values are invariant."
+  },
+  {
+    "file": "src/VideoSettings.tsx",
+    "text": "A",
+    "category": "technical",
+    "reason": "Color/Alpha diagram symbols and chroma-subsampling notation; these technical values are invariant."
+  },
+  {
+    "file": "src/VideoSettings.tsx",
+    "text": "4:2:0",
+    "category": "technical",
+    "reason": "Color/Alpha diagram symbols and chroma-subsampling notation; these technical values are invariant."
+  },
+  {
+    "file": "src/VideoSettings.tsx",
+    "text": "4:2:2",
+    "category": "technical",
+    "reason": "Color/Alpha diagram symbols and chroma-subsampling notation; these technical values are invariant."
+  },
+  {
+    "file": "src/VideoSettings.tsx",
+    "text": "4:4:4",
+    "category": "technical",
+    "reason": "Color/Alpha diagram symbols and chroma-subsampling notation; these technical values are invariant."
+  },
+  {
+    "file": "src/TrimEditor.tsx",
+    "text": "I",
+    "category": "technical",
+    "reason": "Literal keyboard shortcuts for setting in/out points; button labels and accessible names are localized."
+  },
+  {
+    "file": "src/TrimEditor.tsx",
+    "text": "O",
+    "category": "technical",
+    "reason": "Literal keyboard shortcuts for setting in/out points; button labels and accessible names are localized."
+  },
+  {
+    "file": "src/RtxSettings.tsx",
+    "text": "NVIDIA QualityLevel",
+    "category": "technical",
+    "reason": "NVIDIA API/property and VSR preset names, retained as vendor technical labels."
+  },
+  {
+    "file": "src/RtxSettings.tsx",
+    "text": "Streaming Medium",
+    "category": "technical",
+    "reason": "NVIDIA API/property and VSR preset names, retained as vendor technical labels."
+  },
+  {
+    "file": "src/RtxSettings.tsx",
+    "text": "Streaming Ultra",
+    "category": "technical",
+    "reason": "NVIDIA API/property and VSR preset names, retained as vendor technical labels."
+  },
+  {
+    "file": "desktop/main.cjs",
+    "text": "MMDEncoder",
+    "category": "technical",
+    "reason": "Native window product identity."
+  },
+  {
+    "file": "backend/detect.cjs",
+    "text": "HEVC Alpha：",
+    "category": "technical",
+    "reason": "Diagnostic prefix for the codec Alpha probe; codec names remain technical and output details are preserved."
+  },
+  {
+    "file": "desktop/preload.cjs",
+    "text": "Unsupported action",
+    "category": "diagnostic",
+    "reason": "Internal unsupported-operation guard, unreachable from the current allowlisted UI actions; structured callers localize the stable code and legacy developer diagnostics stay exact."
+  },
+  {
+    "file": "backend/presets.cjs",
+    "text": "Unsupported preset action: ",
+    "category": "diagnostic",
+    "reason": "Internal unsupported-operation guard, unreachable from the current allowlisted UI actions; structured callers localize the stable code and legacy developer diagnostics stay exact."
+  }
+]

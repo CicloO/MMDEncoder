@@ -50,6 +50,32 @@ std::vector<wchar_t> environmentWith(const std::vector<std::pair<std::wstring, s
   return block;
 }
 
+// Assign while suspended so no descendant can escape the owning job.
+bool startProcessGroup(const std::wstring& exe, std::wstring& command, void* environment,
+                       STARTUPINFOW& startup, PROCESS_INFORMATION& process, HANDLE& group) {
+  group = CreateJobObjectW(nullptr, nullptr);
+  if (!group) return false;
+  // Closing MMD must close the raw-frame pipe, not kill the encoders: EOF
+  // lets them write the trailer needed by interrupted-export recovery.
+  // Explicit failure/timeout still uses TerminateJobObject on this handle.
+  const BOOL ok = CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, TRUE,
+    CREATE_NO_WINDOW | CREATE_SUSPENDED | (environment ? CREATE_UNICODE_ENVIRONMENT : 0),
+    environment, nullptr, &startup, &process);
+  if (!ok || !AssignProcessToJobObject(group, process.hProcess) || ResumeThread(process.hThread) == (DWORD)-1) {
+    if (ok) {
+      TerminateProcess(process.hProcess, 1);
+      WaitForSingleObject(process.hProcess, 5000);
+      CloseHandle(process.hThread);
+      CloseHandle(process.hProcess);
+      process = {};
+    }
+    CloseHandle(group);
+    group = nullptr;
+    return false;
+  }
+  return true;
+}
+
 // Run MMDEncoder.exe in Node mode with the helper script; returns its stdout.
 bool runHelper(const std::wstring& exe, const std::wstring& helper, const std::wstring& mode,
                       const std::string& job, std::string& out, DWORD timeoutMs, ProcessLog log, HWND responsive) {

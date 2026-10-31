@@ -373,11 +373,21 @@ test(
       onUpdate: (st) => {
         const j = st.jobs.find(
           // Colour and mask run in one pass ("… + Alpha 遮罩").
-          (j) => j.status === "encoding" && j.stage?.includes("Alpha 遮罩"),
+          (j) =>
+            j.status === "encoding" &&
+            [
+              "alpha_mask",
+              "nvencc_encoding_muxing_with_mask",
+              "video_encoding_with_mask",
+            ].includes(j.stage?.stage),
         );
         if (j && blockMask) {
           blockMask = false;
-          blockedPath = j.maskOutput;
+          // The window receives only committed outputs. The full service
+          // keeps this planned path to support a mask-only retry.
+          blockedPath = svc
+            .getState()
+            .jobs.find((full) => full.id === j.id).maskOutput;
           fs.writeFileSync(blockedPath, "KEEP EXTERNAL FILE");
         }
       },
@@ -415,6 +425,8 @@ test(
       let [a, p] = svc.getState().jobs;
       assert.equal(a.status, "partial", a.log);
       assert.ok(fs.existsSync(a.output));
+      assert.equal(svc.uiState().jobs[0].output, a.output);
+      assert.equal(svc.uiState().jobs[0].maskOutput, undefined);
       assert.equal(fs.readFileSync(blockedPath, "utf8"), "KEEP EXTERNAL FILE");
       assert.equal(p.status, "invalid", p.error);
       const stat = fs.statSync(a.output);
@@ -644,7 +656,7 @@ test("an update overwrites changed built-ins but keeps every personal preset", a
     assert.ok(!names.includes("旧内置"), "dropped built-in is not kept");
     assert.ok(names.includes("我的 MMD"));
     assert.equal(find("p2").name, "默认 1080p · 硬件");
-    assert.equal(find("builtin-1080").name, "默认 1080p · 硬件（内置）");
+    assert.equal(find("builtin-1080").name, "默认 1080p · 硬件 (Built-in)");
     assert.match(svc.getState().notice, /坏预设/);
     await svc.invoke("hidePreset", { id: "p2", hidden: true });
     const after = JSON.parse(fs.readFileSync(file, "utf8"));

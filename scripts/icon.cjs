@@ -1,27 +1,24 @@
-// Builds assets/icon.ico from assets/icon.svg with every size Windows asks for
-// (Explorer, taskbar, title bar), each stored as PNG. The packaging script
-// writes this icon into MMDEncoder.exe; the window uses it at runtime too.
+// Packs the curated size-specific PNGs into assets/icon.ico.
+// 16/24 use simplified art, 32/48 heavier art, and 64+ the full design.
+// Do not regenerate every size from assets/icon.svg: small details would be lost.
 const fs = require("node:fs");
 const path = require("node:path");
-const sharp = require(
-  require.resolve("sharp", {
-    paths: [
-      process.env.MMD_BUILD_MODULES ||
-        "C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules",
-    ],
-  }),
-);
 const SIZES = [16, 24, 32, 48, 64, 128, 256];
 (async () => {
-  const svg = path.join(__dirname, "../assets/icon.svg");
-  const images = await Promise.all(
-    SIZES.map((size) =>
-      sharp(svg, { density: Math.ceil((72 * size) / 32) })
-        .resize(size, size)
-        .png()
-        .toBuffer(),
-    ),
-  );
+  const images = SIZES.map((size) => {
+    const png = fs.readFileSync(
+      path.join(__dirname, `../assets/logo/icon-${size}.png`),
+    );
+    if (
+      !png
+        .subarray(0, 8)
+        .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+      png.readUInt32BE(16) !== size ||
+      png.readUInt32BE(20) !== size
+    )
+      throw new Error(`Invalid curated icon PNG: ${size}`);
+    return png;
+  });
   const header = Buffer.alloc(6);
   header.writeUInt16LE(1, 2); // icon
   header.writeUInt16LE(images.length, 4);

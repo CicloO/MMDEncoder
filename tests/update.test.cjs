@@ -39,9 +39,12 @@ test("no published release and server errors are handled", async () => {
   const none = await checkForUpdate("1.3.0", reply(404, {}));
   assert.equal(none.newer, false);
   assert.equal(none.latest, "");
-  await assert.rejects(checkForUpdate("1.3.0", reply(503, {})), /503/);
+  await assert.rejects(checkForUpdate("1.3.0", reply(503, {})), {
+    code: "UPDATE_HTTP_STATUS",
+    params: { status: 503 },
+  });
   await assert.rejects(
     checkForUpdate("1.3.0", reply(200, { tag_name: "latest" })),
-    /无法识别/,
+    { code: "UPDATE_VERSION_INVALID", params: { version: "latest" } },
   );
 });

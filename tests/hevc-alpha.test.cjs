@@ -43,7 +43,7 @@ test("HEVC Alpha validates explicit constraints and preserves alpha during prepa
   assert.ok(commands[0].pipeFrom.args.includes("yuva444p"));
   assert.ok(commands[0].args.includes("yuva420"));
   assert.ok(commands[0].args.includes("--alpha-channel-mode"));
-  assert.ok(commands[1].args.includes("copy"));
+  assert.ok(commands[0].pipeTo.args.includes("copy"));
 });
 const { ff, nv, runCommand } = require("./engines.cjs");
 const dir = fs.existsSync(ff) && fs.existsSync(nv);

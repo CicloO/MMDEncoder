@@ -2,12 +2,39 @@
 
 Locale zh-CN, local Windows desktop, offline by default. No accounts or uploads.
 
-已迁移文案由 `locales/zh-CN.json` 和 `src/i18n.ts` 管理。业务错误用稳定 code 与参数跨 IPC 传递；迁移后的调用方使用 `src/ipc.ts`，未知 code 回退消息。当前只提供简体中文，迁移规则见 `docs/i18n.md`。
+程序自有文案由 `locales/zh-CN.json` 和 `src/i18n.ts` 管理。业务错误用稳定 code 与参数跨 IPC 传递；界面调用方使用 `src/ipc.ts`，未知 code 回退消息。用户内容、技术值与外部诊断保留原文。当前只提供简体中文，迁移规则与后续翻译入口见 `docs/i18n.md`。
+
+程序级语言偏好由 `backend/preferences.cjs` 解析，通过原有 `settings.json` 持久化。`null` 为将来的跟随系统模式保留，准备阶段与未知值均显示中文。`src/LocaleRoot.tsx` 订阅已保存的语言状态，更新页面语言、标题并刷新已迁移文案，不重新挂载页面或修改编码设置 / 预设 / 正在执行的任务；正式选择器在第二种语言交付时开放。
+
+视频设置、队列操作、RTX 与底部概览的文字在原位刷新，保留编辑值、选中任务和进度。校验问题逐项保留错误码 / 参数，兼容修复与重试按稳定技术字段决定；阶段、通知和新预览摘要在显示时格式化。长错误和操作按钮允许换行，关闭按钮保持可见、可操作，不缩字号。用户文件名、预设保存名、路径和命令值保持原文；旧记录 / 未知外部诊断有可读回退。音视频、剪辑、管理及插件也遵循同一显示边界。
+
+AlignDialog 通过 useAlignSession 拥有解码音轨、对齐值、请求阶段、错误与取消清理；波形视图和播放控制仍由弹窗与既有 useAlignPlayer 管理。会话只接文件 / 打开参数与必要回调。打开的弹窗按当前语言刷新按钮、步骤、提示与错误，保留偏移、trim、视图和试听设置，不重新启动请求；取消只由 ALIGN_CANCELLED 决定，未知诊断保持原文。音频偏移按参考实际分数帧率计算；仅音频参考的 30 FPS 回退明确显示。
+
+剪辑替换音频与波形 / 整数帧偏移属于当前剪辑会话，不记入选项。选择或拖入音频在程序级自动对齐开关开启时匹配，复用共用换音频流程及 AlignmentTasks 取消 / 身份管理；无参考片段时等第一段就绪。波形偏移以整段源视频为基准，帧偏移正数延后、负数提前；导出按实际分数帧率计算，并仅叠加一次第一片段起点。MMD 帧号显示开关只影响片段输入。波形按钮复用 AlignmentIcon 与 reduced-motion 规则；打开窗口先停止后台匹配，应用保存两值，取消保持原值，重新匹配保留帧偏移，换音频重置两值。对齐期间不能导出尚未确定的偏移。
+
+音频对齐窗口的“缩放 / 微调 / 音频偏移（帧）”使用同一排控件组，统一标签、控件高度与组间距；帧值输入为紧凑数字框，配同规格左右按钮：左提前一帧、右延后一帧，隐藏原生上下微调器；窄窗口按组自然换行。视频参考不重复显示方向 / FPS 注释，实际分数帧率保留在输入框标题；仅音频参考的 30 FPS 回退提示与校验信息保留，并通过 aria-describedby 关联输入。此布局用于共享对齐窗口的全部入口。
+
+剪辑画面使用随可用宽度缩放的 16:9 预览框；图像在明确的宽 / 高内 object-fit: contain，非 16:9 画幅留黑边、完整显示，素材固有尺寸不参与撑高容器。预览尺寸不改变帧号、范围、切点或导出参数。
+
+可直接解码的剪辑源在此框中播放；从当前播放头到不包含的出点，停止后落在最后一帧。暂停 / 手动定位后以原分数帧率同步画面与帧号，播放本身不改变切点吸附规则。不能解码或直接读取失败时保留逐帧 JPEG 并提示；播放时不请求 JPEG。切换源、离开剪辑页、开始导出时停止播放，卸载 src 释放文件。媒体协议仅解析当前 ready 片段 ID，权限与路径权威属于后端队列，界面不能提交任意路径；不生成代理视频。
+
+直接播放以索引中的首视频时间戳换算零基剪辑帧号；正的非零起点可以播放、暂停、逐帧定位并按出点停止。暂停定位在目标帧的显示区间内，避免小数秒截断或容器时间戳舍入使画面落到前一帧；剪辑与导出仍使用原有精确帧坐标。负起点或实际跳转被播放器时长约束截短时，回退到目标帧的 JPEG 并提示，不能让帧号与画面不符。不改写源文件、不增加代理或扩展剪辑格式。
+
+智能剪切开启时，拖动和逐帧键允许预览任意帧；无标签及 NVEncC 的实际入出点继续由后台吸附，按钮旁显示预计落点，出点允许结尾且不包含该帧。关闭智能剪切恢复拖动吸附；明确的逐帧键和跳可切位置键保持原语义。时间轴 range 高度 28px，不受文本输入框最小高度影响，圆点、轨道、范围条和刻度同高；高对比度下时间轴标记使用系统颜色，并保留可见轨道与刻度。
+
+FileMeta / MediaDetails 负责元数据显示，数字 / 时间随当前语言格式化，技术 ID、原始 ffprobe JSON 与用户路径保持原文。实际详情读取由 file-details 通过窄查询 / runner 能力执行；源文件不存在、输出未生成和读取失败保留 code / 参数及诊断回退，语言刷新只重新格式化，不重跑 ffprobe。
+
+MMD 导出弹窗由 `src/MmdExportDialog.tsx` 管理，使用共享 Field / Select / Button / Modal，文案与原生插件设置框共用中文基准表。主进程把同一份已加载语言包交给现有设置同步链路，插件读取 `mmd-export.json` 的有限文案快照；窗口保留打开时的语言，下次打开读取最新快照，主程序关闭后仍可使用。内置预设的显示元数据保留到快照投影，保存名、用户改名与编码参数不随语言改变。缺失文案使用从同一中文表生成的 DLL 回退。固定窗口遇到长文字按实际字体测量并扩展空间，不缩字号。测试当前选项不保存，确定才保存，取消保留原选择；结果只简写在测试按钮，完整失败原因保留日志。原生导出、校验及 helper 收尾同样使用这份有限快照；真实 MMD 工程导出与模拟器验收分别记录。
+
+MMD 导出允许选择已有 NVEncC 预设，参数/工具可用性由原有后台校验和测试编码确认。原生导出错误使用本次导出的语言快照，具体校验项与未知外部诊断保留；无效 helper 回复不再只取前400字符。计划说明和导出历史保留结构化描述与原始回退文字，主程序失败详情在显示时按当前语言格式化，旧记录和用户内容保持原文。消息迁移不改变编码管道、宿主消失后的EOF收尾或进程组清理规则。
+
+原生 MMD 设置的音频偏移直接输入正负整数，不带往前 / 往后按钮，单位固定为 30 fps 的帧数。手动值默认 0，独立的“起点为 1 时自动 +1”开关默认开；切换开关不改写输入，两者直接相加。当前未保存值可测试，确定保存、取消保持原选择。选择与导出快照保存两项，收尾与恢复消费本次快照；AVI 音轨与工程 WAV 均按源采样率精确移动，WAV 原起点只计算一次。正数补前置静音，负数多读来源尾部，超出视频裁掉、不足补静音；视频帧数保持，日志记录实际 / 手动 / 自动来源。
 
 | Capability      | Canonical owner                               | Source of truth     | Allowed variants                       | Verification           |
 | --------------- | --------------------------------------------- | ------------------- | -------------------------------------- | ---------------------- |
 | Select/Listbox  | src/components.tsx Select                     | DESIGN.md           | native Windows popup                   | desktop keyboard tests |
 | Form            | src/components.tsx Field + backend validation | backend/service.cjs | settings / preset                      | integration + UI       |
+| Brand Mark      | src/BrandMark.tsx                             | DESIGN.md           | themed inline / curated native sizes   | geometry + packaged UI |
 | Scrollbar       | src/style.css global baseline                 | DESIGN.md           | bounded logs                           | computed style         |
 | Toast           | src/App.tsx Notice                            | this contract       | status / error                         | live region            |
 | CRUD            | preset dialog + service                       | backend/service.cjs | builtin editable + restorable / custom | CRUD UI test           |
@@ -17,16 +44,56 @@ Queue is a paged list, 10 entries per page, single focused item for detail; star
 
 Settings persist atomically and immediately; presets require explicit save, with modified status relative to selected preset. Switching preset while modified uses application dialog. Output location is a remembered global preference and is retained across preset changes. Start freezes settings per job. Disabled start states explain absence of inputs/engine/validation.
 
+第八项已于2026-10-28获用户全部页面截图确认：GOP/B 帧的内部自动值仍为 −1，界面显示空框和“自动”占位；输入数字保存其值，清空回到自动，0 保持为 0。编码器可用说明由字段标题旁的说明按钮提供，悬停、焦点、点击及 Enter 均可打开，Escape 关闭；不可用前向分析控件保留原规则，以可聚焦的说明区域和 aria-describedby 提供原因。共享 Tooltip 管理显示、定位和关联，浮层不挤占布局，滚动及缩放窗口时保持在视口内。
+
+Theme is an independent light/dark preference, persisted by the service's existing settings-store owner. As requested on 2026-10-29, the header toggles light ↔ dark, unknown or removed system values resolve to light, and OS color-scheme events do not change the choice. Startup window and document colors use the saved resolution before React content renders. Old localStorage theme values are ignored. Theme persistence does not synchronize or adopt MMD export selection, alter encoding settings/presets/jobs, or enter RTX signatures; a save failure rolls back the preference through the existing failure path. Native MMD settings remain outside the renderer theme.
+
+An unreadable settings file is backed up before replacement. If that copy fails, the notice reports failure and the original file stays untouched; the existing persistence path retries the same backup before any later settings or preference write. A successful copy allows the normal atomic save and updates the notice with the actual backup name. Both read and copy causes remain structured for locale refresh, and a rejected preference save keeps the previously saved language.
+
+视频队列在结果状态后显示已提交的成品文件名；双文件遮罩显示两项，仅遮罩显示一项，部分完成只展示提交成功的部分。完整路径在悬停提示中，长文件名从中部省略且保留完整可访问文字。计划中的遮罩路径由后端留作重试，不能冒充成品发送给显示层。输出概览位于 page 内，内容由 page-scroll 独立滚动，宽窄窗口和滚动前后都保持底栏贴底；测试工作台必须沿用同一容器结构，诊断通知不得挤占底栏下方空间。
+
+遮罩三选只在分离 / 仅遮罩时出现，默认无损；有损提示说明半透明边缘风险。实际编码器与质量显示来自预览数据，GPU 回退原因进入任务说明和日志，语言刷新不清除选择。视频音频码率没有“默认”项，新设置 / 个人预设为 320 kbps，旧 0 不自动换算；音视频工具的“跟随源文件”0 保留。超分补帧用控件本身的标签说明分组，不增加重复小标题，组间分隔不变。
+
+Shared presentation owns render-time status/audio/fade labels, Intl display formats, encoder labels and preset-name projection. Stable status/option values drive behavior. Built-in default names use stable IDs/name keys; saved names and settings remain command/data authority. Explicit renames and personal names remain user content; legacy overrides without name intent conservatively keep their saved names. Display collisions annotate defaults with stable IDs, preserving user names and locale-independent saved-name conflict checks. PresetChoice/PresetList consume shared Select/Button/drag behavior. PresetManagement owns the related form/confirmation state, requests, sorting and six dialogs together; App keeps selection, the shared draft and its save chain. Explicit draft capabilities preserve live reads and the existing await order. Dialog elements retain stable Modal types and their original portal positions. Shared actions retain error descriptors; App formats them at render time. Plugin config carries displayName separately from raw name/settings, with legacy fallback in the DLL.
+
+VideoSettingsPanel / VideoSettings own video settings presentation through explicit values and callbacks; App owns draft targets, selected presets and persistence. EncodeFooter and VideoFeedback present the existing output/run and compatibility controls. EncodeQueue and RtxSettings receive only their relevant resource/status slices. The backend queue owns frozen settings and scheduling; encode-job owns one job's process/output transaction through explicit runner, commit and status/log capabilities. Service retains shared resources, stop state and evidence ownership.
+
 Empty queue invites file selection or drop. Probe errors stay on the item. Encoding errors expose persistent logs and retry. Hardware fallback is explicit with parameters shown before retry. Progress comes from engine output. Unknown remaining time is not invented. Processing continues other items on failure. Completed main video + failed mask is partial success.
 
 Modal dialogs are Radix-owned, labelled with title/description, Escape supported and focus restored. Delete preset confirmation initially focuses Cancel. Save errors keep dialog/input. Notice live region is polite, persistent field/job errors stay inline. Every interactive control uses native button/input/select semantics and visible focus, labelled icons and disabled states.
+
+EncodeQueue owns the pending software-retry task, confirmation and request together; App composes its stable dialog element at the original portal position. Encoder IDs, retry eligibility and request payloads remain technical data. App retains the shared draft/save chain and native-close lifecycle: running video or trim asks first, failed final persistence offers return or explicit discard, and an ordinary close flushes the latest edit. Locale updates refresh this shell and the open confirmations without resetting the task or issuing a retry. Without a desktop bridge, the renderer keeps the launch guidance visible instead of failing in the locale subscription.
+
+Electron main owns native picker options/results and restricted shell/clipboard actions. Picker labels use the saved locale when opened; user-supplied titles, paths, extensions and default technical filenames stay exact. Cancellation preserves data. Both allowlists keep their existing scope; preload returns a structured local failure for an unsupported invokeResult action without sending IPC, while the legacy invoke API still rejects. Copy-command validation retains its individual causes and prevents clipboard writes on failure. Coded IPC errors preserve raw diagnostics, including text resembling an Electron wrapper.
+
+About shows version/update and author/support sections without a bundled version changelog or Markdown renderer. The release-description link belongs to software updates: it opens Releases without a newer version and the validated download page when an update exists. Author/support content remains unchanged. The user approved a content-adaptive About height on 2026-10-27; other header dialogs retain their fixed height. The repository changelog stays maintained; portable builds do not copy it.
+
+The user removed the header/About tagline on 2026-10-28. Icon, product name and header version badge share a vertical center; About centers the mark/name against its version block. Encoder uses the existing primary accent in both titles, while MMD retains the text color. BrandMark is decorative beside the visible product name, uses unique SVG reference IDs per instance, and changes only the approved three colors with the theme. Native icons preserve the supplied size-specific drawings. The user approved the final screenshots and taskbar appearance on 2026-10-28; these brand changes do not alter modal focus or update actions.
+
+About labels, update status, byte progress and error wrappers refresh in place through the shared locale root. Its version request depends only on opening, so changing locale does not refetch or remount it. Error descriptors remain available for render-time formatting, and foreign diagnostics stay exact. The header entry always retains the literal English word Language alongside its translated name; update availability remains a code/parameter notification.
+
+Software update selection uses the release manifest and the actual Electron version. A matching runtime downloads a complete resources/app tree, allowing skipped-version updates; missing/invalid metadata or an unsuccessful app download falls back to the full portable package. About shows the selected package size and changes the size/progress to the full package on fallback, keeping the original failure readable. Both install modes preserve data and use the same backup/rollback transaction; app mode runs the staged helper with the existing executable and leaves the runtime unchanged. Packaging emits both ZIPs, two SHA-256 files and a version/runtime/size/hash manifest, and verifies identical application trees by extracting both archives.
+
+The About language section appears only when the shipped registry lists at least two locales; merely registering a test catalog does not expose it. The shared Select uses native language names and a translated system-mode option containing the backend preference policy's resolved language name. Selection invokes the existing atomic preference owner, disables while saving, and keeps the saved choice with an inline localized error on failure. The system resolution is separate from the explicit chosen locale; preparation still resolves reserved system mode to Chinese. Test registry/catalog injection stays outside portable builds. Language and support headings share the same size/weight, and only the new language field removes redundant section/field bottom spacing.
 
 App has one natural document scroll owner; queue page bounds dataset and log panel has internal scroll. Sticky action strip must not cover final form fields. Test narrow width, long paths, keyboard and reduced motion. Windows native select popup visual behavior accepted explicitly.
 
 Tool management is owned by backend/tools.cjs with the existing engine modal. Initial setup prompts only after locating managed tools; an installed offline version stays usable without network checks. Check/update are explicit actions. Download progress uses actual byte counts; unknown totals stay unknown. Errors persist and provide Retry. Active tasks and RTX verification exclude updates; staged releases activate only after validation, keeping old versions.
 
+EngineManagement owns the header entry, first-install prompt hook, dialog and tool-management requests through a narrow resource/activity projection and the existing shared actions. App retains state subscription, global modal routing, shared error/notice presentation and the task/detection log viewer. The prompt stays at its original hook position and only reacts to located; relocating or rechecking does not prompt again.
+
+Shared Modal honors an explicitly marked initial-focus control after mounting. It restores focus to the external opener on final close, preserves that opener across a direct dialog handoff, and returns a nested confirmation to its parent control. If deletion removes that control, focus stays inside the surviving parent dialog. A closing dialog never steals focus from a replacement dialog. This independently fixes the previously recorded body-focus and ignored Cancel-autofocus defects; native keyboard checks cover the engine/log handoff, About, save form and nested preset deletion.
+
 Compatibility is owned by core.compatibility and the shared IPC result. Suggestions atomically patch related fields; they retain Alpha and unrelated FPS/size/output preferences. Hardware Alpha is offered only after the real device probe. Inherently unsupported combinations (RTX plus Alpha) explain the conflict; no silent feature removal.
 
 Media extraction/merge uses a separate function page and the same form/button/status primitives. First streams are explicit. Video copying defaults to MP4 and falls back to MKV (logged) when the copied video or chosen audio does not fit MP4; WAV is audio-only or PCM within MKV. A waiting item removed during a run is withdrawn and not processed. Existing destinations and input overwrite are rejected. Cancel cleans temporary files; logs and errors persist. File details read ffprobe on actual files and show “尚未生成文件” before output exists.
 
+媒体页的状态、选项、Hi-Res 和反馈在原位随语言刷新；autoAlign 提示保留原始错误参数，显示时格式化，外部日志原样保留。完成行复用 OutputFiles，在用时后显示已提交的实际文件名，路径在 title 中、长名中部省略，重排队清除旧显示。新无声视频与合并输出使用固定英文后缀 _no_audio / _merged，不随 locale 改名；这是用户对原命名不变约束的明确更新，目录和重名编号规则保持原样。
+
 RTX filters are opt-in and NVEncC-only. Selected modes must pass a real test including output dimensions/FPS. VFG requires Windows, NVEncC 9.36+, Ada/Blackwell and installed NVIDIA model/runtime support. Changing relevant parameters invalidates the previous signature. A failed probe never falls back to ordinary resize/frame duplication.
+
+2026-10-29 音频交互：视频压制 / 合并的每次拖入优先替换选中项的音频；同批后续音频分配给尚未配对的项。队列集中“音频替换”和“音频对齐”，已应用以主题主色显示；右键及 Shift+F10 / 菜单键分别取消替换或对齐，取消对齐保留替换音频。详情不再重复替换路径和按钮。打开固定视频参考的对齐窗口只恢复已有值，不重新匹配；显式自动对齐按钮始终可用。波形静止 / 动效共用相同线宽和 reduced-motion 规则。对齐服务只缓存最近两个未变化文件的 PCM，最多64 MiB，文件签名或工具路径变化即失效，关闭服务释放；匹配结果不缓存。
+
+About 的“设置”提供程序级 autoAlignAudio，默认开，通过原 settings-store 保存，失败回滚，不进入预设 / 编码参数 / RTX 签名；关闭保留已有偏移，仅阻止后续选择 / 拖入及选择参考时的自动匹配，仍可手动触发。视频与合并始终按视频长度输出；提取音频的“与参考等长”选项，视频素材取参考与视频时长的较小值，纯音频允许按参考长度裁切 / 补静音。
+
+编码工具管理允许选择本地 ZIP / 7z；main 拥有单文件选择器与取消语义，tools 复用原安装事务。归档内识别 FFmpeg + ffprobe 或 NVEncC / NVEncC64（可同包），逐个执行版本验证后一次激活 active.json；无效包与失败保持原工具可用，本地包不标记官方哈希已验证，保留自身 SHA-256 与 source=local，文件名不作为版本。所有安装入口共享忙碌锁，正在编码 / 剪辑 / 探测时禁用。

@@ -12,9 +12,11 @@ const engineDir =
 function runCommand(c) {
   const { execFileSync } = require("node:child_process");
   const opts = { stdio: "pipe", maxBuffer: 1 << 30 };
-  if (!c.pipeFrom) return execFileSync(c.exe, c.args, opts);
-  const input = execFileSync(c.pipeFrom.exe, c.pipeFrom.args, opts);
-  return execFileSync(c.exe, c.args, { ...opts, input });
+  const { commandProcesses } = require("../backend/command-processes.cjs");
+  let input;
+  for (const p of commandProcesses(c))
+    input = execFileSync(p.exe, p.args, { ...opts, input });
+  return input;
 }
 module.exports = {
   runCommand,

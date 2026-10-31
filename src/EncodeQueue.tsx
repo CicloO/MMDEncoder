@@ -1,5 +1,14 @@
 import {
-  AudioLines,
+  t,
+  localeRuntime,
+  errorMessage,
+  stageMessage,
+  summaryMessage,
+  notification,
+} from "./i18n";
+import { serializeError } from "../locales/messages.mjs";
+import type { ErrorData, MessageDescriptor } from "./i18n";
+import {
   Check,
   ChevronLeft,
   ChevronRight,
@@ -15,11 +24,20 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
-import { Button, Select, useDragSort, PAGE_SIZE } from "./components";
+import { Button, Select, Modal, useDragSort, PAGE_SIZE } from "./components";
 import { AlignDialog } from "./AlignDialog";
-import { offsetText } from "./autoAlign";
+import { AlignmentIcon } from "./AlignmentIcon";
+import { sequenceDuration } from "../backend/audio-timing.mjs";
+import { OutputFiles } from "./OutputFiles";
+import { frameShiftText, offsetText } from "./autoAlign";
 import { FileMeta, metaSummary } from "./FileMeta";
-import { formatDuration, statusLabels, targetLabel } from "./presentation";
+import {
+  formatDuration,
+  statusLabel,
+  targetLabel,
+  videoName,
+} from "./presentation";
+import type { RequestCall } from "./actions";
 import type { Job, Settings, State } from "./types";
 
 // Frame rates a PNG sequence can play at (backend SEQUENCE_RATES).
@@ -27,13 +45,19 @@ const SEQUENCE_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120];
 // Time left from the pace so far, once there is enough to go on.
 const remaining = (j: Job) =>
   j.progress >= 2 && (j.elapsed || 0) >= 5
-    ? ` · 剩余约 ${formatDuration(((j.elapsed || 0) * (100 - j.progress)) / j.progress)}`
+    ? t("queue.remaining", {
+        time: formatDuration(
+          ((j.elapsed || 0) * (100 - j.progress)) / j.progress,
+        ),
+      })
     : "";
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
 // 视频压制 page, left column: the queue, its pages, and the selected video.
 export function EncodeQueue({
-  state,
+  engines,
+  running,
+  toolsBusy,
   jobs,
   job,
   s,
@@ -49,6 +73,8 @@ export function EncodeQueue({
   call,
   action,
   pickAudio,
+  aligningIds = new Set<string>(),
+  cancelAlignment = () => {},
   persist,
   openLog,
   setDetails,
@@ -57,7 +83,9 @@ export function EncodeQueue({
   setTab,
   setFallback,
 }: {
-  state: State;
+  engines: State["engines"];
+  running: boolean;
+  toolsBusy: boolean;
   jobs: Job[];
   job: Job | undefined;
   s: Settings;
@@ -70,14 +98,24 @@ export function EncodeQueue({
   doneCount: number;
   sortJob: ReturnType<typeof useDragSort>;
   add: () => void;
-  call: (action: string, payload?: unknown, message?: string) => Promise<any>;
-  action: (action: string, payload?: unknown, message?: string) => void;
+  call: (
+    action: string,
+    payload?: unknown,
+    message?: string | MessageDescriptor,
+  ) => Promise<any>;
+  action: (
+    action: string,
+    payload?: unknown,
+    message?: string | MessageDescriptor,
+  ) => void;
   pickAudio: (job: Job) => void;
+  aligningIds?: ReadonlySet<string>;
+  cancelAlignment?: (id: string) => unknown;
   persist: (settings: Settings) => Promise<void>;
   openLog: (job: Job) => void;
   setDetails: (details: any) => void;
   setModal: (modal: string) => void;
-  setError: (message: string) => void;
+  setError: (message: string | ErrorData) => void;
   setTab: (tab: string) => void;
   setFallback: (job: Job) => void;
 }) {
@@ -86,41 +124,44 @@ export function EncodeQueue({
       <FileMeta meta={job.meta} />
     ) : (
       <p className="muted">
-        {job?.status === "probing"
-          ? "正在读取视频信息…"
-          : "选中视频后显示分辨率、帧率与音轨信息。"}
+        {job?.status === "probing" ? t("queue.reading") : t("queue.metaEmpty")}
       </p>
     );
   // The video whose replacement audio is being aligned (音频对齐).
   const [alignId, setAlignId] = useState("");
   const aligning = jobs.find((j) => j.id === alignId);
+  const openAlignment = (id: string) => {
+    cancelAlignment(id);
+    setAlignId(id);
+  };
   return (
-    <section className="queue-column" aria-label="视频队列">
+    <section className="queue-column" aria-label={t("queue.title")}>
       <div className="section-heading">
         <div>
-          <span className="eyebrow">工作区</span>
+          <span className="eyebrow">{t("queue.workspace")}</span>
           <h2>
-            视频队列 <span className="count">{jobs.length}</span>
+            {t("queue.title")}
+            <span className="count">{localeRuntime.number(jobs.length)}</span>
           </h2>
         </div>
         <Button variant="primary" onClick={add} disabled={busy}>
           <Plus size={17} />
-          添加视频
+          {t("queue.add")}
         </Button>
       </div>
       <div className={`queue-panel ${drag ? "dragging" : ""}`}>
         <div className="queue-toolbar">
           <span>
-            <FileVideo size={15} /> 源文件
+            <FileVideo size={15} /> {t("queue.source")}
           </span>
           <Button
             variant="ghost"
             disabled={!doneCount}
             onClick={() =>
-              action("clearCompleted", undefined, "已移除完成项，输出文件保留")
+              action("clearCompleted", undefined, notification("VIDEO_CLEARED"))
             }
           >
-            清除已完成
+            {t("queue.clear")}
           </Button>
         </div>
         {!jobs.length ? (
@@ -129,17 +170,17 @@ export function EncodeQueue({
               <Film size={42} />
               <div className="frame-ticks" />
             </div>
-            <h3>把视频放进来</h3>
+            <h3>{t("queue.emptyTitle")}</h3>
             <p>
-              拖入多个视频，或从文件夹中选择
+              {t("queue.emptyFiles")}
               <br />
-              PNG 序列：拖入文件夹，或选其中任意一张。
+              {t("queue.emptySequence")}
             </p>
             <Button onClick={add} disabled={busy}>
               <FolderOpen size={17} />
-              选择视频文件
+              {t("queue.pickFiles")}
             </Button>
-            <small>AVI · MOV · MP4 · MKV · WebM 等常见视频格式</small>
+            <small>{t("queue.formats")}</small>
           </div>
         ) : (
           <ol className="job-list">
@@ -169,11 +210,19 @@ export function EncodeQueue({
                       </small>
                     </span>
                     <span className="job-copy">
-                      <strong title={j.name}>{j.name}</strong>
+                      <strong title={videoName(j)}>{videoName(j)}</strong>
                       <span className="job-sub">
-                        {j.meta ? metaSummary(j.meta) : "正在读取素材信息"}
+                        {j.meta ? metaSummary(j.meta) : t("queue.metaReading")}
                         {j.audioPath &&
-                          ` · 音频：${baseName(j.audioPath)}${j.audioOffset !== undefined ? " · 对齐 " + offsetText(j.audioOffset) : ""}`}
+                          (j.audioOffset !== undefined
+                            ? t("queue.audioAligned", {
+                                file: baseName(j.audioPath),
+                                offset: offsetText(j.audioOffset),
+                              })
+                            : t("queue.audioNamed", {
+                                file: baseName(j.audioPath),
+                              }))}
+                        {j.audioPath && frameShiftText(j.audioShiftFrames)}
                       </span>
                       {(() => {
                         const own = j.ownSettings;
@@ -181,9 +230,15 @@ export function EncodeQueue({
                           own && (
                             <span
                               className="job-target"
-                              title={`单独设置${own.presetName ? "：" + own.presetName : ""}`}
+                              title={
+                                own.presetName
+                                  ? t("queue.ownPreset", {
+                                      name: own.presetName,
+                                    })
+                                  : t("video.own")
+                              }
                             >
-                              → {targetLabel(own, state.engines)}
+                              → {targetLabel(own, engines)}
                             </span>
                           )
                         );
@@ -192,21 +247,59 @@ export function EncodeQueue({
                         {j.status === "encoding" && (
                           <LoaderCircle size={12} className="spin" />
                         )}
-                        {statusLabels[j.status] || j.status}
+                        {statusLabel(j.status)}
                         {j.status === "encoding"
-                          ? ` · ${Math.round(j.progress)}% · ${j.stage || "编码"} · ${formatDuration(j.elapsed || 0)}${remaining(j)}`
+                          ? t("queue.progress", {
+                              progress: localeRuntime.number(
+                                Math.round(j.progress),
+                              ),
+                              stage: stageMessage(
+                                j.stage || {
+                                  stage: "video_encoding",
+                                  params: {},
+                                },
+                              ),
+                              elapsed: formatDuration(j.elapsed || 0),
+                              remaining: remaining(j),
+                            })
                           : j.status === "done" && j.elapsed
-                            ? ` · 用时 ${j.elapsed < 1 ? "不到 1 秒" : formatDuration(j.elapsed)}`
+                            ? t("queue.completedTime", {
+                                time:
+                                  j.elapsed < 1
+                                    ? t("queue.lessThanSecond")
+                                    : formatDuration(j.elapsed),
+                              })
                             : ""}
+                        {!["encoding", "ready", "probing", "invalid"].includes(
+                          j.status,
+                        ) && (
+                          <OutputFiles
+                            output={j.output}
+                            maskOutput={j.maskOutput}
+                          />
+                        )}
                       </span>
+                      {j.noteData && (
+                        <span className="job-note">
+                          {summaryMessage(j.noteData)}
+                        </span>
+                      )}
                     </span>
                   </button>
                   {!["encoding", "done"].includes(j.status) && (
                     <Button
-                      variant="ghost icon"
-                      aria-label={`为 ${j.name} 选择音频`}
-                      title="替换音频"
-                      disabled={state.running}
+                      variant={`ghost icon${j.audioPath ? " active" : ""}`}
+                      aria-label={t("queue.pickAudio", { name: videoName(j) })}
+                      title={t("queue.replaceAudioHint")}
+                      aria-keyshortcuts="Shift+F10"
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        if (!running) {
+                          cancelAlignment(j.id);
+                          action("setAudio", { id: j.id, path: "" });
+                        }
+                      }}
+                      disabled={running}
                       onClick={() => pickAudio(j)}
                     >
                       <Music size={16} />
@@ -216,29 +309,38 @@ export function EncodeQueue({
                   {!["encoding", "done"].includes(j.status) && j.audioPath && (
                     <Button
                       variant={`ghost icon${j.audioOffset !== undefined ? " active" : ""}`}
-                      aria-label={`对齐 ${j.name} 的替换音频`}
+                      aria-label={t("queue.alignAudio", { name: videoName(j) })}
                       title={
                         j.meta?.audio
-                          ? "音频对齐：以视频自带的声音为参考检视、微调"
-                          : "这个视频没有自带的声音，无法对齐"
+                          ? t("queue.alignCancelHint")
+                          : t("queue.manualAlignmentHint")
                       }
-                      disabled={state.running || !j.meta?.audio}
-                      onClick={() => setAlignId(j.id)}
+                      aria-keyshortcuts="Shift+F10"
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        if (!running) {
+                          cancelAlignment(j.id);
+                          action("setAudioOffset", { id: j.id, offset: null });
+                        }
+                      }}
+                      disabled={running || !j.meta}
+                      aria-busy={aligningIds.has(j.id)}
+                      onClick={() => openAlignment(j.id)}
                     >
-                      <AudioLines size={16} />
+                      <AlignmentIcon active={aligningIds.has(j.id)} />
                     </Button>
                   )}
                   {["done", "cancelled"].includes(j.status) && (
                     <Button
                       variant="ghost icon"
-                      aria-label={`重新导出 ${j.name}`}
-                      title="重新导出：放回队列，按当前设置压制，已有文件不覆盖"
-                      disabled={state.running}
+                      aria-label={t("queue.requeue", { name: videoName(j) })}
+                      title={t("queue.requeueHint")}
+                      disabled={running}
                       onClick={() =>
                         action(
                           "requeue",
                           { id: j.id },
-                          "已放回队列，开始压制时使用当前设置",
+                          notification("VIDEO_REQUEUED"),
                         )
                       }
                     >
@@ -247,9 +349,9 @@ export function EncodeQueue({
                   )}
                   <Button
                     variant="ghost icon"
-                    aria-label={`移除 ${j.name}`}
-                    title="从队列移除"
-                    disabled={j.status === "encoding" || state.running}
+                    aria-label={t("queue.remove", { name: videoName(j) })}
+                    title={t("queue.removeHint")}
+                    disabled={j.status === "encoding" || running}
                     onClick={() => action("remove", { id: j.id })}
                   >
                     <X size={16} />
@@ -261,7 +363,9 @@ export function EncodeQueue({
                     <progress
                       max={100}
                       value={j.progress}
-                      aria-label={`${j.name} 压制进度`}
+                      aria-label={t("queue.progressLabel", {
+                        name: videoName(j),
+                      })}
                     />
                   )}
                 </li>
@@ -271,20 +375,25 @@ export function EncodeQueue({
         {jobs.length > 0 && (
           <div className="queue-pagination">
             <span>
-              {page * PAGE_SIZE + 1}–
-              {Math.min((page + 1) * PAGE_SIZE, jobs.length)} / {jobs.length}{" "}
-              个视频
+              {t("queue.pageCount", {
+                count: jobs.length,
+                from: localeRuntime.number(page * PAGE_SIZE + 1),
+                to: localeRuntime.number(
+                  Math.min((page + 1) * PAGE_SIZE, jobs.length),
+                ),
+                total: localeRuntime.number(jobs.length),
+              })}
             </span>
             <div>
               <Button
-                aria-label="上一页"
+                aria-label={t("queue.previous")}
                 disabled={page === 0}
                 onClick={() => setPage(page - 1)}
               >
                 <ChevronLeft size={16} />
               </Button>
               <Button
-                aria-label="下一页"
+                aria-label={t("queue.next")}
                 disabled={page + 1 >= pageCount}
                 onClick={() => setPage(page + 1)}
               >
@@ -297,49 +406,51 @@ export function EncodeQueue({
       {job && (
         <section className="detail-card">
           <div className="detail-title">
-            <span className="eyebrow">当前素材</span>
+            <span className="eyebrow">{t("queue.current")}</span>
             <div className="detail-actions">
               <Button
                 variant="ghost"
-                title="转换前 / 后的 ffprobe 参数"
-                disabled={!!state.tools?.busy}
+                title={t("queue.detailsHint")}
+                disabled={toolsBusy}
                 onClick={async () => {
                   setDetails(null);
                   setModal("details");
                   try {
                     setDetails(await call("details", { id: job.id }));
                   } catch (e) {
-                    setError((e as Error).message);
+                    setError(serializeError(e));
                   }
                 }}
               >
                 <Info size={14} />
-                文件详情
+                {t("queue.details")}
               </Button>
               <Button
                 variant="ghost"
                 // Before encoding: the source; once written: the result.
-                title={job.output ? "打开成片所在位置" : "打开源文件所在位置"}
+                title={
+                  job.output ? t("queue.revealOutput") : t("queue.revealSource")
+                }
                 onClick={() =>
                   action("reveal", { path: job.output || job.path })
                 }
               >
                 <FolderOpen size={14} />
-                打开位置
+                {t("queue.reveal")}
               </Button>
             </div>
           </div>
-          <h3 title={job.name}>{job.name}</h3>
+          <h3 title={videoName(job)}>{videoName(job)}</h3>
           {renderMeta()}
           {job.sequence && (
             // Pictures carry no frame rate: the user says how fast they play.
             <div className="sequence-rate">
               <Select
                 id="sequence-fps"
-                label="序列帧率"
+                label={t("queue.sequenceFPS")}
                 value={String(job.sequence.fps)}
                 disabled={
-                  state.running ||
+                  running ||
                   ![
                     "ready",
                     "invalid",
@@ -349,10 +460,18 @@ export function EncodeQueue({
                     "partial",
                   ].includes(job.status)
                 }
-                hint={`${job.sequence.count} 张图片按这个帧率播放，时长随之改变。`}
+                hint={t("queue.sequenceHint", {
+                  count: job.sequence.count,
+                  countText: localeRuntime.number(job.sequence.count),
+                })}
                 options={SEQUENCE_RATES.map((r) => ({
                   value: String(r),
-                  label: `${r} FPS`,
+                  label: t("video.fpsOption", {
+                    fps: localeRuntime.number(r, {
+                      useGrouping: false,
+                      maximumFractionDigits: 3,
+                    }),
+                  }),
                 }))}
                 onChange={(v) =>
                   action("setSequenceFps", {
@@ -369,39 +488,9 @@ export function EncodeQueue({
           >
             {job.sequence ? job.sequence.pattern.replace(/%%/g, "%") : job.path}
           </p>
-          {job.audioPath && (
-            <div className="replace-audio">
-              <Music size={14} />
-              <span className="path-text" title={job.audioPath}>
-                替换音频：{job.audioPath}
-                {job.audioOffset !== undefined &&
-                  ` · 对齐 ${offsetText(job.audioOffset)}`}
-              </span>
-              <Button
-                variant="ghost"
-                disabled={state.running || !job.meta?.audio}
-                title={
-                  job.meta?.audio
-                    ? "以视频自带的声音为参考，检视、微调替换音频的对齐"
-                    : "这个视频没有自带的声音，无法对齐"
-                }
-                onClick={() => setAlignId(job.id)}
-              >
-                <AudioLines size={14} />
-                对齐
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={state.running}
-                onClick={() => action("setAudio", { id: job.id, path: "" })}
-              >
-                改回原音轨
-              </Button>
-            </div>
-          )}
           {job.error && (
             <div className="inline-error" role="alert">
-              {job.error}
+              {errorMessage(job.errorData || job.error)}
             </div>
           )}
           {["failed", "partial", "cancelled", "invalid"].includes(
@@ -410,7 +499,7 @@ export function EncodeQueue({
             <div className="recovery">
               <Button onClick={() => openLog(job)}>
                 <Terminal size={14} />
-                查看日志
+                {t("queue.logs")}
               </Button>
               <Button
                 onClick={() => {
@@ -418,27 +507,24 @@ export function EncodeQueue({
                   document.getElementById("encoder")?.focus();
                 }}
               >
-                调整参数
+                {t("queue.adjust")}
               </Button>
               <Button
-                disabled={state.running}
+                disabled={running}
                 onClick={() => {
                   if (s)
                     persist(s)
                       .then(() => call("retry", { id: job.id }))
-                      .catch((e) => setError(e.message));
+                      .catch((e) => setError(serializeError(e)));
                 }}
               >
-                重试
+                {t("queue.retry")}
               </Button>
               {job.status === "failed" &&
-                !/磁盘|空间|权限|ENOENT|EACCES|ENOSPC/.test(job.error || "") &&
+                job.softwareRetry !== false &&
                 /nvenc|qsv|amf/.test(job.settings?.encoder || s.encoder) && (
-                  <Button
-                    disabled={state.running}
-                    onClick={() => setFallback(job)}
-                  >
-                    改用软件编码重试
+                  <Button disabled={running} onClick={() => setFallback(job)}>
+                    {t("queue.softwareRetry")}
                   </Button>
                 )}
             </div>
@@ -450,8 +536,8 @@ export function EncodeQueue({
           <Info size={17} />
         </span>
         <div>
-          <strong>从素材到成片，路径清晰可见</strong>
-          <p>原视频始终保留。同名输出自动编号，每个任务独立记录结果。</p>
+          <strong>{t("queue.noteTitle")}</strong>
+          <p>{t("queue.note")}</p>
         </div>
       </div>
       <AlignDialog
@@ -460,21 +546,99 @@ export function EncodeQueue({
         onClose={() => setAlignId("")}
         targetPath={aligning?.audioPath}
         fixedReference={aligning?.path}
+        frameShift
+        fixedTiming={
+          aligning?.meta && {
+            fpsText: String(
+              aligning.sequence?.fpsText ||
+                aligning.meta.fpsText ||
+                aligning.meta.fps,
+            ),
+            fallback: false,
+            hasVideo: true,
+            hasAudio: !!aligning.meta.audio && !aligning.sequence,
+            duration:
+              sequenceDuration(aligning.sequence) ||
+              aligning.meta.videoDuration ||
+              aligning.meta.duration,
+          }
+        }
         initial={
-          aligning?.audioOffset !== undefined
-            ? { offset: aligning.audioOffset }
+          aligning &&
+          (aligning.audioOffset !== undefined ||
+            aligning.audioShiftFrames !== undefined)
+            ? {
+                offset: aligning.audioOffset || 0,
+                shiftFrames: aligning.audioShiftFrames,
+              }
             : undefined
         }
-        description={`把替换音频对齐到“${aligning?.name || ""}”自带的声音；压制时按这里的结果截取或补静音，时长仍与视频相同。`}
+        description={t("queue.alignDescription", {
+          name: aligning ? videoName(aligning) : "",
+        })}
         onApply={(a) =>
-          call("setAudioOffset", { id: aligning!.id, offset: a.offset })
+          call("setAudioOffset", {
+            id: aligning!.id,
+            offset: a.offset,
+            shiftFrames: a.shiftFrames,
+            expectedAudioPath: aligning!.audioPath,
+          })
         }
         onClear={
-          aligning?.audioOffset !== undefined
+          aligning &&
+          (aligning.audioOffset !== undefined ||
+            aligning.audioShiftFrames !== undefined)
             ? () => call("setAudioOffset", { id: aligning.id, offset: null })
             : undefined
         }
       />
     </section>
   );
+}
+
+// Queue recovery owns its pending task, confirmation and request together.
+// App composes the element at its original portal position.
+export function useSoftwareRetry(call: RequestCall, error: string) {
+  const [fallback, setFallback] = useState<Job | null>(null);
+  return {
+    open: setFallback,
+    dialog: (
+      <Modal
+        error={error}
+        open={!!fallback}
+        onClose={() => setFallback(null)}
+        title={t("queue.softwareRetry.title")}
+        description={t("queue.softwareRetry.description")}
+      >
+        <p>
+          {t("queue.softwareRetry.parameters", {
+            encoder: fallback?.settings?.encoder.includes("hevc")
+              ? "HEVC · libx265"
+              : fallback?.settings?.encoder.includes("av1")
+                ? "AV1 · libsvtav1"
+                : "H.264 · libx264",
+            preset: fallback?.settings?.encoder.includes("av1")
+              ? t("queue.softwareRetry.av1Preset")
+              : "medium",
+          })}
+        </p>
+        <div className="modal-actions">
+          <Button onClick={() => setFallback(null)}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={async () => {
+              try {
+                await call("retry", { id: fallback?.id, software: true });
+                setFallback(null);
+              } catch {}
+            }}
+          >
+            {t("queue.softwareRetry.confirm")}
+          </Button>
+        </div>
+      </Modal>
+    ),
+  };
 }

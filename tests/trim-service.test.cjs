@@ -110,8 +110,11 @@ test(
       });
       await until(() => !st().running);
       assert.equal(st().error, "");
+      assert.equal(st().errorData, null);
+      assert.equal(st().stage.stage, "trim_completed");
+      assert.ok(Number.isFinite(st().elapsed) && st().elapsed >= 0);
       const out = st().output;
-      assert.equal(out, path.join(dir, "Encoded", "舞台 A_剪辑.mp4"));
+      assert.equal(out, path.join(dir, "Encoded", "舞台 A_trimmed.mp4"));
       assert.equal(await frames(out), 60 + 30);
 
       // A second export never overwrites.
@@ -119,10 +122,15 @@ test(
         audio: { mode: "none" },
         location: "encoded",
       });
+      assert.equal(
+        st().elapsed,
+        undefined,
+        "a new export clears the previous duration",
+      );
       await until(() => !st().running);
       assert.equal(
         st().output,
-        path.join(dir, "Encoded", "舞台 A_剪辑 (2).mp4"),
+        path.join(dir, "Encoded", "舞台 A_trimmed (2).mp4"),
       );
 
       // ProRes joined to H.264: refused with a reason, nothing written.
@@ -132,11 +140,21 @@ test(
           audio: { mode: "none" },
           location: "source",
         }),
-        /不能无损拼接：.*编码/,
+        (e) => {
+          assert.equal(e.code, "TRIM_JOIN_MISMATCH");
+          assert.match(e.message, /不能无损拼接：.*编码/);
+          assert.equal(typeof e.params.differences[0].key, "string");
+          return true;
+        },
       );
 
       // Cancel a running export: no output is left behind.
       await svc.invoke("trimClear");
+      assert.equal(
+        st().elapsed,
+        undefined,
+        "clearing also drops the completed duration",
+      );
       await trim.run(ff, [
         "-v",
         "error",
@@ -157,9 +175,10 @@ test(
       });
       await svc.invoke("trimCancel");
       await until(() => !st().running);
-      assert.equal(st().stage, "已取消");
+      assert.equal(st().stage.stage, "trim_cancelled");
+      assert.equal(st().elapsed, undefined);
       assert.equal(st().output, "");
-      assert.equal(fs.existsSync(path.join(dir, "long_剪辑.mov")), false);
+      assert.equal(fs.existsSync(path.join(dir, "long_trimmed.mov")), false);
       assert.deepEqual(
         fs.readdirSync(dir).filter((n) => n.startsWith(".mmd-trim-")),
         [],
@@ -237,7 +256,7 @@ test(
       await until(() => svc.getState().located && !svc.getState().detecting);
       await svc.invoke("trimAdd", { paths: [file] });
       let [clip] = st().clips;
-      assert.equal(clip.smartBlocker, "");
+      assert.equal(clip.smartBlocker, null);
       assert.deepEqual([clip.mmdStart, clip.mmdStartFrom], [400, "tag"]);
       await svc.invoke("trimSmart", { smart: true });
       await svc.invoke("trimSet", { id: clip.id, from: 44, to: 101 });
@@ -348,8 +367,8 @@ test(
       svc.dispose();
       disposed = true;
       await until(() => !st().running);
-      assert.equal(st().stage, "已取消");
-      assert.equal(fs.existsSync(path.join(dir, "long_剪辑.mov")), false);
+      assert.equal(st().stage.stage, "trim_cancelled");
+      assert.equal(fs.existsSync(path.join(dir, "long_trimmed.mov")), false);
     } finally {
       if (!disposed) svc.dispose();
       await new Promise((r) => setTimeout(r, 300));

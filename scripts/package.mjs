@@ -63,6 +63,9 @@ try {
 await fs.mkdir(dest, { recursive: true });
 const electronExe = require("electron");
 const electronDir = path.dirname(electronExe);
+const electronVersion = (
+  await fs.readFile(path.join(electronDir, "version"), "utf8")
+).trim();
 await fs.cp(electronDir, dest, {
   recursive: true,
   filter: (source) =>
@@ -103,7 +106,6 @@ execFileSync(
 const appDir = path.join(dest, "resources", "app");
 for (const [from, to] of [
   ["README.md", "README.md"],
-  ["docs/CHANGELOG.md", "CHANGELOG.md"],
   ["docs/THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"],
   // The root LICENSE beside the exe is Electron's own.
   ["LICENSE", "LICENSE-MMDEncoder.txt"],
@@ -145,6 +147,7 @@ await fs.writeFile(
   JSON.stringify({
     name: "mmd-encoder",
     version,
+    electronVersion,
     main: "desktop/main.cjs",
   }),
 );

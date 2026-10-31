@@ -1,0 +1,9 @@
+{
+  "builtin-4k": "preset.default4kHardware",
+  "builtin-4k-sw": "preset.default4kSoftware",
+  "builtin-1080": "preset.default1080Hardware",
+  "builtin-1080-sw": "preset.default1080Software",
+  "builtin-alpha-mask": "preset.splitAlpha",
+  "builtin-alpha": "preset.preserveAlpha",
+  "builtin-prores422": "preset.editing"
+}

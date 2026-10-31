@@ -1,3 +1,8 @@
+import type {
+  ErrorData,
+  MessageDescriptor,
+  StageDescriptor,
+} from "../locales/messages.mjs";
 export type Settings = {
   container: string;
   encoder: string;
@@ -17,6 +22,7 @@ export type Settings = {
   audio: string;
   audioBitrate: number;
   alphaMask: boolean;
+  maskFormat: "lossless" | "gpu-lossy" | "x264-lossy";
   // Hi-Res audio (FLAC / PCM): 24-bit, twice the rate below 48 kHz.
   hiRes: boolean;
   // A keyframe every second (automatic GOP only), for lossless cutting.
@@ -51,6 +57,7 @@ export type Meta = {
   fps: number | string;
   fpsText: string;
   duration: number;
+  videoDuration?: number;
   size: number;
   // PNG sequence: size still being added up.
   sizing?: boolean;
@@ -78,12 +85,16 @@ export type Job = {
   id: string;
   path: string;
   name: string;
+  nameData?: MessageDescriptor;
   status: string;
   progress: number;
-  stage?: string;
+  stage?: string | StageDescriptor;
   elapsed?: number;
   meta?: Meta;
   error?: string;
+  errorData?: ErrorData;
+  softwareRetry?: boolean;
+  noteData?: MessageDescriptor;
   log?: string;
   output?: string;
   maskOutput?: string;
@@ -96,12 +107,14 @@ export type Job = {
   audioDuration?: number;
   // 音频对齐 of the replacement with the video's own sound (seconds).
   audioOffset?: number;
+  audioShiftFrames?: number;
   // PNG sequence source: FFmpeg pattern and the frame rate the user gave it.
   sequence?: {
     pattern: string;
     start: number;
     count: number;
     fps: number;
+    fpsText?: string;
   };
 };
 // Video metadata, or an audio-only summary for audio files on the media page.
@@ -119,21 +132,24 @@ export type TrimClip = {
   name: string;
   status: "indexing" | "ready" | "invalid";
   error?: string;
+  errorData?: ErrorData;
   codec?: string;
   width?: number;
   height?: number;
   fps?: { num: number; den: number };
+  // Nonzero first-video PTS maps native playback to the zero-based trim clock.
+  videoStartTime?: number;
   frames?: number;
   // Frames a cut may start at, or "all" when every frame can.
   cuts?: number[] | "all";
-  refused?: string[];
+  refused?: (ErrorData | string)[];
   // MMD frame of the video's first frame and where that came from.
   mmdStart?: number | null;
   mmdStartFrom?: "tag" | "name" | "manual" | "";
   // Encode settings recorded by MMDEncoder (needed for smart cut).
   encoding?: Record<string, unknown> | null;
-  // Why smart cut cannot be used on this clip ("" when it can).
-  smartBlocker?: string;
+  // Structured reason, null when smart cut can be used.
+  smartBlocker?: ErrorData | string | null;
   from?: number;
   to?: number;
   requested?: { from: number; to: number };
@@ -142,6 +158,7 @@ export type TrimClip = {
 export type MediaJob = {
   meta?: MediaMeta;
   metaError?: string;
+  metaErrorData?: ErrorData;
   id: string;
   path: string;
   name: string;
@@ -150,13 +167,21 @@ export type MediaJob = {
   audioPath?: string;
   // 音频对齐 of the added audio with the video's own sound (merge).
   audioOffset?: number;
+  audioShiftFrames?: number;
   // 音频对齐: line the extracted audio up with a reference (offset seconds,
   // > 0 cut, < 0 padded; length: end with the reference).
-  align?: { reference: string; offset: number; length?: number };
+  align?: {
+    reference: string;
+    offset: number;
+    length?: number;
+    shiftFrames?: number;
+    fpsText?: string;
+  };
   // The replacement audio's parameters, read when it is chosen.
   audioMeta?: Meta["audio"];
   output?: string;
   error?: string;
+  errorData?: ErrorData;
   log?: string;
   elapsed?: number;
 };
@@ -167,6 +192,10 @@ export type Preset = {
   // undefined = shown; true / false = set with the hide / show button
   hidden?: boolean;
   edited?: boolean;
+  nameKey?: string;
+  nameSource?: "builtin" | "user";
+  nameDisambiguation?: boolean;
+  settingsEdited?: boolean;
   settings: Settings;
 };
 export type Engine = {
@@ -176,8 +205,18 @@ export type Engine = {
   backend: string;
   codec: string;
   depths: number[];
+  labelKey?: string;
+  labelParams?: { codec: string; backend: string };
 };
 export type State = {
+  preferences: {
+    locale: string | null;
+    theme: "light" | "dark";
+    accent: "blue" | "cyan";
+    autoAlignAudio: boolean;
+  };
+  locale: string;
+  systemLocale: string;
   jobs: Job[];
   settings: Settings;
   presets: Preset[];
@@ -191,6 +230,8 @@ export type State = {
     busy: boolean;
     verified: boolean;
     message: string;
+    messageData?: MessageDescriptor;
+    errorData?: ErrorData;
     signature: string;
   };
   mediaJobs: MediaJob[];
@@ -200,17 +241,22 @@ export type State = {
     running: boolean;
     smart: boolean;
     progress: number;
-    stage: string;
+    stage: StageDescriptor | string;
     output: string;
     error: string;
+    errorData?: ErrorData | null;
+    elapsed?: number;
   };
   mmd: {
     presetId: string;
     followMmd: boolean;
     audioFade: number;
+    audioShiftFrames: number;
+    audioAutoShift: boolean;
     maskMode: "off" | "with" | "only";
     rangeSuffix?: boolean;
     error: string;
+    errorData?: ErrorData | null;
     interrupted: {
       id: string;
       output: string;
@@ -226,7 +272,9 @@ export type State = {
       upToDate: boolean;
       path: string;
     };
-    test: { ok: boolean; at: string; message: string } | null;
+    test:
+      | (Partial<ErrorData> & { ok: boolean; at: string; message: string })
+      | null;
     lastExport: {
       ok: boolean;
       at: string;
@@ -234,6 +282,7 @@ export type State = {
       mask?: string;
       audio?: string;
       error?: string;
+      errorData?: ErrorData;
       startFrame?: number;
       frames?: number;
       // Seconds; written by plugins from 1.4.2 on.
@@ -256,29 +305,46 @@ export type State = {
     libplacebo?: boolean;
   };
   notice?: string;
+  noticeData?: MessageDescriptor;
   tools?: {
     busy: boolean;
     phase: string;
     message: string;
+    messageData?: MessageDescriptor | null;
+    errorData?: ErrorData | null;
     received: number;
     total: number;
     root: string;
-    installed: Record<string, { version: string; verifiedHash: boolean }>;
+    installed: Record<
+      string,
+      { version: string; verifiedHash: boolean; source?: "local" }
+    >;
     available: { id: string; version: string }[];
   };
 };
 export type Preview = {
+  maskEncoding?: {
+    format: string;
+    encoder: string;
+    gpu: boolean;
+    quality: number;
+    note?: MessageDescriptor;
+  };
   dimensions?: { width: number; height: number } | null;
   summary: string;
+  summaryData?: MessageDescriptor;
   output: string;
   maskOutput?: string;
   command: string;
   errors: string[];
+  issues?: ErrorData[];
 };
 declare global {
   const __APP_VERSION__: string;
   interface Window {
     encoder: {
+      initialTheme?: "light" | "dark";
+      initialAccent?: "blue" | "cyan";
       invokeResult: (action: string, payload?: unknown) => Promise<any>;
       invoke: (action: string, payload?: unknown) => Promise<any>;
       onCloseRequest: (fn: () => void) => () => void;

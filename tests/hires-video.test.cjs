@@ -42,16 +42,30 @@ test("Hi-Res needs FLAC or PCM; adding the setting does not mark built-ins as ch
   // Settings saved by 1.4.2 recorded built-ins' fingerprints without hiRes.
   const shipped = core.BUILTINS[0];
   // 1.4.2 had neither hiRes nor editFriendly (nor upscaler, added later).
-  const { hiRes, editFriendly, upscaler, audioFade, artcnnModel, ...before } =
-    shipped.settings;
+  const {
+    hiRes,
+    editFriendly,
+    upscaler,
+    audioFade,
+    artcnnModel,
+    maskFormat,
+    ...before
+  } = shipped.settings;
   assert.equal(upscaler, "lanczos");
   assert.equal(editFriendly, false);
   assert.equal(hiRes, false);
+  assert.equal(maskFormat, "lossless");
   const old = crypto
     .createHash("sha256")
     .update(JSON.stringify([shipped.name, before]))
     .digest("hex")
     .slice(0, 16);
+  assert.equal(
+    old,
+    require("./fixtures/i18n/preset-baseline.json").presets.find(
+      (p) => p.id === shipped.id,
+    ).fingerprint,
+  );
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "hires-fp-"));
   try {
     fs.mkdirSync(path.join(root, "data"));

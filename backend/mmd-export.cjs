@@ -15,164 +15,46 @@ const path = require("node:path");
 const { execFile } = require("node:child_process");
 const core = require("./core.cjs");
 const media = require("./media.cjs");
+const { appError, summary, serializeError } = require("./errors.cjs");
 
-const baseDir = () =>
-  path.join(
-    process.env.LOCALAPPDATA ||
-      path.join(require("node:os").homedir(), "AppData", "Local"),
-    "MMDEncoder",
-    "mmd-plugin",
-  );
-const configPath = () => path.join(baseDir(), "mmd-export.json");
+const {
+  baseDir,
+  configPath,
+  selectionPath,
+  FADES,
+  MASK_MODES,
+  presetMask,
+  writeAtomic,
+  readSelection,
+  writeSelection,
+  writeConfig,
+  readConfig,
+  unsupported,
+  validateAudioShift,
+} = require("./mmd-config.cjs");
 const historyPath = () => path.join(baseDir(), "exports.jsonl");
 // MMD's timeline runs at 30 fps whatever the export frame rate is.
 const TIMELINE_FPS = 30;
+function audioShift(config, startFrame) {
+  const manual = validateAudioShift(config.audioShiftFrames ?? 0);
+  const automatic = config.audioAutoShift !== false && startFrame === 1 ? 1 : 0;
+  const frames = validateAudioShift(manual + automatic);
+  const signed = (value) => (value >= 0 ? "+" : "") + value;
+  return {
+    frames,
+    data: summary("MMD_AUDIO_SHIFT", {
+      frames: signed(frames),
+      manual: signed(manual),
+      automatic: signed(automatic),
+    }),
+  };
+}
 // Placeholder FOURCC the plugin writes into the AVI instead of real frames.
 const PLACEHOLDER_TAG = "MMDE";
 
-// The choice of preset and options. Both MMDEncoder and the plugin's settings
-// window in MMD ("詳細設定") write it; the newer savedAt wins, and MMDEncoder
-// picks up a choice saved in MMD as soon as it lands.
-const selectionPath = () => path.join(baseDir(), "mmd-selection.json");
-const FADES = [0, 0.5, 1, 2];
-// Alpha mask: none, next to the video (<name>_alpha.<ext>), or the mask alone.
-// The choice overrides the preset's own alpha setting.
-const MASK_MODES = ["off", "with", "only"];
-// What a preset would do by itself; the default when a preset is picked.
-const presetMask = (s) =>
-  s?.alphaMode === "mask" ? "only" : s?.alphaMask ? "with" : "off";
-
-function writeAtomic(file, data) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = file + "." + process.pid + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-  fs.renameSync(tmp, file);
-}
-
-function readSelection() {
-  try {
-    const s = JSON.parse(fs.readFileSync(selectionPath(), "utf8"));
-    return {
-      presetId: typeof s.presetId === "string" ? s.presetId : "",
-      // Use the size and frame rate set in MMD instead of the preset ones.
-      followMmd: s.followMmd !== false,
-      // Seconds of audio fade-in and fade-out (0 = off).
-      audioFade: FADES.includes(s.audioFade) ? s.audioFade : 0,
-      // "" = the preset decides.
-      maskMode: MASK_MODES.includes(s.maskMode) ? s.maskMode : "",
-      // Add the MMD frame range to the file name (_0400-0600f).
-      rangeSuffix: s.rangeSuffix !== false,
-      savedAt: typeof s.savedAt === "string" ? s.savedAt : "",
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeSelection({
-  presetId = "",
-  followMmd = true,
-  audioFade = 0,
-  maskMode = "off",
-  rangeSuffix = true,
-  savedAt,
-}) {
-  const selection = {
-    presetId,
-    followMmd,
-    audioFade,
-    rangeSuffix: rangeSuffix !== false,
-    maskMode: MASK_MODES.includes(maskMode) ? maskMode : "off",
-    savedAt: savedAt || new Date().toISOString(),
-  };
-  writeAtomic(selectionPath(), selection);
-  return selection;
-}
-
-// mmd-export.json: tools, the helper to run, and every preset the settings
-// window may offer. The single-preset form ({settings, presetName, …}) also
-// writes the selection, for scripts and tests.
-function writeConfig({
-  presets,
-  settings,
-  presetName,
-  presetId = "",
-  followMmd = true,
-  audioFade = 0,
-  maskMode = "",
-  rangeSuffix = true,
-  engines,
-  appExe,
-  helper,
-}) {
-  if (!presets) {
-    const id = presetId || "export";
-    presets = [{ id, name: presetName, settings }];
-    writeSelection({
-      rangeSuffix,
-      presetId: id,
-      followMmd,
-      audioFade,
-      maskMode: maskMode || presetMask(settings),
-    });
-  }
-  const config = {
-    version: 2,
-    presets: presets.map((p) => ({
-      id: p.id,
-      name: p.name,
-      settings: { ...p.settings, presetName: p.name },
-      unsupported: unsupported(p.settings),
-    })),
-    engines: {
-      ffmpeg: engines.ffmpeg,
-      ffprobe: engines.ffprobe,
-      // NVEncC presets (mmd-pipe.cjs).
-      nvencc: engines.nvencc || "",
-      soxr: !!engines.soxr,
-    },
-    appExe,
-    helper,
-    writtenAt: new Date().toISOString(),
-  };
-  writeAtomic(configPath(), config);
-  return config;
-}
-
-// The effective export settings: config + current selection.
-function readConfig(selection = readSelection()) {
-  const config = JSON.parse(fs.readFileSync(configPath(), "utf8"));
-  if (config.version !== 2)
-    throw Error("导出设置版本不支持，请打开 MMDEncoder 重新选择导出预设");
-  if (!selection?.presetId)
-    throw Error(
-      "还没有选择导出预设：请在 MMDEncoder 的“预设管理”或 MMD 的“詳細設定”里选择",
-    );
-  const preset = config.presets.find((p) => p.id === selection.presetId);
-  if (!preset) throw Error("所选导出预设已不存在，请重新选择");
-  const maskMode = selection.maskMode || presetMask(preset.settings);
-  // The mask alone does not use the preset's encoder.
-  if (maskMode !== "only" && preset.unsupported)
-    throw Error(preset.unsupported);
-  if (!config.engines?.ffmpeg || !config.engines?.ffprobe)
-    throw Error("请先在 MMDEncoder 的“设置与引擎”里安装编码工具");
-  return {
-    ...config,
-    presetId: preset.id,
-    presetName: preset.name,
-    settings: preset.settings,
-    followMmd: selection.followMmd,
-    audioFade: selection.audioFade,
-    maskMode,
-    rangeSuffix: selection.rangeSuffix,
-  };
-}
-
-// Why a preset cannot be used for a live MMD export (empty string = usable).
-// Every preset can be now (NVEncC since 1.6.1, see mmd-pipe.cjs); this stays
-// the one place for such rules, which the app and the plugin both show.
-function unsupported() {
-  return "";
+function note(log, code, params = {}) {
+  const data = summary(code, params);
+  log(data.message, data);
 }
 
 // Where the mask is encoded before finish moves it next to the video.
@@ -293,12 +175,19 @@ function plan(runtime, config = readConfig()) {
   // MMD only sends alpha with 32-bit frames; without it a mask next to the
   // video is skipped, not the export.
   const notes = [];
-  if (maskMode === "only" && !alpha)
-    throw Error("MMD 没有提供 Alpha 画面，无法只导出遮罩");
+  const notesData = [];
+  const shift = audioShift(config, runtime.startFrame);
+  if (audioArgs(s)) {
+    notes.push(shift.data.message);
+    notesData.push(shift.data);
+  }
+  if (maskMode === "only" && !alpha) throw appError("MMD_ALPHA_REQUIRED");
   let mask = maskMode === "with";
   if (mask && !alpha) {
     mask = false;
-    notes.push("MMD 没有提供 Alpha 画面，未导出遮罩");
+    const data = summary("MMD_MASK_SKIPPED");
+    notes.push(data.message);
+    notesData.push(data);
   }
   out.alphaMask = mask;
   const paths = core.outputPaths(runtime.avi, out, 1, fs.existsSync);
@@ -329,16 +218,17 @@ function plan(runtime, config = readConfig()) {
   // NVEncC: FFmpeg (MMD's frames, the mask) piped to NVEncC, then FFmpeg
   // puts the video in its container; mmd-pipe.cjs runs them (see there).
   if (commands.some((c) => c.pipeFrom)) {
+    const videoOnly = (c) => {
+      // Container step: video only (finish adds the sound), so not the
+      // source's second input, which here would be MMD's pipe again.
+      const args = [...c.args];
+      const i = args.indexOf("pipe:0");
+      if (i > 0 && args[i - 1] === "-i") args.splice(i - 1, 2);
+      for (let p; (p = args.indexOf("-progress")) >= 0;) args.splice(p, 2);
+      return { exe: c.exe, args };
+    };
     const steps = core.singlePass(commands).map((c) => {
-      if (!c.pipeFrom) {
-        // Container step: video only (finish adds the sound), so not the
-        // source's second input, which here would be MMD's pipe again.
-        const args = [...c.args];
-        const i = args.indexOf("pipe:0");
-        if (i > 0 && args[i - 1] === "-i") args.splice(i - 1, 2);
-        for (let p; (p = args.indexOf("-progress")) >= 0;) args.splice(p, 2);
-        return { exe: c.exe, args };
-      }
+      if (!c.pipeFrom) return videoOnly(c);
       const from = fromPipe(c.pipeFrom.args, runtime, rate, alpha);
       if (flip) {
         const vf = from.indexOf("-vf");
@@ -351,6 +241,7 @@ function plan(runtime, config = readConfig()) {
         exe: c.exe,
         args: c.args,
         pipeFrom: { exe: c.pipeFrom.exe, args: from },
+        ...(c.pipeTo ? { pipeTo: videoOnly(c.pipeTo) } : {}),
       };
     });
     return finishPlan({
@@ -360,7 +251,7 @@ function plan(runtime, config = readConfig()) {
         ELECTRON_RUN_AS_NODE: "1",
         MMD_PIPE_JOB: JSON.stringify({
           steps,
-          temporary: commands.map((c) => c.temporary).filter(Boolean),
+          outputs: commands.map((c) => c.output).filter(Boolean),
         }),
       },
     });
@@ -390,6 +281,7 @@ function plan(runtime, config = readConfig()) {
         ? { maskTemp: maskTemp(temp), maskOutput: maskOutput(paths.output) }
         : {}),
       notes,
+      notesData,
       fps: rate,
       presetName: config.presetName,
     };
@@ -411,6 +303,8 @@ function plan(runtime, config = readConfig()) {
       settings: { ...s, alphaMask: mask },
       engines: config.engines,
       audioFade: config.audioFade,
+      audioShiftFrames: config.audioShiftFrames ?? 0,
+      audioAutoShift: config.audioAutoShift !== false,
       rangeSuffix: config.rangeSuffix !== false,
     });
     return result;
@@ -473,7 +367,8 @@ async function waitUnlocked(file, ms = 60000) {
       return;
     } catch (e) {
       if (e.code === "ENOENT") return;
-      if (Date.now() > end) throw Error("等待 MMD 释放 AVI 超时：" + file);
+      if (Date.now() > end)
+        throw appError("MMD_AVI_UNLOCK_TIMEOUT", { path: file });
       await sleep(250);
     }
   }
@@ -548,7 +443,7 @@ function freeOutput(output, withMask) {
     if (!fs.existsSync(name) && !(withMask && fs.existsSync(maskOutput(name))))
       return name;
   }
-  throw Error("无法分配不重名的输出文件");
+  throw appError("OUTPUT_NAME_EXHAUSTED");
 }
 
 // Move a finished file into place without replacing an existing one: a hard
@@ -560,9 +455,9 @@ function placeFile(from, to) {
     fs.rmSync(from, { force: true });
     return;
   } catch (e) {
-    if (e.code === "EEXIST") throw Error("输出文件已存在，未覆盖：" + to);
+    if (e.code === "EEXIST") throw appError("MMD_OUTPUT_EXISTS", { path: to });
   }
-  if (fs.existsSync(to)) throw Error("输出文件已存在，未覆盖：" + to);
+  if (fs.existsSync(to)) throw appError("MMD_OUTPUT_EXISTS", { path: to });
   fs.renameSync(from, to);
 }
 
@@ -582,25 +477,30 @@ async function finish(
   const planned = withRange(job.output, config, job);
   job = { ...job, output: freeOutput(planned, hasMask) };
   if (job.output !== planned)
-    log("同名文件在导出期间已存在，改存为：" + job.output);
+    note(log, "MMD_OUTPUT_RENAMED", { path: job.output });
   const rate = frameRate(job.avgTimePerFrame);
   await waitUnlocked(job.avi);
   let aviInfo = null;
   try {
     aviInfo = await probe(config, job.avi);
   } catch (e) {
-    log("无法读取占位 AVI：" + e.message);
+    note(log, "MMD_AVI_UNREADABLE", {
+      detail: e.message,
+      error: serializeError(e),
+    });
   }
   const placeholder = !!aviInfo?.streams?.some(
     (x) => x.codec_type === "video" && x.codec_tag_string === PLACEHOLDER_TAG,
   );
   const aviAudio = !!aviInfo?.streams?.some((x) => x.codec_type === "audio");
   let audio = audioArgs(s);
+  const shift = audioShift(config, job.startFrame);
   let source = "none";
   // The source audio stream, for Hi-Res.
   let stream = aviInfo?.streams?.find((x) => x.codec_type === "audio");
   let input = [];
   let trim = "";
+  let first = 0;
   if (audio && aviAudio) {
     source = "avi";
     input = ["-i", job.avi];
@@ -610,25 +510,38 @@ async function finish(
       const info = await probe(config, wav);
       stream = info.streams?.find((x) => x.codec_type === "audio");
       const sr = Number(stream?.sample_rate);
-      const first = Math.round((job.startFrame * sr) / TIMELINE_FPS);
+      first = Math.round((job.startFrame * sr) / TIMELINE_FPS);
       const total = Math.round(Number(info.format?.duration) * sr) || Infinity;
-      if (sr && first >= total)
-        log("导出起点已超过工程 WAV 的结尾，成片没有音频");
-      else if (sr) {
-        // Sample-exact: start = start frame on the 30 fps timeline, length =
-        // frames actually received at the export frame rate.
-        const count = Math.round((job.frames * sr * rate.den) / rate.num);
-        trim = `atrim=start_sample=${first}:end_sample=${first + count},asetpts=PTS-STARTPTS`;
+      if (sr) {
+        if (first >= total) note(log, "MMD_WAV_PAST_END");
         source = "wav";
         input = ["-i", wav];
-        log(
-          `音频取自 WAV：${wav}，采样点 ${first}–${first + count}（${sr} Hz）`,
-        );
       }
-    } else log("没有找到可用的音频（AVI 无音轨，工程 WAV 未找到）");
+    } else note(log, "MMD_AUDIO_MISSING");
   }
   // Optional fade in / out over the clip's audio, at most half its length each.
   const length = (job.frames * rate.den) / rate.num;
+  if (source !== "none") {
+    log(shift.data.message, shift.data);
+    const sr = Number(stream?.sample_rate);
+    if (!sr && shift.frames) throw appError("MMD_AUDIO_RATE_REQUIRED");
+    if (sr && (source === "wav" || shift.frames)) {
+      const samples = Math.round((shift.frames * sr) / TIMELINE_FPS);
+      if (!Number.isSafeInteger(samples))
+        throw appError("MMD_AUDIO_SHIFT_SAMPLE_RANGE");
+      const count = Math.max(0, Math.round(length * sr) - Math.max(0, samples));
+      first += Math.max(0, -samples);
+      trim = `atrim=start_sample=${first}:end_sample=${first + count},asetpts=PTS-STARTPTS`;
+      if (samples > 0 && count) trim += `,adelay=${samples}S:all=1`;
+      if (source === "wav")
+        note(log, "MMD_WAV_SOURCE", {
+          path: input[1],
+          first,
+          end: first + count,
+          sampleRate: sr,
+        });
+    }
+  }
   const fade = Math.min(Number(config.audioFade) || 0, length / 2);
   // The rendered video sets the length: audio that runs out is padded with
   // silence, longer audio is cut (-t below). Never end at the shorter stream,
@@ -639,7 +552,7 @@ async function finish(
       `afade=t=in:st=0:d=${fade}`,
       `afade=t=out:st=${(length - fade).toFixed(6)}:d=${fade}`,
     );
-    log(`音频淡入淡出 ${fade} 秒`);
+    note(log, "MMD_AUDIO_FADE", { seconds: fade });
   }
   // Hi-Res: the audio is filtered here anyway (trim, pad), so it is always
   // re-encoded, never copied.
@@ -651,7 +564,7 @@ async function finish(
     if (plan.action === "copy") plan.action = "encode";
     filters.push(media.hiResFilter(plan, config.engines.soxr));
     audio = media.hiResCodec(plan);
-    log(`Hi-Res：${plan.from} → ${plan.to}`);
+    note(log, "MMD_AUDIO_HIRES", { from: plan.from, to: plan.to });
   }
   const af = filters.filter(Boolean).join(",");
   if (source === "none") {
@@ -686,15 +599,13 @@ async function finish(
     ]);
     if (have < want) {
       fs.rmSync(job.output, { force: true });
-      throw Error(
-        `合成音频后只剩 ${have} / ${want} 帧，已保留未合成的视频：${job.temp}`,
-      );
+      throw appError("MMD_MUX_FRAMES_LOST", { have, want, path: job.temp });
     }
     fs.rmSync(job.temp, { force: true });
   }
   const result = await probe(config, job.output);
   const video = result.streams?.find((x) => x.codec_type === "video");
-  if (!video) throw Error("成片没有视频流：" + job.output);
+  if (!video) throw appError("MMD_OUTPUT_VIDEO_MISSING", { path: job.output });
   // The mask was encoded next to the video during the render.
   let mask = "";
   // Always kept, even when it is all white or all black: checking that took
@@ -702,7 +613,7 @@ async function finish(
   if (hasMask) {
     mask = maskOutput(job.output);
     placeFile(matte, mask);
-    log("Alpha 遮罩：" + mask);
+    note(log, "MMD_MASK_OUTPUT", { path: mask });
   }
   // Only ever delete an AVI this plugin wrote (placeholder frames only).
   if (placeholder) fs.rmSync(job.avi, { force: true });
@@ -772,11 +683,11 @@ function interrupted() {
 }
 
 function snapshotById(id) {
-  if (!/^[0-9a-f]{16}$/.test(id)) throw Error("无效的导出记录");
+  if (!/^[0-9a-f]{16}$/.test(id)) throw appError("MMD_RECORD_INVALID");
   const snap = JSON.parse(
     fs.readFileSync(path.join(pendingDir(), id + ".json"), "utf8"),
   );
-  if (alive(snap.mmdPid)) throw Error("这个导出仍在进行中");
+  if (alive(snap.mmdPid)) throw appError("MMD_EXPORT_ACTIVE");
   return snap;
 }
 
@@ -784,8 +695,8 @@ function snapshotById(id) {
 async function recover(id, log = () => {}) {
   const snap = snapshotById(id);
   const frames = await countFrames(snap, snap.temp);
-  if (!frames) throw Error("中断的导出里没有可用画面：" + snap.temp);
-  log(`恢复中断的导出：${frames} 帧`);
+  if (!frames) throw appError("MMD_RECOVERY_EMPTY", { path: snap.temp });
+  note(log, "MMD_RECOVERING", { frames });
   const job = {
     avi: snap.avi,
     temp: snap.temp,

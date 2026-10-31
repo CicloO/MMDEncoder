@@ -1,12 +1,15 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Info, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { t } from "./i18n";
 import type { ReactNode, ButtonHTMLAttributes, DragEvent } from "react";
 export function Button({
   children,
   variant = "",
   className = "",
   onClick,
+  onKeyDown,
   ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }) {
   return (
@@ -15,6 +18,21 @@ export function Button({
       onClick={onClick}
       className={`button ${variant} ${className}`}
       {...rest}
+      onKeyDown={(event) => {
+        onKeyDown?.(event);
+        if (
+          !event.defaultPrevented &&
+          rest.onContextMenu &&
+          (event.key === "ContextMenu" ||
+            (event.shiftKey && event.key === "F10"))
+        ) {
+          event.preventDefault();
+          event.currentTarget.dispatchEvent(
+            new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+          );
+        }
+      }}
+      data-modal-autofocus={rest.autoFocus || undefined}
     >
       {children}
     </button>
@@ -26,16 +44,43 @@ export function Field({
   hint,
   id,
   error,
+  help,
 }: {
-  label: string;
+  label: ReactNode;
   children: ReactNode;
   hint?: string;
   id: string;
   error?: string;
+  help?: string;
 }) {
+  const helpId = useId();
   return (
     <div className="field">
-      <label htmlFor={id}>{label}</label>
+      {help ? (
+        <div className="field-heading">
+          <label htmlFor={id} id={`${helpId}-label`}>
+            {label}
+          </label>
+          <Tooltip id={`${helpId}-help`} text={help}>
+            {(show) => (
+              <button
+                type="button"
+                className="field-help"
+                onClick={show}
+                aria-labelledby={`${helpId}-label ${helpId}-help-label`}
+                aria-describedby={`${helpId}-help`}
+              >
+                <Info size={14} />
+                <span className="sr-only" id={`${helpId}-help-label`}>
+                  {t("common.moreInfo")}
+                </span>
+              </button>
+            )}
+          </Tooltip>
+        </div>
+      ) : (
+        <label htmlFor={id}>{label}</label>
+      )}
       {children}
       {error && (
         <span className="inline-error" id={`${id}-error`}>
@@ -58,17 +103,19 @@ export function Select({
   onChange,
   hint,
   disabled = false,
+  help,
 }: {
   id: string;
-  label: string;
+  label: ReactNode;
   value: string | number;
   options: { value: string | number; label: string; disabled?: boolean }[];
   onChange: (value: string) => void;
   hint?: string;
   disabled?: boolean;
+  help?: string;
 }) {
   return (
-    <Field id={id} label={label} hint={hint}>
+    <Field id={id} label={label} hint={hint} help={help}>
       <select
         id={id}
         value={value}
@@ -83,6 +130,104 @@ export function Select({
         ))}
       </select>
     </Field>
+  );
+}
+// Shared pointer/keyboard explanation for label help and unavailable controls.
+export function Tooltip({
+  id,
+  text,
+  children,
+  label,
+}: {
+  id: string;
+  text: string;
+  children: ReactNode | ((show: () => void) => ReactNode);
+  label?: string;
+}) {
+  const [open, setOpen] = useState(false),
+    [position, setPosition] = useState({ left: 0, top: 0 });
+  const anchor = useRef<HTMLSpanElement>(null),
+    popup = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    if (!open || !anchor.current || !popup.current) return;
+    const positionPopup = () => {
+      if (!anchor.current || !popup.current) return;
+      const a = anchor.current.getBoundingClientRect(),
+        p = popup.current.getBoundingClientRect();
+      const left = Math.max(
+        8,
+        Math.min(a.left, window.innerWidth - p.width - 8),
+      );
+      const top =
+        a.top >= p.height + 8
+          ? a.top - p.height
+          : Math.min(a.bottom, window.innerHeight - p.height - 8);
+      setPosition({ left, top });
+    };
+    positionPopup();
+    window.addEventListener("resize", positionPopup);
+    window.addEventListener("scroll", positionPopup, true);
+    return () => {
+      window.removeEventListener("resize", positionPopup);
+      window.removeEventListener("scroll", positionPopup, true);
+    };
+  }, [open, text]);
+  return (
+    <span
+      ref={anchor}
+      className={`tooltip-anchor${label ? " control-tooltip" : ""}`}
+      tabIndex={label ? 0 : undefined}
+      role={label ? "group" : undefined}
+      aria-label={label}
+      aria-disabled={label ? true : undefined}
+      aria-describedby={label ? id : undefined}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={(e) => {
+        if (!e.currentTarget.contains(document.activeElement)) setOpen(false);
+      }}
+      onFocus={() => setOpen(true)}
+      onBlur={(e) => {
+        if (
+          !e.currentTarget.contains(e.relatedTarget) &&
+          !e.currentTarget.matches(":hover")
+        )
+          setOpen(false);
+      }}
+      onKeyDown={(e) => {
+        if (open && e.key === "Escape") {
+          e.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      {typeof children === "function"
+        ? children(() => setOpen(true))
+        : children}
+      {createPortal(
+        <span
+          ref={popup}
+          id={id}
+          role="tooltip"
+          className="field-tooltip"
+          hidden={!open}
+          style={position}
+        >
+          {text}
+        </span>,
+        document.body,
+      )}
+    </span>
+  );
+}
+// Keep the external opener across a direct dialog handoff (for example engine
+// settings -> logs). Nested dialogs keep their own parent-control return target.
+let externalModalOpener: HTMLElement | null = null;
+function canFocus(element: HTMLElement | null): element is HTMLElement {
+  return (
+    !!element?.isConnected &&
+    !element.matches(":disabled") &&
+    !element.closest('[hidden], [inert], [aria-hidden="true"]') &&
+    element.getClientRects().length > 0
   );
 }
 export function Modal({
@@ -104,12 +249,66 @@ export function Modal({
   fixedHeight?: boolean;
   children: ReactNode;
 }) {
+  const content = useRef<HTMLDivElement>(null);
+  const opener = useRef<{
+    element: HTMLElement | null;
+    dialog: Element | null;
+  }>({ element: null, dialog: null });
+  useLayoutEffect(() => {
+    if (!open) return;
+    const active = document.activeElement;
+    const element =
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      !content.current?.contains(active)
+        ? active
+        : null;
+    if (element && !element.closest('[role="dialog"]'))
+      externalModalOpener = element;
+    const target = element || externalModalOpener;
+    opener.current = {
+      element: target,
+      dialog: target?.closest('[role="dialog"]') || null,
+    };
+  }, [open]);
   return (
     <Dialog.Root open={open} onOpenChange={(v) => !v && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="overlay" />
         <Dialog.Content
+          ref={content}
           className={`modal${wide ? " wide" : ""}${fixedHeight ? " modal-fixed" : ""}`}
+          onOpenAutoFocus={(event) => {
+            const target =
+              content.current?.querySelector<HTMLElement>(
+                "[data-modal-autofocus], [autofocus]",
+              ) || null;
+            if (canFocus(target)) {
+              target.focus({ preventScroll: true });
+              if (document.activeElement === target) event.preventDefault();
+            }
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const { element, dialog } = opener.current;
+            const remaining = document.querySelector<HTMLElement>(
+              '[role="dialog"][data-state="open"]:not([aria-hidden="true"])',
+            );
+            if (remaining) {
+              if (canFocus(element) && remaining.contains(element))
+                element.focus({ preventScroll: true });
+              else if (remaining === dialog)
+                remaining
+                  .querySelector<HTMLElement>(
+                    'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]',
+                  )
+                  ?.focus({ preventScroll: true });
+              return;
+            }
+            const target = canFocus(element) ? element : externalModalOpener;
+            if (canFocus(target)) target.focus({ preventScroll: true });
+            externalModalOpener = null;
+          }}
         >
           <div className="modal-scroll">
             <div className="modal-head">
@@ -118,7 +317,11 @@ export function Modal({
                 <Dialog.Description>{description}</Dialog.Description>
               </div>
               <Dialog.Close asChild>
-                <Button onClick={onClose} aria-label="关闭" title="关闭">
+                <Button
+                  onClick={onClose}
+                  aria-label={t("common.close")}
+                  title={t("common.close")}
+                >
                   <X size={18} />
                 </Button>
               </Dialog.Close>
@@ -207,7 +410,7 @@ export function useDragSort(
       active
         ? {
             className: "drag-handle",
-            title: "拖动排序",
+            title: t("common.dragSort"),
             onPointerDown: () => setArmed(id),
           }
         : { className: "drag-handle" },

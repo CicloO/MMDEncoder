@@ -136,8 +136,9 @@ test("NVEncC reads FFmpeg's frames from a pipe; audio comes from the source", ()
     { ffmpeg: "ffmpeg", nvencc: "NVEncC" },
     { output: "o.mp4" },
   );
-  assert.equal(cmds.length, 2);
-  const [enc, mux] = cmds;
+  assert.equal(cmds.length, 1);
+  const [enc] = cmds;
+  const mux = enc.pipeTo;
   assert.deepEqual(enc.pipeFrom.args.slice(-2), ["nut", "-"]);
   assert.ok(enc.pipeFrom.args.includes("rawvideo"));
   assert.ok(enc.pipeFrom.args.includes("-an"));
@@ -151,7 +152,7 @@ test("NVEncC reads FFmpeg's frames from a pipe; audio comes from the source", ()
   assert.ok(
     !cmds.some((c) => c.args.some((a) => String(a).endsWith(".prepare.mkv"))),
   );
-  // Packaging: video from NVEncC's file, audio from the source (input 1).
+  // Packaging reads the encoded stream and the original audio (input 1).
   assert.equal(
     mux.args[mux.args.indexOf("-map", mux.args.indexOf("0:v:0")) + 1],
     "1:a:0?",
@@ -485,6 +486,11 @@ test(
         {
           recursive: true,
         },
+      );
+      fs.cpSync(
+        path.join(__dirname, "..", "locales"),
+        path.join(app, "locales"),
+        { recursive: true },
       );
       fs.mkdirSync(path.join(app, "assets", "shaders"), { recursive: true });
       fs.copyFileSync(

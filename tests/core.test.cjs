@@ -44,6 +44,7 @@ test("audio bitrate reaches FFmpeg and NVEncC preparation", () => {
           { ffmpeg: "ffmpeg", nvencc: "NVEncC" },
           { output: "out.mkv" },
         )
+        .map((command) => command.pipeTo || command)
         .at(-1).args; // NVEncC: audio is added when packaging
       assert.equal(args[args.indexOf("-b:a") + 1], "128k");
     }
@@ -178,13 +179,13 @@ test("preview creates parent directory and protects every pipeline output before
       {
         exe: "NVEncC",
         args: ["-o", "inter.mkv"],
-        temporary: "C:\\folder\\inter.mkv",
+        output: "C:\\folder\\mask.mkv",
       },
     ],
     { prepare: true },
   );
   assert.ok(text.includes("[System.IO.Directory]::CreateDirectory"));
-  assert.ok(text.includes("Test-Path -LiteralPath 'C:\\folder\\inter.mkv'"));
+  assert.ok(text.includes("Test-Path -LiteralPath 'C:\\folder\\mask.mkv'"));
 });
 test("VP9 alpha uses alpha-capable decoder explicitly", () => {
   const commands = c.buildCommands(

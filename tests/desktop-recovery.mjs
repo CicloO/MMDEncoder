@@ -144,6 +144,15 @@ try {
   let state = await page.evaluate(() => window.encoder.invoke("state"));
   assert.equal(state.jobs[0].status, "invalid");
   assert.equal(state.jobs[1].status, "done");
+  const pairNames = page
+    .locator(".job-select")
+    .nth(1)
+    .locator(".output-file-name");
+  await expect(pairNames).toHaveCount(2);
+  assert.deepEqual(
+    await pairNames.evaluateAll((nodes) => nodes.map((node) => node.title)),
+    [state.jobs[1].output, state.jobs[1].maskOutput],
+  );
   console.log("Recovery checkpoint", checks.length);
   checks.push("mixed alpha batch does not block valid item");
   // Local NVIDIA hardware rejects the genuine 64x64 source; software retry supports it.

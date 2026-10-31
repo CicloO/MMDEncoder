@@ -71,12 +71,20 @@ try {
     .getByRole("heading", { name: "视频队列" })
     .waitFor({ timeout: 30000 });
   await shot("01-empty.png");
+  const chooseTheme = async (theme) => {
+    await page.evaluate(
+      (theme) => window.encoder.invoke("setTheme", { theme }),
+      theme,
+    );
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+  };
+  await chooseTheme("light");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.getByRole("button", { name: "切换到黑夜模式" }).click();
+  await chooseTheme("dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("button", { name: "切换到白天模式" }).click();
+  await chooseTheme("light");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.getByRole("button", { name: "音频", exact: true }).click();
   await page.selectOption("#audioBitrate", "128");
@@ -98,7 +106,7 @@ try {
   await page.selectOption("#audio", "flac");
   await expect(page.locator("#audioBitrate")).toBeDisabled();
   await page.selectOption("#audio", "aac");
-  await page.getByRole("button", { name: "切换到黑夜模式" }).click();
+  await chooseTheme("dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.getByRole("button", { name: "画质", exact: true }).click();
 

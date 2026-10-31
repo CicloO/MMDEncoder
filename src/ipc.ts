@@ -9,6 +9,7 @@ export async function invoke(action: string, payload?: unknown) {
     throw Object.assign(new Error(errorMessage(error)), {
       code: error.code,
       params: error.params,
+      issues: error.issues,
     });
   }
   return result;

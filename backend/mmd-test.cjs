@@ -6,6 +6,7 @@ const path = require("node:path");
 const { spawn, execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const mmdExport = require("./mmd-export.cjs");
+const { appError, summary } = require("./errors.cjs");
 
 async function testExport(
   config = mmdExport.readConfig(),
@@ -48,8 +49,9 @@ async function testExport(
       });
       child.once("close", (code) => resolve(code ?? -1));
     });
+    let timedOut = false;
     const timer = setTimeout(() => {
-      stderr += "\n测试编码超过 60 秒未结束，已停止";
+      timedOut = true;
       child.kill();
     }, 60000);
     let gone = false;
@@ -66,16 +68,15 @@ async function testExport(
     const code = await exited;
     clearTimeout(timer);
     children.delete(child);
+    if (timedOut) throw appError("MMD_TEST_TIMEOUT", { seconds: 60 });
     if (code !== 0)
-      throw Error(
-        "编码失败（退出码 " +
-          code +
-          "）：" +
-          stderr.trim().split("\n").slice(-3).join(" "),
-      );
-    if (!fs.existsSync(plan.temp)) throw Error("没有生成测试文件");
+      throw appError("MMD_TEST_ENCODE_FAILED", {
+        exitCode: code,
+        detail: stderr.trim().split("\n").slice(-3).join(" "),
+      });
+    if (!fs.existsSync(plan.temp)) throw appError("MMD_TEST_VIDEO_MISSING");
     if (plan.maskTemp && !fs.existsSync(plan.maskTemp))
-      throw Error("没有生成 Alpha 遮罩测试文件");
+      throw appError("MMD_TEST_MASK_MISSING");
     const { stdout } = await promisify(execFile)(
       config.engines.ffprobe,
       [
@@ -94,12 +95,14 @@ async function testExport(
     );
     const video = JSON.parse(stdout).streams?.[0];
     if (!video || !(Number(video.nb_read_frames) > 0))
-      throw Error("测试文件没有可用的视频帧");
+      throw appError("MMD_TEST_NO_FRAMES");
     return {
       ok: true,
       video,
       at: new Date().toISOString(),
-      message: `测试编码通过${plan.maskTemp ? "（含 Alpha 遮罩）" : ""}（${((Date.now() - started) / 1000).toFixed(1)} 秒）`,
+      ...summary(plan.maskTemp ? "MMD_TEST_MASK_PASSED" : "MMD_TEST_PASSED", {
+        seconds: Number(((Date.now() - started) / 1000).toFixed(1)),
+      }),
     };
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

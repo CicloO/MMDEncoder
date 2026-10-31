@@ -3,17 +3,24 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const crypto = require("node:crypto");
-const { spawn } = require("node:child_process");
+const { createRunner } = require("./process-runner.cjs");
 const core = require("./core.cjs");
-const {
-  signature: enhancementSignature,
-  probe: probeEnhancements,
-} = require("./enhancements.cjs");
+const { probe: probeEnhancements } = require("./enhancements.cjs");
 const media = require("./media.cjs");
 const trim = require("./trim.cjs");
 const { createTools, DEFAULT_ROOT } = require("./tools.cjs");
 const mmdExport = require("./mmd-export.cjs");
+const { syncConfig, validateAudioShift } = require("./mmd-config.cjs");
+const {
+  appError,
+  serializeError,
+  restoreError,
+  sourceText,
+  summary,
+} = require("./errors.cjs");
 const mmdPlugin = require("./mmd-plugin.cjs");
+const { createFileDetails } = require("./file-details.cjs");
+const { referenceTiming, streamDuration } = require("./audio-timing.mjs");
 const { createMediaQueue } = require("./media-queue.cjs");
 const { createEncodeQueue } = require("./encode-queue.cjs");
 const { createLimit } = require("./limit.cjs");
@@ -22,6 +29,19 @@ const { createDetector } = require("./detect.cjs");
 const { createAlignService } = require("./align-service.cjs");
 const { createTrimQueue } = require("./trim-queue.cjs");
 const { commit } = require("./commit.cjs");
+const { createSettingsStore } = require("./settings-store.cjs");
+const {
+  createPreferences,
+  normalizeTheme,
+  normalizeAccent,
+} = require("./preferences.cjs");
+const { createPresetOperations } = require("./presets.cjs");
+const {
+  testEnhancements,
+  invalidateSettings,
+  invalidateTools,
+} = require("./rtx-check.cjs");
+const { schema } = require("./settings-schema.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
   engineDir,
@@ -29,6 +49,10 @@ function createService({
   onUpdate,
   toolsRoot = process.env.MMD_TEST_TOOLS_ROOT,
   toolOptions = {},
+  localeRegistry,
+  localeCatalogs,
+  systemLanguages = [],
+  formatCopiedCommand,
   // MMD export plugin DLL shipped with the app (packaged) or built locally (dev).
   mmdPluginDll = [
     path.join(__dirname, "..", "mmd-plugin", "MMDEncoderPlugin.dll"),
@@ -38,6 +62,8 @@ function createService({
   mmdAppExe = process.execPath,
 } = {}) {
   dataDir = dataDir || path.join(os.tmpdir(), "mmd-encoder");
+  const settingsStore = createSettingsStore(dataDir);
+  const preferences = createPreferences(localeRegistry, systemLanguages);
   const children = new Set();
   const pendingLogs = new Map();
   let evidenceTimer = null,
@@ -50,6 +76,14 @@ function createService({
     detectPromise = null,
     locatePromise = null;
   const state = {
+    preferences: {
+      locale: null,
+      theme: "light",
+      accent: "cyan",
+      autoAlignAudio: true,
+    },
+    locale: preferences.resolve(null),
+    systemLocale: preferences.system,
     jobs: [],
     settings: { ...core.DEFAULTS },
     presets: clone(core.BUILTINS),
@@ -61,7 +95,8 @@ function createService({
       busy: false,
       signature: "",
       verified: false,
-      message: "启用后请先验证本机 RTX 功能",
+      message: sourceText("message.RTX_INITIAL"),
+      messageData: summary("RTX_INITIAL"),
     },
     mediaJobs: [],
     // Lossless trim page: clips in order, each a frame range of a file.
@@ -82,11 +117,14 @@ function createService({
       presetId: "builtin-prores422",
       followMmd: true,
       audioFade: 0,
+      audioShiftFrames: 0,
+      audioAutoShift: true,
       // "off" | "with" | "only"; "" until a preset decides (settings from 1.4.1).
       maskMode: "",
       rangeSuffix: true,
       savedAt: "",
       error: "",
+      errorData: null,
       plugin: { available: false, installed: false, upToDate: false, path: "" },
       test: null,
       lastExport: null,
@@ -99,6 +137,10 @@ function createService({
     // waits here until they choose to drop it or keep it as a personal preset.
     presetConflicts: [],
   };
+  function setNotice(message) {
+    state.notice = typeof message === "string" ? message : message.message;
+    state.noticeData = typeof message === "string" ? undefined : message;
+  }
   // A tools folder chosen in the app is remembered in data/tools-location.json;
   // an explicit toolsRoot (environment / tests) always wins.
   const toolsLocationFile = path.join(dataDir, "tools-location.json");
@@ -184,116 +226,72 @@ function createService({
         fs.renameSync(tmp, target);
       }
     } catch (e) {
-      state.notice = "日志或队列记录保存失败：" + e.message;
+      setNotice(
+        summary("EVIDENCE_SAVE_FAILED", {
+          detail: e.message,
+          error: serializeError(e),
+        }),
+      );
     }
   }
   const deletedBuiltins = new Set();
   // Saved entries this version cannot read; written back unchanged so a later
   // version (or a fix) can still use them.
   const unreadable = { presets: [], builtins: {} };
-  // Identifies the shipped definition of a built-in preset, so an edit made to
-  // one version of it is dropped once an update ships a different definition.
-  function builtinFingerprint(p) {
-    const shipped = core.BUILTINS.find((b) => b.id === p.id);
-    return shipped
-      ? crypto
-          .createHash("sha256")
-          // Settings added later with their off value (hiRes, editFriendly) are left
-          // out, so adding a setting does not count as changing every preset.
-          .update(
-            JSON.stringify([
-              shipped.name,
-              Object.fromEntries(
-                Object.entries(shipped.settings).filter(
-                  ([k, v]) =>
-                    !(
-                      (["hiRes", "editFriendly"].includes(k) && v === false) ||
-                      (k === "audioFade" && v === 0) ||
-                      (k === "artcnnModel" && v === "C4F16") ||
-                      (k === "upscaler" && v === "lanczos")
-                    ),
-                ),
-              ),
-            ]),
-          )
-          .digest("hex")
-          .slice(0, 16)
-      : "";
-  }
-  function sameName(a, b) {
-    return a.toLocaleLowerCase() === b.toLocaleLowerCase();
-  }
-  function persist() {
-    fs.mkdirSync(dataDir, { recursive: true });
-    const target = path.join(dataDir, "settings.json"),
-      tmp = target + "." + crypto.randomUUID() + ".tmp";
-    fs.writeFileSync(
-      tmp,
-      JSON.stringify(
-        {
-          version: 1,
-          settings: state.settings,
-          presets: state.presets
-            .filter((p) => !p.builtin)
-            .map(({ id, name, settings, hidden }) => ({
-              id,
-              name,
-              settings,
-              ...(typeof hidden === "boolean" ? { hidden } : {}),
-            }))
-            .concat(unreadable.presets),
-          // Built-in presets are rebuilt from code; only the user's changes are saved.
-          builtins: Object.assign(
-            {},
-            unreadable.builtins,
-            Object.fromEntries(
-              state.presets
-                .filter(
-                  (p) =>
-                    p.builtin && (p.edited || typeof p.hidden === "boolean"),
-                )
-                .map((p) => [
-                  p.id,
-                  {
-                    ...(p.edited
-                      ? {
-                          name: p.name,
-                          settings: p.settings,
-                          base: builtinFingerprint(p),
-                        }
-                      : {}),
-                    ...(typeof p.hidden === "boolean"
-                      ? { hidden: p.hidden }
-                      : {}),
-                  },
-                ]),
-            ),
-          ),
-          deletedBuiltins: [...deletedBuiltins],
-          // Unanswered update conflicts survive a restart.
-          ...(state.presetConflicts.length
-            ? {
-                builtinConflicts: state.presetConflicts.map(
-                  ({ id, name, settings }) => ({ id, name, settings }),
-                ),
-              }
-            : {}),
-          presetOrder: state.presets.map((p) => p.id),
-          mmdExport: {
-            presetId: state.mmd.presetId,
-            followMmd: state.mmd.followMmd,
-            audioFade: state.mmd.audioFade,
-            maskMode: state.mmd.maskMode,
-            rangeSuffix: state.mmd.rangeSuffix,
-            savedAt: state.mmd.savedAt,
-          },
-        },
-        null,
-        2,
-      ),
+  const presetStorage = { deletedBuiltins, unreadable };
+  const presetOperations = createPresetOperations({ schema, reorder });
+  let unbackedSettings = null;
+  function configReadNotice(cause, backup, backupError) {
+    state.noticeData = summary(
+      backupError ? "SETTINGS_BACKUP_FAILED" : "SETTINGS_UNREADABLE",
+      {
+        detail: cause.message,
+        error: serializeError(cause),
+        backup: path.basename(backup),
+        ...(backupError
+          ? {
+              backupDetail: backupError.message,
+              backupError: serializeError(backupError),
+            }
+          : {}),
+      },
     );
-    fs.renameSync(tmp, target);
-    syncMmdExport();
+    state.notice = state.noticeData.message;
+  }
+  function persist({ syncMmd = true } = {}) {
+    if (unbackedSettings) {
+      const pending = unbackedSettings;
+      try {
+        fs.copyFileSync(pending.file, pending.backup);
+      } catch (error) {
+        throw appError("SETTINGS_BACKUP_FAILED", {
+          detail: error.message,
+          error: serializeError(error),
+        });
+      }
+      unbackedSettings = null;
+      configReadNotice(pending.cause, pending.backup);
+    }
+    settingsStore.write({
+      version: 1,
+      preferences: state.preferences,
+      settings: state.settings,
+      ...presetOperations.serialize(
+        { presets: state.presets, presetConflicts: state.presetConflicts },
+        presetStorage,
+      ),
+      mmdExport: {
+        presetId: state.mmd.presetId,
+        followMmd: state.mmd.followMmd,
+        audioFade: state.mmd.audioFade,
+        audioShiftFrames: state.mmd.audioShiftFrames,
+        audioAutoShift: state.mmd.audioAutoShift,
+        maskMode: state.mmd.maskMode,
+        rangeSuffix: state.mmd.rangeSuffix,
+        savedAt: state.mmd.savedAt,
+      },
+    });
+    if (syncMmd) syncMmdExport();
   }
   // The export choice is shared with the plugin's settings window in MMD through
   // mmd-selection.json; take it over when it was saved there more recently.
@@ -321,6 +319,8 @@ function createService({
       presetId: s.presetId,
       followMmd: s.followMmd,
       audioFade: s.audioFade,
+      audioShiftFrames: s.audioShiftFrames,
+      audioAutoShift: s.audioAutoShift,
       maskMode:
         s.maskMode ||
         mmdExport.presetMask(
@@ -345,33 +345,21 @@ function createService({
   // Keep the plugin's mmd-export.json (tools, helper, every preset) in step:
   // every preset change goes through persist(), tool changes through detect().
   function syncMmdExport() {
-    const m = state.mmd;
-    m.error = "";
-    try {
-      adoptMmdSelection();
-      mmdExport.writeConfig({
-        presets: state.presets.map(({ id, name, settings }) => ({
-          id,
-          name,
-          settings,
-        })),
-        engines: state.engineInfo,
-        appExe: mmdAppExe,
-        helper: path.join(__dirname, "mmd-export.cjs"),
-      });
-    } catch (e) {
-      m.error = "无法写入导出设置：" + e.message;
-      return;
-    }
-    const preset = state.presets.find((p) => p.id === m.presetId);
-    m.error = !m.presetId
-      ? ""
-      : !preset
-        ? "导出预设已被删除，请重新选择"
-        : mmdExport.unsupported(preset.settings, m.maskMode) ||
-          (!state.engineInfo.ffmpeg || !state.engineInfo.ffprobe
-            ? "请先在“设置与引擎”里安装编码工具"
-            : "");
+    state.mmd.error = "";
+    state.mmd.errorData = syncConfig({
+      presets: state.presets,
+      engines: state.engineInfo,
+      appExe: mmdAppExe,
+      helper: path.join(__dirname, "mmd-export.cjs"),
+      locale: state.locale,
+      catalogs: localeCatalogs,
+      adoptSelection: adoptMmdSelection,
+      getSelection: () => ({
+        presetId: state.mmd.presetId,
+        maskMode: state.mmd.maskMode,
+      }),
+    });
+    state.mmd.error = state.mmd.errorData?.message || "";
   }
   function lastMmdExport() {
     try {
@@ -393,8 +381,11 @@ function createService({
   // Encode a short synthetic clip exactly as an MMD export would.
   async function testMmdExport() {
     syncMmdExport();
-    if (state.mmd.error) throw Error(state.mmd.error);
-    if (!state.mmd.presetId) throw Error("请先选择导出预设");
+    if (state.mmd.error)
+      throw state.mmd.errorData
+        ? restoreError(state.mmd.errorData)
+        : Error(state.mmd.error);
+    if (!state.mmd.presetId) throw appError("MMD_PRESET_REQUIRED");
     try {
       state.mmd.test = await require("./mmd-test.cjs").testExport(
         undefined,
@@ -404,71 +395,29 @@ function createService({
       state.mmd.test = {
         ok: false,
         at: new Date().toISOString(),
-        message: e.message,
+        ...serializeError(e),
       };
       throw e;
     }
   }
-  function schema(p, full = false) {
-    if (!p || typeof p !== "object" || Array.isArray(p))
-      throw Error("设置必须是对象");
-    if (full && Object.keys(core.DEFAULTS).some((k) => !(k in p)))
-      throw Error("预设缺少必要字段");
-    for (const [k, v] of Object.entries(p)) {
-      if (
-        !(k in core.DEFAULTS) ||
-        typeof v !== typeof core.DEFAULTS[k] ||
-        (typeof v === "number" && !Number.isFinite(v))
-      )
-        throw Error("无效设置字段：" + k);
-      if (typeof v === "string" && v.length > 4096)
-        throw Error("设置文本过长：" + k);
-    }
-    return p;
-  }
-  function presetValid(p) {
-    if (
-      !p ||
-      typeof p.name !== "string" ||
-      !p.name.trim() ||
-      p.name.length > 80
-    )
-      throw Error("预设名称须为 1–80 字符");
-    p = {
-      ...p,
-      settings: {
-        ...core.DEFAULTS,
-        audioBitrate: 0,
-        resizeMode: "source",
-        width: 1920,
-        height: 1080,
-        keepAspect: true,
-        resizeAxis: "width",
-        ...p.settings,
-        presetName: p.name.trim(),
-      },
-    };
-    schema(p.settings, true);
-    const s = { ...p.settings, outputMode: "encoded", outputDir: "" };
-    const errors = core.validate(s);
-    if (errors.length) throw Error("预设参数无效：" + errors.join("；"));
-    return {
-      id: crypto.randomUUID(),
-      name: p.name.trim(),
-      builtin: false,
-      settings: clone(p.settings),
-    };
-  }
   try {
-    const saved = JSON.parse(
-      fs.readFileSync(path.join(dataDir, "settings.json"), "utf8"),
-    );
-    if (saved.version !== 1) throw Error("版本不支持");
+    const saved = settingsStore.read();
+    if (saved.version !== 1) throw appError("SETTINGS_VERSION_UNSUPPORTED");
+    state.preferences.locale = preferences.normalize(saved.preferences?.locale);
+    state.preferences.theme = normalizeTheme(saved.preferences?.theme);
+    state.preferences.accent = normalizeAccent(saved.preferences?.accent);
+    state.preferences.autoAlignAudio =
+      saved.preferences?.autoAlignAudio !== false;
+    state.locale = preferences.resolve(state.preferences.locale);
     if (saved.mmdExport && typeof saved.mmdExport === "object") {
       if (typeof saved.mmdExport.presetId === "string")
         state.mmd.presetId = saved.mmdExport.presetId;
       if ([0, 0.5, 1, 2].includes(saved.mmdExport.audioFade))
         state.mmd.audioFade = saved.mmdExport.audioFade;
+      if (Number.isSafeInteger(saved.mmdExport.audioShiftFrames))
+        state.mmd.audioShiftFrames = saved.mmdExport.audioShiftFrames;
+      if (typeof saved.mmdExport.audioAutoShift === "boolean")
+        state.mmd.audioAutoShift = saved.mmdExport.audioAutoShift;
       if (typeof saved.mmdExport.savedAt === "string")
         state.mmd.savedAt = saved.mmdExport.savedAt;
       if (typeof saved.mmdExport.followMmd === "boolean")
@@ -481,96 +430,14 @@ function createService({
         state.mmd.rangeSuffix = saved.mmdExport.rangeSuffix;
     }
     state.settings = { ...core.DEFAULTS, ...schema(saved.settings) };
-    for (const id of saved.deletedBuiltins || [])
-      if (typeof id === "string") deletedBuiltins.add(id);
-    // Personal presets always survive an update. A built-in the new version
-    // changed (its fingerprint no longer matches) takes the new definition, and
-    // the user's edit of it becomes a conflict they resolve in the app: drop it
-    // or keep it as a personal preset. A built-in the new version dropped
-    // simply disappears.
-    const overrides =
-      saved.builtins && typeof saved.builtins === "object"
-        ? saved.builtins
-        : {};
-    const conflict = (id, o, builtinName) => {
-      try {
-        const v = presetValid({
-          name: o.name || builtinName,
-          settings: o.settings,
-        });
-        if (!state.presetConflicts.some((c) => c.id === id))
-          state.presetConflicts.push({
-            id,
-            name: v.name,
-            settings: v.settings,
-            builtinName,
-          });
-      } catch {}
-    };
-    state.presets = state.presets
-      .filter((p) => !deletedBuiltins.has(p.id))
-      .map((p) => {
-        const o = overrides[p.id];
-        if (!o || typeof o !== "object") return p;
-        const r = { ...p };
-        if (o.settings && o.base !== builtinFingerprint(p))
-          conflict(p.id, o, p.name);
-        if (o.settings && o.base === builtinFingerprint(p))
-          try {
-            const v = presetValid({
-              name: o.name || p.name,
-              settings: o.settings,
-            });
-            Object.assign(r, {
-              name: v.name,
-              settings: v.settings,
-              edited: true,
-            });
-          } catch {
-            unreadable.builtins[p.id] = o;
-          }
-        if (typeof o.hidden === "boolean") r.hidden = o.hidden;
-        return r;
-      });
-    for (const c of Array.isArray(saved.builtinConflicts)
-      ? saved.builtinConflicts
-      : []) {
-      const b = state.presets.find((p) => p.builtin && p.id === c?.id);
-      if (b && c.settings) conflict(b.id, c, b.name);
-    }
-    for (const p of saved.presets || []) {
-      let valid;
-      try {
-        valid = presetValid(p);
-      } catch (e) {
-        unreadable.presets.push(p);
-        state.notice = `个人预设“${p?.name || "未命名"}”暂时无法读取，已原样保留：${e.message}`;
-        continue;
-      }
-      valid.id =
-        typeof p.id === "string" && !p.id.startsWith("builtin-")
-          ? p.id
-          : valid.id;
-      if (typeof p.hidden === "boolean") valid.hidden = p.hidden;
-      state.presets.push(valid);
-    }
-    // A built-in that now shares a personal preset's name is the one renamed.
-    for (const b of state.presets.filter((p) => p.builtin && !p.edited))
-      if (
-        state.presets.some(
-          (p) => !p.builtin && p.id !== b.id && sameName(p.name, b.name),
-        )
-      ) {
-        b.name += "（内置）";
-        b.settings = { ...b.settings, presetName: b.name };
-      }
-    if (Array.isArray(saved.presetOrder)) {
-      const rank = new Map(saved.presetOrder.map((id, i) => [id, i]));
-      state.presets = state.presets
-        .map((p, i) => [rank.get(p.id) ?? saved.presetOrder.length + i, p])
-        .sort((a, b) => a[0] - b[0])
-        .map(([, p]) => p);
-    }
+    Object.assign(
+      state,
+      presetOperations.restore(
+        saved,
+        { presets: state.presets, presetConflicts: state.presetConflicts },
+        presetStorage,
+      ),
+    );
   } catch (e) {
     if (e.code !== "ENOENT") {
       // Keep the unreadable file before the next save replaces it.
@@ -578,114 +445,21 @@ function createService({
       const backup = file + ".unreadable-" + Date.now();
       try {
         fs.copyFileSync(file, backup);
-      } catch {}
-      state.notice =
-        "已忽略无法读取的配置：" +
-        e.message +
-        "；原文件已备份为 " +
-        path.basename(backup);
+        configReadNotice(e, backup);
+      } catch (backupError) {
+        unbackedSettings = { file, backup, cause: e };
+        configReadNotice(e, backup, backupError);
+      }
     }
   }
-  function run(
-    exe,
-    args,
-    { timeout = 0, onData, encoding = false, stdin } = {},
-  ) {
-    return new Promise((resolve, reject) => {
-      if (disposed) return reject(Error("应用已关闭"));
-      const child = spawn(exe, args, {
-        windowsHide: true,
-        stdio: [stdin ? "pipe" : "ignore", "pipe", "pipe"],
-        shell: false,
-      });
-      children.add(child);
-      if (stdin) {
-        // The reader may stop early (error, cancel); the writer then fails.
-        child.stdin.on("error", () => {});
-        stdin.pipe(child.stdin);
-      }
-      if (encoding) active = child;
-      let stdout = "",
-        stderr = "",
-        timed = false;
-      const timer = timeout
-        ? setTimeout(() => {
-            timed = true;
-            child.kill();
-          }, timeout)
-        : null;
-      const data = (stream, b) => {
-        const s = b.toString();
-        if (stream === "out") stdout = (stdout + s).slice(-1024 * 1024);
-        else stderr = (stderr + s).slice(-1024 * 1024);
-        onData?.(s, stream);
-      };
-      child.stdout.on("data", (b) => data("out", b));
-      child.stderr.on("data", (b) => data("err", b));
-      let settled = false;
-      const done = (err, code) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        children.delete(child);
-        if (active === child) active = null;
-        if (err || code !== 0) {
-          const e = Error(
-            timed
-              ? "引擎运行超时"
-              : err
-                ? err.message
-                : stderr.trim().slice(-3000) || "编码器退出：" + code,
-          );
-          e.stdout = stdout;
-          e.stderr = stderr;
-          e.code = code;
-          reject(e);
-        } else resolve({ stdout, stderr });
-      };
-      child.on("error", (e) => done(e));
-      child.on("close", (code) => done(null, code));
-    });
-  }
-  // A command fed by another program's output (FFmpeg -> NVEncC). Fails if
-  // either side fails: a writer that stops early would otherwise look like
-  // a short but complete video to the reader.
-  function runPiped(c, options) {
-    if (disposed) return Promise.reject(Error("应用已关闭"));
-    const writer = spawn(c.pipeFrom.exe, c.pipeFrom.args, {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      shell: false,
-    });
-    children.add(writer);
-    let stderr = "",
-      failure = null;
-    writer.stderr.on("data", (b) => {
-      const s = b.toString();
-      stderr = (stderr + s).slice(-64 * 1024);
-      options.onData?.(s, "err");
-    });
-    writer.on("error", (e) => (failure = e));
-    const written = new Promise((resolve) =>
-      writer.on("close", (code) => {
-        children.delete(writer);
-        resolve(code);
-      }),
-    );
-    const read = run(c.exe, c.args, { ...options, stdin: writer.stdout });
-    read.catch(() => writer.kill());
-    return Promise.allSettled([read, written]).then(([r, code]) => {
-      if (r.status === "rejected") throw r.reason;
-      if (failure || code.value !== 0)
-        throw Error(
-          failure?.message ||
-            stderr.trim().slice(-3000) ||
-            "预处理退出：" + code.value,
-        );
-      return r.value;
-    });
-  }
-  run.piped = runPiped; // for callers that only get run (RTX check)
+  const run = createRunner({
+    isDisposed: () => disposed,
+    children,
+    getActive: () => active,
+    setActive: (value) => {
+      active = value;
+    },
+  });
   async function locate() {
     if (locatePromise) return locatePromise;
     locatePromise = (async () => {
@@ -739,13 +513,15 @@ function createService({
       const data = JSON.parse(r.stdout);
       const v = data.streams?.find((s) => s.codec_type === "video");
       const a = data.streams?.find((s) => s.codec_type === "audio");
-      const seconds = (x) => Number(x) || Number(data.format?.duration) || 0;
+      const timing = referenceTiming(data);
       return {
+        hasVideo: timing.hasVideo,
+        fpsText: timing.fpsText,
         videoCodec: v?.codec_name,
         audioCodec: a?.codec_name,
         // Stream lengths (for fades), falling back to the file's.
-        videoDuration: v ? seconds(v.duration) : 0,
-        audioDuration: a ? seconds(a.duration) : 0,
+        videoDuration: timing.hasVideo ? timing.duration : 0,
+        audioDuration: a ? streamDuration(a, data.format?.duration) : 0,
         audio: a ? core.audioInfo(a) : undefined,
         // Some containers only report the overall rate; use it for audio-only files.
         audioBitRate:
@@ -811,7 +587,7 @@ function createService({
     detectPromise = (async () => {
       await locate();
       if (!state.engineInfo.ffmpeg) {
-        state.notice = "未找到可运行的 FFmpeg，请检查引擎目录";
+        setNotice(summary("ENGINE_FFMPEG_MISSING"));
         return;
       }
       // Hi-Res resampling uses soxr when this FFmpeg has it.
@@ -830,9 +606,9 @@ function createService({
         state.engines = cached.engines;
         state.detectionLog +=
           (cached.log || "") +
-          "\n使用 " +
-          cached.detectedAt +
-          " 的编码器检测结果。工具、显卡或驱动变化后会自动重新检测，也可以手动重新检测。\n";
+          sourceText("engine.log.cachedResult", {
+            detectedAt: cached.detectedAt,
+          });
         return;
       }
       const logStart = state.detectionLog.length;
@@ -844,7 +620,14 @@ function createService({
           })
         ).stdout;
       } catch (e) {
-        state.notice = e.message;
+        if (e.runnerErrorData) {
+          const error = serializeError(e);
+          const notice = summary("ENGINE_DETECTION_CAUSE", {
+            detail: error.message,
+          });
+          notice.params = { error };
+          setNotice(notice);
+        } else setNotice(e.message);
         return;
       }
       await detector.trialEncoders({
@@ -862,7 +645,12 @@ function createService({
         writeDetectionCache(key, state.detectionLog.slice(logStart));
     })()
       .catch((e) => {
-        state.notice = "检测未完成：" + e.message;
+        const error = serializeError(e);
+        const notice = summary("ENGINE_DETECTION_INCOMPLETE", {
+          detail: error.message,
+        });
+        notice.params = { error };
+        setNotice(notice);
       })
       .finally(() => {
         state.detecting = false;
@@ -879,9 +667,9 @@ function createService({
       ids.length !== list.length ||
       new Set(ids).size !== ids.length
     )
-      throw Error("排序数据无效，请重试");
+      throw appError("ORDER_INVALID");
     const byId = new Map(list.map((x) => [x.id, x]));
-    if (ids.some((id) => !byId.has(id))) throw Error("排序数据无效，请重试");
+    if (ids.some((id) => !byId.has(id))) throw appError("ORDER_INVALID");
     return ids.map((id) => byId.get(id));
   }
   // Whether anything is using the encoders, the tools or the GPU: encoding
@@ -932,13 +720,99 @@ function createService({
     },
     killActive: () => active?.kill(),
   };
-  const mediaQueue = createMediaQueue(ctx);
-  const encodeQueue = createEncodeQueue(ctx);
+  const mediaQueue = createMediaQueue({
+    getJobs: () => state.mediaJobs,
+    setJobs: (jobs) => (state.mediaJobs = jobs),
+    engineInfo: () => state.engineInfo,
+    isRunning: () => state.running,
+    setRunning: (value) => (state.running = value),
+    isStopped: () => stopped,
+    setStopped: (value) => (stopped = value),
+    onNotice: setNotice,
+    emit,
+    emitProgress,
+    run,
+    locate,
+    probeMedia,
+    hasSoxr,
+    commit,
+    dataDir,
+    isBusy,
+    probeLimit: ctx.probeLimit,
+    reorder,
+  });
+  const encodeQueue = createEncodeQueue({
+    getJobs: () => state.jobs,
+    setJobs: (jobs) => (state.jobs = jobs),
+    getSettings: () => state.settings,
+    engineInfo: () => state.engineInfo,
+    engines: () => state.engines,
+    verification: () => state.enhancements,
+    isDetecting: () => state.detecting,
+    isRunning: () => state.running,
+    setRunning: (value) => (state.running = value),
+    onNotice: setNotice,
+    isStopped: () => stopped,
+    setStopped: (value) => (stopped = value),
+    waitDetection: () => detectPromise,
+    toolsBusy: () => tools.state.busy,
+    trimExporting: () => state.trim.running,
+    getDetectionLog: () => state.detectionLog,
+    getUiState: () => uiState(state),
+    appendEvidence: (id, text) => {
+      const pieces = pendingLogs.get(id) || [];
+      pieces.push(text);
+      pendingLogs.set(id, pieces);
+    },
+    run,
+    locate,
+    probeMedia,
+    hasSoxr,
+    emit,
+    emitProgress,
+    commit,
+    flushEvidence,
+    killActive: ctx.killActive,
+    probeLimit: ctx.probeLimit,
+    schema,
+    reorder,
+    formatCopiedCommand:
+      formatCopiedCommand &&
+      ((commands) => formatCopiedCommand(commands, state.locale)),
+  });
   const alignService = createAlignService({
     engineInfo: () => state.engineInfo,
     locate,
   });
-  const trimQueue = createTrimQueue(ctx);
+  const trimQueue = createTrimQueue({
+    getClips: () => state.trim.clips,
+    setClips: (clips) => {
+      state.trim.clips = clips;
+    },
+    isRunning: () => state.trim.running,
+    isSmart: () => state.trim.smart,
+    setSmart: (smart) => {
+      state.trim.smart = smart;
+    },
+    updateExport: (patch) => Object.assign(state.trim, patch),
+    engineInfo: () => state.engineInfo,
+    isEncoding: () => state.running,
+    isResourcesBusy: () =>
+      state.detecting || tools.state.busy || state.enhancements.busy,
+    emit,
+    emitProgress,
+    locate,
+    reorder,
+  });
+  const readDetails = createFileDetails({
+    isToolsBusy: () => tools.state.busy,
+    requireMediaJob: mediaQueue.requireMediaJob,
+    requireJob: encodeQueue.requireJob,
+    locate,
+    ffprobe: () => state.engineInfo.ffprobe,
+    run,
+    inputArgs: core.inputArgs,
+  });
   const modules = [mediaQueue, encodeQueue, alignService, trimQueue];
 
   async function invoke(action, payload = {}) {
@@ -955,89 +829,71 @@ function createService({
     switch (action) {
       case "state":
         return uiState(state);
-      case "details": {
-        if (tools.state.busy) throw Error("工具安装中，请稍后查看详情");
-        // payload.media: a job from the audio / video tools queue
-        const job = payload.media
-          ? mediaQueue.requireMediaJob(payload.id)
-          : encodeQueue.requireJob(payload.id);
-        await locate();
-        const result = {};
-        for (const [key, file] of payload.media
-          ? [
-              ["before", job.path],
-              ...(job.audioPath ? [["audio", job.audioPath]] : []),
-              ["after", job.output],
-            ]
-          : [
-              ["before", job.path],
-              ["after", job.output],
-              ["mask", job.maskOutput],
-            ]) {
-          if (!file || !fs.existsSync(file)) {
-            result[key] = {
-              message: key === "before" ? "源文件不存在" : "尚未生成文件",
-            };
-            continue;
-          }
-          try {
-            const r = await run(
-              state.engineInfo.ffprobe,
-              [
-                "-v",
-                "error",
-                "-show_streams",
-                "-show_format",
-                "-of",
-                "json",
-                // A PNG sequence is read as the video it becomes.
-                ...(key === "before" && !payload.media && job.sequence
-                  ? core.inputArgs(job)
-                  : [file]),
-              ],
-              { timeout: 30000 },
-            );
-            result[key] = {
-              path:
-                key === "before" && job.sequence ? job.sequence.pattern : file,
-              ...JSON.parse(r.stdout),
-            };
-          } catch (e) {
-            result[key] = {
-              path: file,
-              message: "无法读取实际文件：" + e.message,
-            };
-          }
+      case "setLocale": {
+        const previous = { ...state.preferences };
+        state.preferences.locale = preferences.normalize(payload.locale);
+        state.locale = preferences.resolve(state.preferences.locale);
+        try {
+          persist();
+        } catch (error) {
+          state.preferences = previous;
+          state.locale = preferences.resolve(previous.locale);
+          throw error;
         }
-        return result;
+        break;
       }
+      case "setTheme": {
+        const previous = state.preferences.theme;
+        state.preferences.theme = normalizeTheme(payload.theme);
+        try {
+          persist({ syncMmd: false });
+        } catch (error) {
+          state.preferences.theme = previous;
+          throw error;
+        }
+        break;
+      }
+      case "setAccent": {
+        const previous = state.preferences.accent;
+        state.preferences.accent = normalizeAccent(payload.accent);
+        try {
+          persist({ syncMmd: false });
+        } catch (error) {
+          state.preferences.accent = previous;
+          throw error;
+        }
+        break;
+      }
+      case "setAutoAlignAudio": {
+        if (typeof payload.enabled !== "boolean")
+          throw appError("SETTINGS_FIELD_INVALID", { field: "autoAlignAudio" });
+        const previous = state.preferences.autoAlignAudio;
+        state.preferences.autoAlignAudio = payload.enabled;
+        try {
+          persist({ syncMmd: false });
+        } catch (error) {
+          state.preferences.autoAlignAudio = previous;
+          throw error;
+        }
+        break;
+      }
+      case "details":
+        return readDetails(payload);
       case "testEnhancements": {
-        if (isBusy()) throw Error("请等待当前任务结束");
+        if (isBusy()) throw appError("RTX_TEST_BUSY");
         const s = { ...state.settings, ...schema(payload.settings || {}) };
         await locate();
-        state.enhancements = {
-          busy: true,
-          signature: enhancementSignature(s),
-          verified: false,
-          message: "正在用所选设置执行 RTX 试编码…",
-        };
-        emit();
-        try {
-          state.detectionLog +=
-            "\n" + (await probeEnhancements(s, state.engineInfo, run));
-          state.enhancements.verified = true;
-          state.enhancements.message = "所选 RTX 设置已通过本机试编码";
-        } catch (e) {
-          state.enhancements.message =
-            "RTX 验证失败：" +
-            e.message +
-            "。请检查驱动、NVIDIA VFX SDK 运行库与模型";
-          state.detectionLog += "\n" + state.enhancements.message;
-          throw e;
-        } finally {
-          state.enhancements.busy = false;
-          emit();
-        }
+        await testEnhancements({
+          settings: s,
+          check: async () => {
+            state.detectionLog +=
+              "\n" + (await probeEnhancements(s, state.engineInfo, run));
+          },
+          onStart: (result) => (state.enhancements = result),
+          onPatch: (patch) => Object.assign(state.enhancements, patch),
+          onLog: (text) => (state.detectionLog += text),
+          emit,
+        });
         break;
       }
       case "compatibility":
@@ -1047,24 +903,23 @@ function createService({
         );
       case "checkTools":
       case "installTools":
-        if (isBusy({ tools: false }))
-          throw Error("请等待编码、探测和硬件检测结束后管理工具");
+      case "installToolsArchive":
+        if (isBusy({ tools: false })) throw appError("TOOLS_MANAGE_BUSY");
         try {
-          await tools.run(action === "installTools");
+          if (action === "installToolsArchive")
+            await tools.installLocal(payload?.path);
+          else await tools.run(action === "installTools");
         } finally {
-          if (action === "installTools") {
-            state.enhancements.verified = false;
-            state.enhancements.signature = "";
-            state.enhancements.message = "工具已重新检查，请重新验证 RTX 设置";
+          if (action !== "checkTools") {
+            invalidateTools(state.enhancements);
             locatePromise = null;
             await detect({ force: true });
           }
         }
         break;
       case "setToolsRoot": {
-        if (toolsRoot) throw Error("安装位置由环境变量指定，不能在软件中更改");
-        if (isBusy({ tools: false }))
-          throw Error("请等待编码、探测和硬件检测结束后更改安装位置");
+        if (toolsRoot) throw appError("TOOLS_ROOT_ENV_LOCKED");
+        if (isBusy({ tools: false })) throw appError("TOOLS_ROOT_BUSY");
         const target = payload?.root || DEFAULT_ROOT;
         tools.relocate(target);
         if (path.resolve(target) === path.resolve(DEFAULT_ROOT))
@@ -1082,163 +937,40 @@ function createService({
         break;
       }
       case "detect":
-        if (tools.state.busy) throw Error("工具安装中，请稍后重新检测");
-        if (state.trim.running) throw Error("无损剪辑正在导出，请稍后重新检测");
+        if (tools.state.busy) throw appError("ENGINE_DETECT_INSTALL_BUSY");
+        if (state.trim.running) throw appError("ENGINE_DETECT_TRIM_BUSY");
         await detect({ force: true });
         break;
       case "settings":
         schema(payload.patch);
         state.settings = { ...state.settings, ...payload.patch };
-        if (
-          state.enhancements.signature !== enhancementSignature(state.settings)
-        ) {
-          state.enhancements.verified = false;
-          if (state.settings.vsr || state.settings.vfg)
-            state.enhancements.message = "RTX 设置已更改，请重新验证本机设置";
-        }
+        invalidateSettings(state.enhancements, state.settings);
         persist();
         break;
-      case "savePreset": {
-        // payload.settings: a video's own settings ("单独设置"), saved
-        // without changing the page's.
-        const own = payload.settings
-          ? { ...state.settings, ...schema(payload.settings) }
-          : null;
-        const valid = presetValid({
-          name: payload.name,
-          settings: own || state.settings,
-        });
-        if (
-          state.presets.some(
-            (p) =>
-              p.id !== payload.id &&
-              p.name.toLocaleLowerCase() === valid.name.toLocaleLowerCase(),
-          )
-        )
-          throw Error("已存在同名预设，请使用其他名称");
-        if (payload.id) {
-          const p = state.presets.find((x) => x.id === payload.id);
-          if (!p) throw Error("未找到预设");
-          Object.assign(valid, {
-            id: p.id,
-            builtin: p.builtin,
-            ...(p.builtin ? { edited: true } : {}),
-            ...(typeof p.hidden === "boolean" ? { hidden: p.hidden } : {}),
-          });
-          state.presets = state.presets.map((x) => (x.id === p.id ? valid : x));
-        } else state.presets.push(valid);
-        if (!own) state.settings.presetName = valid.name;
-        persist();
-        break;
-      }
-      case "renamePreset": {
-        const p = state.presets.find((p) => p.id === payload.id);
-        if (!p) throw Error("未找到预设");
-        const renamed = presetValid({
-          name: payload.name,
-          settings: p.settings,
-        });
-        if (
-          state.presets.some(
-            (x) =>
-              x.id !== p.id &&
-              x.name.toLocaleLowerCase() === renamed.name.toLocaleLowerCase(),
-          )
-        )
-          throw Error("已存在同名预设，请使用其他名称");
-        p.name = renamed.name;
-        p.settings.presetName = renamed.name;
-        if (p.builtin) p.edited = true;
-        persist();
-        break;
-      }
-      case "applyPreset": {
-        const p = state.presets.find((x) => x.id === payload.id);
-        if (!p) throw Error("未找到预设");
-        const output = {
-          outputMode: state.settings.outputMode,
-          outputDir: state.settings.outputDir,
-        };
-        state.settings = { ...clone(p.settings), ...output };
-        persist();
-        break;
-      }
-      case "deletePreset": {
-        const p = state.presets.find((x) => x.id === payload.id);
-        if (!p) throw Error("未找到预设");
-        if (p.builtin) deletedBuiltins.add(p.id);
-        state.presets = state.presets.filter((x) => x.id !== p.id);
-        persist();
-        break;
-      }
-      case "hidePreset": {
-        const p = state.presets.find((x) => x.id === payload.id);
-        if (!p) throw Error("未找到预设");
-        if (typeof payload.hidden !== "boolean") throw Error("参数无效");
-        p.hidden = payload.hidden;
-        persist();
-        break;
-      }
+      case "savePreset":
+      case "renamePreset":
+      case "applyPreset":
+      case "deletePreset":
+      case "hidePreset":
       case "reorderPresets":
-        state.presets = reorder(state.presets, payload.ids);
-        persist();
-        break;
-      case "resolvePresetConflict": {
-        // keep: save the user's old version as a personal preset next to the
-        // built-in; otherwise drop it (the new built-in stays either way).
-        const c = state.presetConflicts.find((x) => x.id === payload.id);
-        if (!c) throw Error("未找到待处理的预设");
-        if (payload.keep) {
-          let name = c.name + "（我的修改）";
-          for (
-            let n = 2;
-            state.presets.some((p) => sameName(p.name, name));
-            n++
-          )
-            name = `${c.name}（我的修改 ${n}）`;
-          const copy = presetValid({ name, settings: c.settings });
-          const at = state.presets.findIndex((p) => p.id === c.id);
-          state.presets.splice(at < 0 ? state.presets.length : at + 1, 0, copy);
-        }
-        state.presetConflicts = state.presetConflicts.filter((x) => x !== c);
-        persist();
-        break;
-      }
-      case "restoreBuiltinPresets": {
-        // Bring back deleted built-ins and undo edits / hide choices on them.
-        const defaults = clone(core.BUILTINS);
-        for (const p of defaults)
-          if (
-            !state.presets.some((x) => x.id === p.id) &&
-            state.presets.some((x) => sameName(x.name, p.name))
-          )
-            throw Error("已有同名个人预设：" + p.name + "，请先改名");
-        deletedBuiltins.clear();
-        const byId = new Map(defaults.map((p) => [p.id, p]));
-        state.presets = state.presets.map((p) =>
-          p.builtin ? byId.get(p.id) || p : p,
+      case "resolvePresetConflict":
+      case "restoreBuiltinPresets":
+      case "importPresets":
+        Object.assign(
+          state,
+          presetOperations.execute(
+            action,
+            payload,
+            {
+              presets: state.presets,
+              presetConflicts: state.presetConflicts,
+              settings: state.settings,
+            },
+            presetStorage,
+          ),
         );
-        for (const p of defaults)
-          if (!state.presets.some((x) => x.id === p.id)) state.presets.push(p);
         persist();
         break;
-      }
-      case "importPresets": {
-        if (!Array.isArray(payload.presets) || payload.presets.length > 200)
-          throw Error("预设文件格式无效或超过 200 项");
-        const incoming = payload.presets.map(presetValid);
-        const names = new Set(
-          state.presets.map((p) => p.name.toLocaleLowerCase()),
-        );
-        for (const p of incoming) {
-          const key = p.name.toLocaleLowerCase();
-          if (names.has(key)) throw Error("已存在同名预设：" + p.name);
-          names.add(key);
-        }
-        state.presets.push(...incoming);
-        persist();
-        break;
-      }
       case "mmdStatus":
         // Pick up a choice made in MMD since the last look.
         if (adoptMmdSelection()) persist();
@@ -1252,6 +984,13 @@ function createService({
         state.mmd.plugin = await mmdPlugin.uninstall(mmdPluginDll);
         break;
       case "mmdExportSet": {
+        if (payload.audioShiftFrames !== undefined)
+          validateAudioShift(payload.audioShiftFrames);
+        if (
+          payload.audioAutoShift !== undefined &&
+          typeof payload.audioAutoShift !== "boolean"
+        )
+          throw appError("MMD_AUDIO_AUTO_SHIFT_INVALID");
         // Apply the change on top of a choice made meanwhile in MMD.
         adoptMmdSelection();
         if (typeof payload.presetId === "string") {
@@ -1259,7 +998,7 @@ function createService({
             payload.presetId &&
             !state.presets.some((p) => p.id === payload.presetId)
           )
-            throw Error("未找到预设");
+            throw appError("PRESET_MISSING");
           // Every MMD export option outranks the preset: picking a preset
           // leaves the mask choice (and the others) as they are.
           state.mmd.presetId = payload.presetId;
@@ -1267,8 +1006,16 @@ function createService({
         }
         if (payload.audioFade !== undefined) {
           if (![0, 0.5, 1, 2].includes(payload.audioFade))
-            throw Error("淡入淡出时长无效");
+            throw appError("MMD_FADE_INVALID");
           state.mmd.audioFade = payload.audioFade;
+        }
+        if (payload.audioShiftFrames !== undefined) {
+          state.mmd.audioShiftFrames = payload.audioShiftFrames;
+          state.mmd.test = null;
+        }
+        if (payload.audioAutoShift !== undefined) {
+          state.mmd.audioAutoShift = payload.audioAutoShift;
+          state.mmd.test = null;
         }
         if (typeof payload.followMmd === "boolean")
           state.mmd.followMmd = payload.followMmd;
@@ -1276,7 +1023,7 @@ function createService({
           state.mmd.rangeSuffix = payload.rangeSuffix;
         if (payload.maskMode !== undefined) {
           if (!mmdExport.MASK_MODES.includes(payload.maskMode))
-            throw Error("遮罩选项无效");
+            throw appError("MMD_MASK_INVALID");
           state.mmd.maskMode = payload.maskMode;
           state.mmd.test = null;
         }
@@ -1288,12 +1035,13 @@ function createService({
         break;
       }
       case "mmdTest":
-        if (state.running) throw Error("请等待当前压制结束后再测试");
+        if (state.running) throw appError("MMD_TEST_BUSY");
         await testMmdExport();
         break;
       case "mmdRecover":
       case "mmdDiscard": {
-        if (typeof payload?.id !== "string") throw Error("无效的导出记录");
+        if (typeof payload?.id !== "string")
+          throw appError("MMD_RECORD_INVALID");
         try {
           if (action === "mmdRecover") await mmdExport.recover(payload.id);
           else mmdExport.discard(payload.id);
@@ -1304,7 +1052,7 @@ function createService({
         break;
       }
       default:
-        throw Error("不支持的操作：" + action);
+        throw appError("SERVICE_ACTION_UNSUPPORTED", { action });
     }
     emit();
     return uiState(state);
@@ -1333,7 +1081,7 @@ function createService({
     const known = new Set(state.mmd.interrupted.map((x) => x.id));
     state.mmd.interrupted = list;
     if (list.some((x) => !known.has(x.id)))
-      state.notice = `有 ${list.length} 个 MMD 导出意外中断，可在“MMD 导出”里补完已导出的部分`;
+      setNotice(summary("MMD_INTERRUPTED", { count: list.length }));
     emit();
   }
   return {

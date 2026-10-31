@@ -1,4 +1,10 @@
 "use strict";
+const {
+  appError,
+  serializeError,
+  sourceText,
+  summary,
+} = require("./errors.cjs");
 // Media page queue (音视频提取与合并): each file is processed on its own with
 // the options chosen when the queue starts; the output name is generated per
 // file and never reused.
@@ -7,22 +13,36 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const core = require("./core.cjs");
 const media = require("./media.cjs");
+const { mediaLocation } = require("./media-location.cjs");
+const { createMediaJob } = require("./media-job.cjs");
+const { frameOffset } = require("./audio-alignment.cjs");
 
-// ctx: the service's shared state and helpers (see createService). `stopped`
-// is read and set through ctx because the video queue shares it.
-function createMediaQueue(ctx) {
-  const { state, emit, emitProgress, run, locate, probeMedia, hasSoxr } = ctx;
-  function mediaLocation(o) {
-    return {
-      outputMode: ["source", "encoded", "custom"].includes(o.location)
-        ? o.location
-        : "source",
-      outputDir: o.outputDir || "",
-    };
-  }
+// The service owns shared resources and stop/busy state. The queue owns its
+// list and batch scheduling through explicit capabilities.
+function createMediaQueue({
+  getJobs,
+  setJobs,
+  engineInfo,
+  isRunning,
+  setRunning,
+  isStopped,
+  setStopped,
+  onNotice,
+  emit,
+  emitProgress,
+  run,
+  locate,
+  probeMedia,
+  hasSoxr,
+  commit,
+  dataDir,
+  isBusy,
+  probeLimit,
+  reorder,
+}) {
   function requireMediaJob(id) {
-    const job = state.mediaJobs.find((j) => j.id === id);
-    if (!job) throw Error("文件不在列表中");
+    const job = getJobs().find((j) => j.id === id);
+    if (!job) throw appError("MEDIA_JOB_MISSING");
     return job;
   }
   // File parameters for the media queue, read like the video queue's. Audio-only
@@ -31,9 +51,9 @@ function createMediaQueue(ctx) {
   async function probeMediaJob(job) {
     try {
       await locate();
-      if (!state.engineInfo.ffprobe) return;
+      if (!engineInfo().ffprobe) return;
       const r = await run(
-        state.engineInfo.ffprobe,
+        engineInfo().ffprobe,
         [
           "-v",
           "error",
@@ -50,10 +70,10 @@ function createMediaQueue(ctx) {
         job.meta = core.metadata(data);
       } catch {
         const a = data.streams?.find((s) => s.codec_type === "audio");
-        if (!a) throw Error("未找到音视频轨");
+        if (!a) throw appError("MEDIA_NO_STREAMS");
         job.meta = {
           audioOnly: true,
-          codec: a.codec_name || "未知",
+          codec: a.codec_name || sourceText("presentation.unknown"),
           duration: Number(data.format?.duration || a.duration) || 0,
           size: Number(data.format?.size) || job.size,
           audio: {
@@ -65,133 +85,28 @@ function createMediaQueue(ctx) {
         };
       }
     } catch (e) {
-      job.metaError = "无法读取文件信息：" + e.message;
-    }
-    emit();
-  }
-  async function runMediaJob(job, o) {
-    job.status = "running";
-    job.error = undefined;
-    job.output = undefined;
-    job.log = "";
-    job.startedAt = Date.now();
-    emit();
-    let temp;
-    try {
-      if (o.operation === "merge" && !job.audioPath)
-        throw Error("缺少要合并的音频文件");
-      if (
-        o.hiRes &&
-        o.operation !== "video" &&
-        !["wav", "flac"].includes(o.audioFormat)
-      )
-        throw Error("Hi-Res 只支持 WAV / FLAC 输出");
-      const p = {
-        operation: o.operation,
-        input: job.path,
-        audioInput: job.audioPath,
-        audioFormat: o.audioFormat,
-        hiRes: !!o.hiRes && o.operation !== "video",
-        audioBitrate: Number(o.audioBitrate) || 0,
-        container: o.container === "mkv" ? "mkv" : "mp4",
-        fade: media.FADES.includes(Number(o.audioFade))
-          ? Number(o.audioFade)
-          : 0,
-      };
-      const source = await probeMedia(job.path);
-      const audioSource =
-        o.operation === "merge" ? await probeMedia(job.audioPath) : source;
-      p.sourceAudio = {
-        codec: audioSource.audioCodec,
-        bitRate: audioSource.audioBitRate,
-        sampleRate: audioSource.audio?.sampleRate,
-        bits: audioSource.audio?.bits,
-        float: audioSource.audio?.float,
-      };
-      // A merge is as long as the video (see media.command). The fade-out
-      // ends where the audio does: at the video's end, or earlier when the
-      // audio is shorter (silence follows).
-      if (o.operation === "merge") {
-        p.videoDuration = source.videoDuration;
-        // The added audio lined up with the video's own (音频对齐).
-        p.audioOffset = Number(job.audioOffset) || 0;
-      }
-      const shift = p.audioOffset || 0;
-      p.fadeLength =
-        o.operation === "merge" && source.videoDuration
-          ? Math.min(audioSource.audioDuration - shift, source.videoDuration)
-          : audioSource.audioDuration;
-      // Extracting audio lined up with a reference (音频对齐): cut or pad
-      // its start; the result ends where the reference does when trimmed.
-      if (o.operation === "audio" && job.align) {
-        p.align = job.align;
-        p.fadeLength =
-          job.align.length || audioSource.audioDuration - job.align.offset;
-      }
-      let hiResNote = "";
-      if (p.hiRes) {
-        p.soxr = await hasSoxr();
-        const plan = media.hiResPlan(p.audioFormat, p.sourceAudio);
-        hiResNote = `# Hi-Res：${plan.from} → ${plan.to}，${plan.reason}${plan.action === "resample" ? (p.soxr ? "（soxr 重采样）" : "（当前 FFmpeg 没有 soxr，用内置重采样）") : ""}
-`;
-      }
-      let note = hiResNote;
-      if (o.operation !== "audio") {
-        const container = media.mergeContainer(p, {
-          videoCodec: source.videoCodec,
-          audioCodec: audioSource.audioCodec,
-        });
-        if (container !== p.container) {
-          const audio =
-            o.operation !== "merge"
-              ? ""
-              : " / " +
-                (p.audioFormat === "copy"
-                  ? audioSource.audioCodec || "未知"
-                  : p.audioFormat);
-          note = `# MP4 放不下此编码（${source.videoCodec || "未知"}${audio}），已改用 MKV\n`;
-        }
-        p.container = container;
-      }
-      p.output = media.suggestOutput(p, mediaLocation(o), fs.existsSync);
-      if (!p.output) throw Error("无法生成输出文件名");
-      media.command(p, state.engineInfo, p.output);
-      fs.mkdirSync(path.dirname(p.output), { recursive: true });
-      temp = fs.mkdtempSync(path.join(path.dirname(p.output), ".mmd-media-"));
-      const target = path.join(temp, "output" + path.extname(p.output));
-      const cmd = media.command(p, state.engineInfo, target);
-      job.log = note + core.commandText([cmd]) + "\n";
-      await run(cmd.exe, cmd.args, {
-        encoding: true,
-        onData: (t) => {
-          job.log = (job.log + t).slice(-200000);
-          emitProgress();
-        },
+      const cause = serializeError(e);
+      const error = appError("MEDIA_META_FAILED", {
+        detail: e.message,
+        error: cause,
       });
-      if (ctx.stopped) throw Error("已取消");
-      await ctx.commit(target, p.output);
-      job.output = p.output;
-      job.status = "done";
-    } catch (e) {
-      job.status = ctx.stopped ? "cancelled" : "failed";
-      job.error = e.message;
-      job.log += "\n" + e.message;
-    } finally {
-      if (temp) fs.rmSync(temp, { recursive: true, force: true });
-      job.elapsed = (Date.now() - job.startedAt) / 1000;
-      try {
-        fs.mkdirSync(path.join(ctx.dataDir, "logs"), { recursive: true });
-        fs.writeFileSync(
-          path.join(ctx.dataDir, "logs", "media-" + job.id + ".log"),
-          job.log,
-        );
-      } catch (e) {
-        job.error =
-          (job.error ? job.error + "；" : "") + "日志保存失败：" + e.message;
-      }
-      emit();
+      if (e.runnerErrorData) error.params = { error: cause };
+      job.metaErrorData = serializeError(error);
+      job.metaError = job.metaErrorData.message;
     }
+    emit();
   }
+  const runMediaJob = createMediaJob({
+    engineInfo,
+    probeMedia,
+    hasSoxr,
+    run,
+    commit,
+    isStopped,
+    dataDir,
+    emit,
+    emitProgress,
+  });
   // Actions that change the queue; the service sends the new state after each.
   const actions = {
     mediaAdd(payload) {
@@ -206,14 +121,14 @@ function createMediaQueue(ctx) {
         }
         if (!stat.isFile()) continue;
         if (
-          state.mediaJobs.some(
+          getJobs().some(
             (j) =>
               j.status === "ready" &&
               j.path.toLowerCase() === file.toLowerCase(),
           )
         )
           continue;
-        state.mediaJobs.push({
+        getJobs().push({
           id: crypto.randomUUID(),
           path: file,
           name: path.basename(file),
@@ -222,9 +137,9 @@ function createMediaQueue(ctx) {
         });
         // A few at a time (shared with the video queue); a file removed
         // before its turn is not read.
-        const job = state.mediaJobs.at(-1);
-        const probe = ctx.probeLimit(() =>
-          state.mediaJobs.includes(job) ? probeMediaJob(job) : undefined,
+        const job = getJobs().at(-1);
+        const probe = probeLimit(() =>
+          getJobs().includes(job) ? probeMediaJob(job) : undefined,
         );
         mediaProbes.add(probe);
         void probe.finally(() => mediaProbes.delete(probe));
@@ -232,14 +147,15 @@ function createMediaQueue(ctx) {
     },
     async mediaSetAudio(payload) {
       const job = requireMediaJob(payload?.id);
-      if (job.status === "running") throw Error("处理中的文件不能更换音频");
+      if (job.status === "running") throw appError("MEDIA_AUDIO_BUSY");
       const file = payload?.path || "";
       if (file && (!path.isAbsolute(file) || !fs.statSync(file).isFile()))
-        throw Error("请选择有效的音频文件");
+        throw appError("MEDIA_AUDIO_INPUT");
       if (file) job.audioPath = file;
       else delete job.audioPath;
       delete job.audioMeta;
       delete job.audioOffset; // another audio: its alignment no longer holds
+      delete job.audioShiftFrames;
       // The replacement audio's own parameters (Hi-Res preview, checks).
       if (file) {
         await locate();
@@ -249,20 +165,27 @@ function createMediaQueue(ctx) {
     },
     mediaRemove(payload) {
       const job = requireMediaJob(payload?.id);
-      if (job.status === "running") throw Error("处理中的文件不能移除");
-      state.mediaJobs = state.mediaJobs.filter((j) => j !== job);
+      if (job.status === "running") throw appError("MEDIA_REMOVE_BUSY");
+      setJobs(getJobs().filter((j) => j !== job));
     },
     mediaClearCompleted() {
-      state.mediaJobs = state.mediaJobs.filter(
-        (j) => !["done", "cancelled"].includes(j.status),
+      setJobs(
+        getJobs().filter((j) => !["done", "cancelled"].includes(j.status)),
       );
     },
     mediaRequeue(payload) {
-      if (state.running) throw Error("请等待当前处理结束后再重新导出");
+      if (isRunning()) throw appError("MEDIA_REQUEUE_BUSY");
       const job = requireMediaJob(payload?.id);
       if (!["done", "cancelled", "failed"].includes(job.status))
-        throw Error("只有已完成、已取消或失败的文件可以重新导出");
-      for (const key of ["output", "error", "log", "elapsed", "startedAt"])
+        throw appError("MEDIA_REQUEUE_STATE");
+      for (const key of [
+        "output",
+        "error",
+        "errorData",
+        "log",
+        "elapsed",
+        "startedAt",
+      ])
         delete job[key];
       job.status = "ready";
     },
@@ -270,10 +193,10 @@ function createMediaQueue(ctx) {
       // File-info reads started by mediaAdd are short; let them finish
       // instead of reporting them as a busy task.
       await Promise.all([...mediaProbes]);
-      if (ctx.isBusy()) throw Error("请等待当前任务结束");
+      if (isBusy()) throw appError("MEDIA_BUSY");
       const options = payload || {};
       if (!["audio", "video", "merge"].includes(options.operation))
-        throw Error("请选择提取音频、提取视频或音视频合并");
+        throw appError("MEDIA_OPERATION");
       if (
         options.location === "custom" &&
         !(
@@ -281,61 +204,82 @@ function createMediaQueue(ctx) {
           path.isAbsolute(options.outputDir)
         )
       )
-        throw Error("请选择有效的自定义输出目录");
+        throw appError("MEDIA_OUTPUT_DIR");
       await locate();
-      if (!state.engineInfo.ffmpeg || !state.engineInfo.ffprobe)
-        throw Error("请先安装 FFmpeg / ffprobe");
-      const jobs = state.mediaJobs.filter((j) => j.status === "ready");
-      if (!jobs.length) throw Error("没有待处理的文件");
-      state.running = true;
-      ctx.stopped = false;
+      if (!engineInfo().ffmpeg || !engineInfo().ffprobe)
+        throw appError("MEDIA_TOOLS_REQUIRED");
+      const jobs = getJobs().filter((j) => j.status === "ready");
+      if (!jobs.length) throw appError("MEDIA_QUEUE_EMPTY");
+      setRunning(true);
+      setStopped(false);
       emit();
       (async () => {
         const pending = new Set(jobs);
         while (pending.size) {
           const job =
-            state.mediaJobs.find((j) => pending.has(j)) ||
+            getJobs().find((j) => pending.has(j)) ||
             pending.values().next().value;
           pending.delete(job);
           // Removed from the queue while waiting: withdrawn, not run.
-          if (!state.mediaJobs.includes(job)) continue;
-          if (ctx.stopped) {
+          if (!getJobs().includes(job)) continue;
+          if (isStopped()) {
             job.status = "cancelled";
             continue;
           }
           await runMediaJob(job, options);
         }
       })()
-        .catch((e) => (state.notice = e.message))
+        .catch((e) => {
+          const error = serializeError(e);
+          const notice = summary("MEDIA_BATCH_FAILED", {
+            detail: e.message,
+            error,
+          });
+          if (e.runnerErrorData) notice.params = { error };
+          onNotice(notice);
+        })
         .finally(() => {
-          state.running = false;
+          setRunning(false);
           emit();
         });
     },
     mediaReorder(payload) {
-      state.mediaJobs = ctx.reorder(state.mediaJobs, payload.ids);
+      setJobs(reorder(getJobs(), payload.ids));
     },
     // 音频对齐 of a merge's added audio with the video's own sound (seconds,
     // > 0 its start is cut, < 0 silence first); null clears it.
     mediaSetAudioOffset(payload) {
       const job = requireMediaJob(payload?.id);
-      if (job.status === "running") throw Error("处理中的文件不能更改对齐");
+      if (job.status === "running") throw appError("MEDIA_ALIGN_BUSY");
+      if (
+        payload?.expectedAudioPath !== undefined &&
+        payload.expectedAudioPath !== job.audioPath
+      )
+        throw appError("ALIGN_CANCELLED");
       const offset = payload?.offset;
       if (offset === null || offset === undefined) {
         delete job.audioOffset;
+        delete job.audioShiftFrames;
         return;
       }
-      if (!job.audioPath) throw Error("请先选择要合并的音频");
+      if (!job.audioPath) throw appError("MEDIA_AUDIO_REQUIRED");
       if (!Number.isFinite(offset) || Math.abs(offset) > 24 * 3600)
-        throw Error("对齐数据无效");
+        throw appError("MEDIA_ALIGN_INVALID");
+      const frames =
+        payload.shiftFrames === undefined
+          ? job.audioShiftFrames || 0
+          : payload.shiftFrames;
+      frameOffset(offset, frames, job.meta?.fpsText || job.meta?.fps);
       job.audioOffset = offset;
+      if (frames) job.audioShiftFrames = frames;
+      else delete job.audioShiftFrames;
     },
     // The 音频对齐 dialog's result for one file: extracting its audio then
     // cuts (offset > 0) or pads (offset < 0) its start to line up with the
     // reference, and with trim ends where the reference does. null clears it.
     async mediaSetAlign(payload) {
       const job = requireMediaJob(payload?.id);
-      if (job.status === "running") throw Error("处理中的文件不能更改对齐");
+      if (job.status === "running") throw appError("MEDIA_ALIGN_BUSY");
       const a = payload?.align;
       if (!a) {
         delete job.align;
@@ -347,16 +291,35 @@ function createMediaQueue(ctx) {
         !Number.isFinite(a.offset) ||
         Math.abs(a.offset) > 24 * 3600
       )
-        throw Error("对齐数据无效");
-      let length = 0;
-      if (a.trim) {
+        throw appError("MEDIA_ALIGN_INVALID");
+      const frames =
+        a.shiftFrames === undefined
+          ? job.align?.reference === a.reference
+            ? job.align.shiftFrames || 0
+            : 0
+          : a.shiftFrames;
+      let length = 0,
+        fpsText;
+      if (a.trim || frames) {
         await locate();
-        length = (await probeMedia(a.reference)).audioDuration || 0;
-        if (!length) throw Error("读不到参考音频的长度，无法截到参考长度");
+        const reference = await probeMedia(a.reference);
+        if (a.trim) {
+          length = reference.videoDuration || reference.audioDuration || 0;
+          if (!length) throw appError("MEDIA_REFERENCE_LENGTH");
+          if (!job.meta?.audioOnly && job.meta?.videoDuration > 0)
+            length = Math.min(length, job.meta.videoDuration);
+        }
+        if (frames && typeof reference.hasVideo !== "boolean")
+          throw appError("ALIGN_REFERENCE_READ_FAILED", {
+            detail: a.reference,
+          });
+        fpsText = reference.fpsText;
       }
+      frameOffset(a.offset, frames, fpsText);
       job.align = {
         reference: a.reference,
         offset: a.offset,
+        ...(frames ? { shiftFrames: frames, fpsText } : {}),
         ...(length ? { length } : {}),
       };
     },

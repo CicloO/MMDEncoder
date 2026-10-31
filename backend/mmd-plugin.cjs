@@ -7,6 +7,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
+const { appError } = require("./errors.cjs");
 
 const CLSID = "{DC3F6BD1-923F-467A-BF73-F115AF705033}";
 const BARE = CLSID.slice(1, -1);
@@ -91,7 +92,7 @@ function journal(event, details) {
 
 async function install(bundled) {
   if (!bundled || !fs.existsSync(bundled))
-    throw Error("这个版本没有附带 MMD 导出插件");
+    throw appError("MMD_PLUGIN_UNAVAILABLE");
   const dir = path.join(binDir(), hash(bundled).slice(0, 12));
   fs.mkdirSync(dir, { recursive: true });
   const target = path.join(dir, DLL);
@@ -99,7 +100,7 @@ async function install(bundled) {
   const before = await registeredPath();
   const r = await run(path.join(system32(), "regsvr32.exe"), ["/s", target]);
   if (r.code !== 0)
-    throw Error("注册插件失败（regsvr32 退出码 " + r.code + "）");
+    throw appError("MMD_PLUGIN_REGISTER_FAILED", { exitCode: r.code });
   const after = await registeredPath();
   if (after.toLowerCase() !== target.toLowerCase()) {
     journal("install-failed", {
@@ -109,7 +110,7 @@ async function install(bundled) {
       after,
       regsvr32: r.code,
     });
-    throw Error("注册插件后没有在注册表里找到它");
+    throw appError("MMD_PLUGIN_REGISTER_MISSING");
   }
   // Keep this build and the previous one: the registry has been seen pointing
   // back to an older build, and that DLL must still be there when it does.

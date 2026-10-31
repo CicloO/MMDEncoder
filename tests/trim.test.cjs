@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 const { ff, fp } = require("./engines.cjs");
 const trim = require("../backend/trim.cjs");
 const { check } = require("../scripts/trim-check.cjs");
@@ -22,6 +23,157 @@ const x264 = (bf) => [
   "-bf",
   String(bf),
 ];
+
+test(
+  "replacement trim PCM: fractional-frame shifts, source starts and short audio are sample-exact",
+  { timeout: 180000 },
+  async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trim-frame-pcm-"));
+    assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir()));
+    let passed = false;
+    try {
+      const sources = [];
+      for (const rate of [44100, 48000]) {
+        for (const duration of [0.25, 6]) {
+          const pcm = Buffer.alloc(Math.round(duration * rate) * 4);
+          let random = 731;
+          for (let i = 0; i < pcm.length; i += 2) {
+            random = (Math.imul(random, 1664525) + 1013904223) | 0;
+            pcm.writeInt16LE((random >>> 17) - 16384, i);
+          }
+          const raw = path.join(dir, `${rate}-${duration}.s16`);
+          const file = path.join(dir, `${rate}-${duration}.wav`);
+          fs.writeFileSync(raw, pcm);
+          await trim.run(ff, [
+            "-v",
+            "error",
+            "-f",
+            "s16le",
+            "-ar",
+            String(rate),
+            "-ac",
+            "2",
+            "-i",
+            raw,
+            "-c:a",
+            "pcm_s16le",
+            file,
+          ]);
+          sources.push({ rate, pcm, file });
+        }
+      }
+      let cases = 0;
+      for (const num of [30000, 24000]) {
+        const den = 1001;
+        const video = path.join(dir, `${num}.mp4`);
+        await trim.run(ff, [
+          "-v",
+          "error",
+          "-f",
+          "lavfi",
+          "-i",
+          `testsrc2=s=64x64:r=${num}/${den}`,
+          "-frames:v",
+          "96",
+          "-c:v",
+          "libx264",
+          "-g",
+          "1",
+          "-preset",
+          "ultrafast",
+          video,
+        ]);
+        const idx = await trim.index(tools, video);
+        for (const { rate, pcm, file } of sources) {
+          for (const from of [0, 17]) {
+            for (const shift of [0, 2, -3]) {
+              // A waveform offset against the whole source, then its clip
+              // start once, and an independent actual-frame shift.
+              const offset =
+                0.0123456 + (from * den) / num - (shift * den) / num;
+              const count = Math.round((48 * den * rate) / num);
+              const expected = Buffer.alloc(count * 4);
+              const at = Math.round(offset * rate);
+              const sourceStart = Math.max(0, at),
+                destinationStart = Math.max(0, -at);
+              const copied = Math.max(
+                0,
+                Math.min(
+                  pcm.length / 4 - sourceStart,
+                  count - destinationStart,
+                ),
+              );
+              if (copied)
+                pcm.copy(
+                  expected,
+                  destinationStart * 4,
+                  sourceStart * 4,
+                  (sourceStart + copied) * 4,
+                );
+              const output = path.join(dir, `out-${cases++}.mkv`);
+              await trim.cut(
+                tools,
+                [{ file: video, idx, from, to: from + 48 }],
+                output,
+                {
+                  audio: { mode: "replace", codec: "pcm", file, offset },
+                },
+              );
+              const actual = execFileSync(
+                ff,
+                [
+                  "-v",
+                  "error",
+                  "-i",
+                  output,
+                  "-map",
+                  "0:a:0",
+                  "-c:a",
+                  "pcm_s16le",
+                  "-f",
+                  "s16le",
+                  "-",
+                ],
+                { maxBuffer: 1 << 24 },
+              );
+              const label = `${num}/${den} ${rate}Hz from=${from} shift=${shift} samples=${pcm.length / 4}`;
+              if (actual.length !== expected.length)
+                console.log(
+                  JSON.stringify({
+                    dir,
+                    output,
+                    fps: idx.fps,
+                    timeBase: idx.timeBase,
+                    start: idx.frames[from],
+                    end: idx.frames[from + 48],
+                    offset,
+                    rate,
+                    count,
+                    actualSamples: actual.length / 4,
+                  }),
+                );
+              assert.equal(
+                actual.length,
+                expected.length,
+                `${label}: output length`,
+              );
+              assert.ok(
+                actual.equals(expected),
+                `${label}: PCM sample content`,
+              );
+            }
+          }
+        }
+      }
+      assert.equal(cases, 48);
+      console.log(`Actual trim replacement PCM cases: ${cases}`);
+      passed = true;
+    } finally {
+      if (passed) fs.rmSync(dir, { recursive: true, force: true });
+      else console.log(`Trim PCM failure evidence: ${dir}`);
+    }
+  },
+);
 
 test(
   "lossless trim: B-frames in MP4 and MKV, intra ProRes, cross-file joins, frame-exact and packet-exact",
@@ -117,6 +269,8 @@ test(
       const refused = idx.frames.filter((f) => f.key && !f.safe);
       assert.ok(refused.length >= 3);
       assert.match(refused[0].why, /开放 GOP/);
+      assert.equal(refused[0].whyData.code, "TRIM_OPEN_GOP");
+      assert.equal(refused[0].whyData.message, refused[0].why);
       assert.equal(trim.snap(idx, 60), 0, "only the start can be cut");
 
       await make(a, x264(3));
@@ -530,7 +684,11 @@ test(
           path.join(dir, "no.mp4"),
           { smart: true },
         ),
-        /没有记录编码参数/,
+        (error) => {
+          assert.equal(error.code, "TRIM_SMART_TAG_REQUIRED");
+          assert.equal(error.params.name, "plain.mp4");
+          return true;
+        },
       );
       assert.equal(fs.existsSync(path.join(dir, "no.mp4")), false);
     } finally {
@@ -593,6 +751,8 @@ test(
       const v = await trim.index(tools, vfr);
       assert.equal(v.supported, false);
       assert.match(v.reason, /可变帧率/);
+      assert.equal(v.reasonData.code, "TRIM_VFR_UNSUPPORTED");
+      assert.equal(v.reasonData.message, v.reason);
       // 24 000 frames, every one an IDR: the safe-point check is linear.
       const many = path.join(dir, "many.mp4");
       await trim.run(ff, [

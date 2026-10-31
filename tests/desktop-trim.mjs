@@ -69,6 +69,10 @@ try {
   );
   const slider = page.getByRole("slider", { name: "当前帧" });
   await expect(slider).toBeVisible();
+  await expect(page.locator(".trim-preview video")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "播放", exact: true }),
+  ).toBeEnabled();
   await expect(page.locator(".trim-tick")).toHaveCount(4);
   await slider.scrollIntoViewIfNeeded();
   const value = async () => Number(await slider.inputValue());
@@ -115,17 +119,92 @@ try {
   await page.keyboard.press("ArrowLeft");
   await expect.poll(value).toBe(30);
 
-  // Smart cut on, but this file has no recorded encode settings (not made
-  // by MMDEncoder), so it cannot be smart-cut: the slider keeps snapping.
+  // Smart cut frees the playhead even when this untagged file cannot be
+  // smart-cut. Its actual cut points stay safe and are shown explicitly.
   await page.evaluate(() =>
     window.encoder.invoke("trimSmart", { smart: true }),
   );
+  await expect(page.getByRole("checkbox", { name: /^智能剪切/ })).toBeChecked();
   await page.mouse.click(ticks[1] + (ticks[2] - ticks[1]) * 0.4, y);
-  assert.equal(await value(), 30, "still snaps when smart cut cannot be used");
+  assert.equal(await value(), 42, "smart preview stays on the requested frame");
+  await expect(page.locator("#trim-cut-landing")).toContainText(
+    "入点将落在第 30 帧",
+  );
+
+  await page.locator("#trim-audio").selectOption("none");
+  const state = () =>
+    page.evaluate(async () => (await window.encoder.invoke("state")).trim);
+  for (const suffix of ["", " (2)"]) {
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(async () => {
+            const current = await window.encoder.invoke("state");
+            return (
+              !current.detecting &&
+              !current.tools.busy &&
+              !current.enhancements.busy
+            );
+          }),
+        { timeout: 60000 },
+      )
+      .toBe(true);
+    const previousOutput = (await state()).output;
+    await page.getByRole("button", { name: "导出", exact: true }).click();
+    await expect
+      .poll(
+        async () => {
+          const current = await state();
+          return (
+            !current.running &&
+            current.output !== previousOutput &&
+            current.stage?.stage === "trim_completed"
+          );
+        },
+        { timeout: 30000 },
+      )
+      .toBe(true);
+    const result = await state();
+    assert.equal(result.stage.stage, "trim_completed");
+    assert.ok(Number.isFinite(result.elapsed) && result.elapsed >= 0);
+    assert.ok(fs.existsSync(result.output));
+    console.log(
+      "Trim output",
+      path.basename(result.output),
+      "elapsed",
+      result.elapsed,
+    );
+    assert.equal(
+      path.basename(result.output),
+      `剪辑 测试_trimmed${suffix}.mp4`,
+    );
+    await expect(page.locator(".output-file-name")).toHaveAttribute(
+      "title",
+      result.output,
+    );
+    await expect(page.locator(".trim-completion-label")).toContainText(
+      "已完成 · 用时",
+    );
+  }
 
   await page.screenshot({ path: path.join(evidence, "trim-slider.png") });
   console.log("Desktop trim PASS");
   passed = true;
+} catch (error) {
+  const page = await app.firstWindow();
+  fs.writeFileSync(
+    path.join(testDir, "failure-state.json"),
+    JSON.stringify(
+      await page.evaluate(async () => ({
+        trim: (await window.encoder.invoke("state")).trim,
+        text: document.body.innerText,
+      })),
+      null,
+      2,
+    ),
+  );
+  await page.screenshot({ path: path.join(testDir, "failure.png") });
+  throw error;
 } finally {
   await app.close();
   if (passed) fs.rmSync(testDir, { recursive: true, force: true });

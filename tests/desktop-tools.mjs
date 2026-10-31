@@ -178,15 +178,34 @@ try {
   );
   await expect(page.locator(".output-path").first()).toHaveText(first);
   await page.getByRole("button", { name: "开始处理", exact: true }).click();
-  await expect(mediaQueue.locator(".job-status.done")).toHaveText("已完成");
+  await expect(mediaQueue.locator(".job-status.done")).toContainText(
+    "已完成 · 用时",
+  );
+  await expect(mediaQueue.locator(".output-file-name")).toHaveText(
+    path.basename(first),
+  );
+  await expect(mediaQueue.locator(".output-file-name")).toHaveAttribute(
+    "title",
+    first,
+  );
   assert.ok(fs.existsSync(first));
   checks.push("media queue item completes with an automatic same-folder name");
   await page
     .getByRole("button", { name: "重新导出 " + name, exact: true })
     .click();
   await expect(mediaQueue.locator(".job-status.ready")).toHaveText("等待处理");
+  await expect(mediaQueue.locator(".output-file-name")).toHaveCount(0);
   await page.getByRole("button", { name: "开始处理", exact: true }).click();
-  await expect(mediaQueue.locator(".job-status.done")).toHaveText("已完成");
+  await expect(mediaQueue.locator(".job-status.done")).toContainText(
+    "已完成 · 用时",
+  );
+  await expect(mediaQueue.locator(".output-file-name")).toHaveText(
+    path.parse(fixture).name + " (2).wav",
+  );
+  await expect(mediaQueue.locator(".output-file-name")).toHaveAttribute(
+    "title",
+    path.join(path.dirname(fixture), path.parse(fixture).name + " (2).wav"),
+  );
   assert.ok(
     fs.existsSync(
       path.join(path.dirname(fixture), path.parse(fixture).name + " (2).wav"),
@@ -208,7 +227,17 @@ try {
   await page.getByRole("button", { name: "移除 " + name, exact: true }).click();
   await page.getByRole("button", { name: "添加文件", exact: true }).click();
   await page.getByRole("button", { name: "开始处理", exact: true }).click();
-  await expect(mediaQueue.locator(".job-status.done")).toHaveText("已完成");
+  await expect(mediaQueue.locator(".job-status.done")).toContainText(
+    "已完成 · 用时",
+  );
+  await expect(mediaQueue.locator(".output-file-name")).toHaveAttribute(
+    "title",
+    path.join(
+      path.dirname(fixture),
+      "Encoded",
+      path.parse(fixture).name + ".wav",
+    ),
+  );
   await page.getByRole("button", { name: "清除已完成", exact: true }).click();
   await expect(page.getByText("把音视频放进来", { exact: true })).toBeVisible();
   checks.push("Encoded location, remove and clear completed");
@@ -217,17 +246,29 @@ try {
   const axe = await new AxeBuilder({ page }).setLegacyMode().analyze();
   assert.deepEqual(axe.violations, []);
   checks.push("media narrow viewport and accessibility");
-  // 关于: version, this version's notes, support links; updates no
+  // About: version, release page and support links; updates no
   // longer live in the engine dialog.
   await page.getByRole("button", { name: /关于/ }).click();
   const about = page.getByRole("dialog", { name: "关于" });
   await expect(about.locator(".about-version strong")).toHaveText(
     require("../package.json").version,
   );
-  await expect(about.locator(".release-notes h4").first()).toBeVisible();
+  await expect(about.locator(".release-notes")).toHaveCount(0);
+  await expect(
+    about.getByRole("button", { name: /^(发行说明|打开下载页)$/ }),
+  ).toBeVisible();
   await expect(about.getByRole("button", { name: "问题反馈" })).toBeVisible();
   const aboutHeight = (await about.boundingBox()).height;
-  await screenshot(app, "about-fixed.png");
+  await expect(about).not.toHaveClass(/modal-fixed/);
+  const fixedHeight = Math.min(
+    752,
+    await page.evaluate(() => innerHeight - 50),
+  );
+  assert.ok(
+    aboutHeight < fixedHeight,
+    "Chinese About fits its content without the old empty log area",
+  );
+  await screenshot(app, "about-adaptive.png");
   const aboutAxe = await new AxeBuilder({ page })
     .include('[role="dialog"]')
     .setLegacyMode()
@@ -238,12 +279,12 @@ try {
   await expect(page.getByRole("dialog", { name: "编码引擎" })).toBeVisible();
   assert.ok(
     Math.abs(
-      (await page.getByRole("dialog").boundingBox()).height - aboutHeight,
+      (await page.getByRole("dialog").boundingBox()).height - fixedHeight,
     ) < 2,
   );
   await expect(page.getByRole("region", { name: "软件更新" })).toHaveCount(0);
   await page.keyboard.press("Escape");
-  checks.push("about dialog: version, changelog, support, accessibility");
+  checks.push("about dialog: version, release page, support, accessibility");
   await page.getByRole("button", { name: "视频压制", exact: true }).click();
   await page.getByRole("button", { name: "超分补帧", exact: true }).click();
   await page.selectOption("#upscaler", "artcnn");

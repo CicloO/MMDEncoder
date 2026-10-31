@@ -1,6 +1,6 @@
 {
   "name": "mmd-encoder",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "private": true,
   "description": "MMD 独立视频压制工具",
   "license": "MPL-2.0",
@@ -8,11 +8,12 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "node scripts/tokens.mjs && tsc --noEmit && vite build",
-    "test": "node --test tests/*.test.cjs",
+    "test": "node --test --test-concurrency=4 tests/*.test.cjs",
     "typecheck": "tsc --noEmit",
     "i18n:scan": "node scripts/i18n-scan.mjs",
-    "format": "prettier --write src desktop backend scripts tests *.json README.md DESIGN.md UX-CONTRACT.md docs/CHANGELOG.md docs/THIRD-PARTY-NOTICES.md",
-    "format:check": "prettier --check src desktop backend scripts tests *.json README.md DESIGN.md UX-CONTRACT.md docs/CHANGELOG.md docs/THIRD-PARTY-NOTICES.md",
+    "i18n:check": "node scripts/i18n-check.mjs",
+    "format": "prettier --write src desktop backend locales scripts tests *.json README.md DESIGN.md UX-CONTRACT.md docs/CHANGELOG.md docs/THIRD-PARTY-NOTICES.md",
+    "format:check": "prettier --check src desktop backend locales scripts tests *.json README.md DESIGN.md UX-CONTRACT.md docs/CHANGELOG.md docs/THIRD-PARTY-NOTICES.md",
     "start": "electron .",
     "package": "node scripts/package.mjs",
     "package:zip": "node scripts/zip-portable.mjs"

@@ -21,9 +21,9 @@
 需要 Windows 10 / 11 x64。
 
 1. 从 [Releases](https://github.com/CicloO/MMDEncoder/releases) 下载 `MMDEncoder-<版本>-win-x64.zip`，解压到任意目录，运行 `MMDEncoder.exe`。
-2. 第一次使用时在“编码引擎”里点“下载并安装最新工具”。需要联网，之后可以离线使用。
+2. 第一次使用时在“编码引擎”里点“下载并安装最新工具”；也可点“从压缩包安装”，选择已有的 ZIP / 7z 工具包。安装后可以离线使用。
 
-编码工具（[FFmpeg / ffprobe](https://www.gyan.dev/ffmpeg/builds/)、[NVEncC](https://github.com/rigaya/NVEnc/releases)）不随软件附带，默认装在 `%LOCALAPPDATA%\MMDEncoder\tools`，不需要管理员权限；可以在“编码引擎”里更改位置或检查更新。
+编码工具（[FFmpeg / ffprobe](https://www.gyan.dev/ffmpeg/builds/)、[NVEncC](https://github.com/rigaya/NVEnc/releases)）不随软件附带，默认装在 `%LOCALAPPDATA%\MMDEncoder\tools`，不需要管理员权限；可以在“编码引擎”里更改位置或检查更新。本地 FFmpeg 包需同时包含 `ffmpeg.exe` 和 `ffprobe.exe`；NVEncC 包需包含 `NVEncC.exe` 或 `NVEncC64.exe`。
 
 **软件更新**：在顶栏“关于”中操作。启动时会检查 GitHub Releases，有新版本时点“下载并更新”，校验 SHA-256 后替换程序文件，`data` 文件夹（设置、个人预设、日志）保留不动，失败会自动还原。你改过的内置预设如果在新版里有变化，会询问用新版覆盖还是另存为个人预设。也可以手动下载新版，把旧版的 `data` 复制过去。
 
@@ -40,7 +40,7 @@
 - **PNG 序列**：拖入装有序列的文件夹，或选其中任意一张 PNG。文件名末尾要有连续编号（如 `dance_0001.png`），缺帧会提示。在“当前素材”里选序列帧率（默认 30）。
 - **剪辑友好**（“高级”页）：每秒一个关键帧，方便之后无损剪辑，文件约大 2%~5%。
 - **Hi-Res 音频**（“音频”页，FLAC / PCM）：24-bit，低于 48 kHz 时升到 2 倍采样率。
-- **替换音频**：点队列里视频旁的 ♪ 选择音频文件，按视频时长截取；在“当前素材”里可以改回原音轨。
+- **音频替换**：点队列里视频旁的 ♪，或选中视频后拖入音频；再次拖入会替换选中项现有音频。按视频时长输出，右键 ♪ 取消替换，右键波形按钮取消对齐（键盘可用 Shift+F10）。“关于 → 设置”可关闭默认开启的自动对齐，保留已有偏移，仍可手动对齐。
 
 ### 透明通道
 
@@ -90,7 +90,7 @@ VSR 的“QualityLevel”：MMD 这类干净的渲染画面放大选 **4**（倍
 
 ### MMD 导出插件
 
-这里的选项都优先于预设。升级 1.6.1 后请更新插件。
+这里的选项都优先于预设。从 1.6.1 升级到 1.6.3 后请更新插件。
 
 1. 点右上角“MMD 导出”→“安装到 MMD”（只为当前 Windows 用户注册，不需要管理员；MMD 开着的话重启 MMD）。
 2. 选择导出预设，可以先点“测试编码”。
@@ -147,6 +147,10 @@ pnpm package           # 打包便携版
 node scripts/zip-portable.mjs
 ```
 
+压缩脚本同时生成完整包 `MMDEncoder-x.y.z-win-x64.zip`、程序包 `MMDEncoder-x.y.z-app.zip`、各自的 `.sha256` 和 `MMDEncoder-x.y.z-update.json` 清单；它会解包核对两种包内的 `resources/app` 完全一致。已有同版本文件须显式加 `--replace`。隔离验收可用 `MMD_PACKAGE_DEST` 指定新的便携目录，再用 `MMD_ARCHIVE_DEST` 指定独立的压缩包目录。
+
+自动更新在 Electron 版本相同时只下载程序包；运行环境不符、清单缺失或程序包未能通过下载校验时改用完整包。程序包只替换 `resources/app`，完整包替换程序目录；两者都保留 `data`，安装失败还原旧文件，日志在 `data/logs/update.log`。
+
 测试（`MMD_TEST_TOOLS_ROOT` 指向编码工具目录）：
 
 ```powershell
@@ -163,7 +167,7 @@ node mmd-plugin/tests/e2e.mjs    # MMD 导出插件
 
 Copyright (c) 2026 CicloO。本项目以 [Mozilla Public License 2.0](LICENSE) 发布：可以自由使用、修改和分发，包括用在闭源或商业软件中；修改了本项目的源文件并分发时，这些文件须继续以 MPL 2.0 公开。发行包里的协议全文是 `LICENSE-MMDEncoder.txt`（同目录的 `LICENSE` 是 Electron 的）。1.4.3 及以前的版本以 MIT 许可证发布。
 
-FFmpeg、NVEncC 等编码工具由用户另行下载，遵循各自的许可证；附带的第三方组件见 [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md)，版本变化见 [更新日志](docs/CHANGELOG.md)。
+FFmpeg、NVEncC 等编码工具由用户另行下载，遵循各自的许可证；附带的第三方组件见 [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md)，版本变化见 [发行说明](https://github.com/CicloO/MMDEncoder/releases)。
 
 本项目参考了 [XPRAMT/MMD2FFMPEG](https://github.com/XPRAMT/MMD2FFMPEG) 的编码设置。
 

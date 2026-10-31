@@ -115,7 +115,7 @@ test(
         logDir,
         fetchImpl,
       });
-      assert.equal(updater.supported(), "");
+      assert.equal(updater.supported(), null);
       await updater.download(info);
       assert.equal(updater.state.phase, "ready");
       assert.equal(
@@ -176,18 +176,27 @@ test("a tampered download is rejected and leaves the program untouched", async (
       logDir: path.join(root, "logs"),
       fetchImpl,
     });
-    await assert.rejects(updater.download(info), /SHA-256/);
+    await assert.rejects(updater.download(info), {
+      code: "UPDATE_CHECKSUM_MISMATCH",
+      params: {},
+    });
     assert.equal(updater.state.phase, "failed");
-    assert.throws(() => updater.install(), /尚未下载完成/);
+    assert.equal(updater.state.errorData.code, "UPDATE_CHECKSUM_MISMATCH");
+    assert.deepEqual(JSON.parse(JSON.stringify(updater.state.errorData)), {
+      code: "UPDATE_CHECKSUM_MISMATCH",
+      params: {},
+      message: updater.state.error,
+    });
+    assert.throws(() => updater.install(), { code: "UPDATE_NOT_READY" });
     assert.equal(fs.existsSync(path.join(appDir, ".update")), false);
-    assert.match(
+    assert.equal(
       createUpdater({
         appDir: root,
         version: "1.0.0",
         extractor,
         logDir: root,
-      }).supported(),
-      /开发版或非便携目录/,
+      }).supported().code,
+      "UPDATE_NOT_PORTABLE",
     );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -232,6 +241,10 @@ test(
       });
       const { info } = release(root, "1.0.1");
       await assert.rejects(offline.download(info), /offline/);
+      assert.deepEqual(offline.state.errorData, {
+        message: "offline",
+        params: {},
+      });
       kept();
       const bad = release(path.join(root, "bad"), "1.0.1", { tamper: true });
       fs.mkdirSync(path.join(root, "bad"), { recursive: true });
@@ -269,11 +282,46 @@ test(
   },
 );
 
+test("a failed update can retry without retaining a stale error descriptor", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-update-retry-"));
+  try {
+    const appDir = path.join(root, "app");
+    portable(appDir, "1.0.0");
+    const good = release(root, "1.0.1");
+    let offline = true;
+    const detail = "network ECONNRESET: https://example.invalid/舞台{a}.zip";
+    const updater = createUpdater({
+      appDir,
+      version: "1.0.0",
+      extractor,
+      logDir: path.join(root, "logs"),
+      fetchImpl: (...args) => {
+        if (offline) throw Error(detail);
+        return good.fetchImpl(...args);
+      },
+    });
+    await assert.rejects(updater.download(good.info), { message: detail });
+    assert.equal(updater.state.errorData.message, detail);
+    offline = false;
+    await updater.download(good.info);
+    assert.equal(updater.state.phase, "ready");
+    assert.equal(updater.state.errorData, null);
+    assert.equal(updater.state.error, "");
+    assert.equal(
+      fs.readFileSync(path.join(appDir, "MMDEncoder.exe"), "utf8"),
+      "exe 1.0.0",
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test(
   "after updating, the app is relaunched as an app, not in the helper's Node mode",
   { skip: process.platform !== "win32", timeout: 60000 },
   async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-relaunch-"));
+    assert.equal(path.dirname(path.resolve(root)), path.resolve(os.tmpdir()));
     try {
       const appDir = path.join(root, "app");
       const newDir = path.join(root, "new");
@@ -288,6 +336,7 @@ test(
         hook,
         `if (require("path").basename(process.execPath) === "MMDEncoder.exe") {
   require("fs").writeFileSync(${JSON.stringify(seen)}, JSON.stringify({
+    pid: process.pid,
     runAsNode: process.env.ELECTRON_RUN_AS_NODE ?? null,
     job: process.env.MMD_UPDATE_JOB ?? null,
   }));
@@ -321,7 +370,24 @@ test(
       for (let i = 0; i < 100 && !fs.existsSync(seen); i++)
         await new Promise((r) => setTimeout(r, 100));
       assert.match(fs.readFileSync(log, "utf8"), /更新完成/);
-      assert.deepEqual(JSON.parse(fs.readFileSync(seen, "utf8")), {
+      const { pid, ...environment } = JSON.parse(fs.readFileSync(seen, "utf8"));
+      const running = () => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch (error) {
+          if (error.code === "ESRCH") return false;
+          throw error;
+        }
+      };
+      for (let i = 0; i < 100 && running(); i++)
+        await new Promise((r) => setTimeout(r, 20));
+      assert.equal(
+        running(),
+        false,
+        "the test relaunch process must exit before cleanup",
+      );
+      assert.deepEqual(environment, {
         runAsNode: null,
         job: null,
       });

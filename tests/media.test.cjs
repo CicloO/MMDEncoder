@@ -202,7 +202,7 @@ test(
       await runQueue({ operation: "video", location: "encoded" });
       const video = byPath(input).output;
       // MP4 is the default container for copied H.264 video.
-      assert.equal(video, path.join(root, "Encoded", "source_无音频.mp4"));
+      assert.equal(video, path.join(root, "Encoded", "source_no_audio.mp4"));
       assert.equal(probe(video).streams.length, 1);
 
       // Merge needs a paired audio; a missing pair fails only that file.
@@ -234,7 +234,7 @@ test(
       assert.equal(byPath(video).status, "done", byPath(video).error);
       assert.equal(
         byPath(video).output,
-        path.join(custom, "source_无音频_合并.mp4"),
+        path.join(custom, "source_no_audio_merged.mp4"),
       );
       // Lossless WAV source: "follow source" bitrate becomes 320k.
       assert.ok(byPath(video).log.includes("'-b:a' '320k'"));
@@ -260,11 +260,13 @@ test(
       });
       assert.equal(
         byPath(video).output,
-        path.join(custom, "source_无音频_合并.mkv"),
+        path.join(custom, "source_no_audio_merged.mkv"),
       );
       assert.match(byPath(video).log, /已改用 MKV/);
       assert.equal(byPath(second).status, "failed");
       assert.match(byPath(second).error, /缺少/);
+      assert.equal(byPath(second).errorData.code, "MEDIA_MERGE_AUDIO_MISSING");
+      assert.deepEqual(byPath(second).errorData.params, {});
       await assert.rejects(
         service.invoke("mediaStart", {
           operation: "merge",
@@ -282,6 +284,7 @@ test(
       });
       assert.equal(byPath(video).status, "failed");
       assert.ok(byPath(video).log.includes("matches no streams"));
+      assert.equal(byPath(video).errorData.message, byPath(video).error);
       assert.equal(fs.existsSync(video.replace(/.mp4$/, ".wav")), false);
 
       // Cancellation leaves no output or temporary folder behind.
@@ -338,7 +341,7 @@ test("media output name is automatic, follows output location and never overwrit
         { outputMode: "source" },
         exists,
       ),
-      path.join(dir, "舞台_无音频.mkv"),
+      path.join(dir, "舞台_no_audio.mkv"),
     );
     assert.equal(
       suggestOutput(
@@ -346,8 +349,20 @@ test("media output name is automatic, follows output location and never overwrit
         { outputMode: "custom", outputDir: path.join(dir, "out") },
         exists,
       ),
-      path.join(dir, "out", "舞台_合并.mkv"),
+      path.join(dir, "out", "舞台_merged.mkv"),
     );
+    for (const [operation, suffix] of [
+      ["video", "_no_audio"],
+      ["merge", "_merged"],
+    ]) {
+      const target = path.join(dir, "舞台" + suffix + ".mkv");
+      fs.writeFileSync(target, "existing");
+      assert.equal(
+        suggestOutput({ operation, input }, { outputMode: "source" }, exists),
+        path.join(dir, "舞台" + suffix + " (2).mkv"),
+      );
+      assert.equal(fs.readFileSync(target, "utf8"), "existing");
+    }
     const wav = path.join(dir, "原声.wav");
     assert.equal(
       suggestOutput(

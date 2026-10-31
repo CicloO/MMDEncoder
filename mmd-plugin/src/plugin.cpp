@@ -43,6 +43,13 @@
 #include "platform.h"
 #include "processes.h"
 #include "settings.h"
+#include "messages.h"
+
+static Json textParam(const wchar_t* name, const std::wstring& value) {
+  Json params; params.type = Json::Object;
+  params.o[name].type = Json::String; params.o[name].s = value;
+  return params;
+}
 
 #pragma comment(lib, "msdmo.lib")
 #pragma comment(lib, "dmoguids.lib")
@@ -310,6 +317,7 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
   }
   ~Encoder() {
     finish();
+    if (encoderGroup_) CloseHandle(encoderGroup_);
     if (haveIn_) MoFreeMediaType(&in_);
     if (haveOut_) MoFreeMediaType(&out_);
     g_objects--;
@@ -556,6 +564,7 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
   void fail(const std::wstring& message) {
     if (!failed_) plog(L"FAILED: %s", message.c_str());
     failed_ = true;
+    if (encoderGroup_) TerminateJobObject(encoderGroup_, 1);
     if (error_.empty()) error_ = message;
   }
 
@@ -572,13 +581,14 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
     plog(L"render start in %s: %ldx%ld %d-bit %s, AvgTimePerFrame=%lld, frames %ld-%ld, avi=%s, pmm=%s",
          exe, width_, height_, bits_, b.biHeight > 0 ? L"bottom-up" : L"top-down", inInfo_.AvgTimePerFrame,
          mmd_.startFrame, mmd_.endFrame, avi_.c_str(), mmd_.pmm.c_str());
-    if (avi_.empty()) return fail(L"找不到 MMD 正在写入的 AVI 文件");
     std::string raw;
-    if (!readFile(pluginDir() + L"\\mmd-export.json", raw) || !JsonReader(raw).parse(config_))
-      return fail(L"还没有选择导出预设：请在 MMDEncoder 的“预设管理”里选择 MMD 导出预设");
+    const bool hasConfig = readFile(pluginDir() + L"\\mmd-export.json", raw) && JsonReader(raw).parse(config_);
+    messages_ = PluginMessages(hasConfig ? config_ : Json{});
+    if (avi_.empty()) return fail(messages_.text(L"plugin.aviMissing"));
+    if (!hasConfig) return fail(messages_.text(L"plugin.configMissing"));
     appExe_ = config_[L"appExe"].s;
     helper_ = config_[L"helper"].s;
-    if (appExe_.empty() || helper_.empty()) return fail(L"导出设置不完整，请在 MMDEncoder 里重新选择导出预设");
+    if (appExe_.empty() || helper_.empty()) return fail(messages_.text(L"plugin.configIncomplete"));
 
     // pmm and startFrame let a cut-off export be finished later (mmd-export recover()).
     char head[512];
@@ -588,8 +598,9 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
     std::string reply;
     Json plan;
     if (!runHelper(appExe_, helper_, L"plan", job, reply, 30000, plog) || !JsonReader(reply).parse(plan))
-      return fail(L"MMDEncoder 没有返回导出命令：" + utf16(reply.substr(0, 400)));
-    if (!plan[L"ok"].b) return fail(L"无法使用当前导出预设：" + plan[L"error"].s);
+      return fail(messages_.format(L"plugin.planMissing", textParam(L"detail", utf16(reply))));
+    if (!plan[L"ok"].b) return fail(messages_.format(L"plugin.presetFailed",
+      textParam(L"detail", messages_.result(plan[L"errorData"], L"error.", plan[L"error"].s))));
     temp_ = plan[L"temp"].s;
     output_ = plan[L"output"].s;
     std::wstring ffmpeg = plan[L"exe"].s;
@@ -597,13 +608,18 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
     for (const Json& a : plan[L"args"].a) cmd += L" " + quoteArg(a.s);
     plog(L"output %s (preset %s)", output_.c_str(), plan[L"presetName"].s.c_str());
     if (!plan[L"maskOutput"].s.empty()) plog(L"alpha mask %s", plan[L"maskOutput"].s.c_str());
-    for (const Json& n : plan[L"notes"].a) plog(L"note: %s", n.s.c_str());
+    for (size_t i = 0; i < plan[L"notes"].a.size(); ++i) {
+      const std::wstring fallback = plan[L"notes"].a[i].s;
+      const std::wstring value = i < plan[L"notesData"].a.size()
+        ? messages_.result(plan[L"notesData"].a[i], L"message.", fallback) : fallback;
+      plog(L"note: %s", value.c_str());
+    }
     plog(L"ffmpeg: %s", cmd.c_str());
 
     // FFmpeg reads frames from stdin; its messages go to a log next to ours.
     SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
     HANDLE readPipe = nullptr;
-    if (!CreatePipe(&readPipe, &stdin_, &sa, 4 << 20)) return fail(L"无法创建管道");
+    if (!CreatePipe(&readPipe, &stdin_, &sa, 4 << 20)) return fail(messages_.text(L"plugin.pipeFailed"));
     SetHandleInformation(stdin_, HANDLE_FLAG_INHERIT, 0);
     std::wstring ffLog = Log::get().path();
     ffLog = ffLog.substr(0, ffLog.size() - 4) + L"-ffmpeg.log";
@@ -623,16 +639,14 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
       if (kv.second.type == Json::String) extra.push_back({kv.first, kv.second.s});
     std::vector<wchar_t> env;
     if (!extra.empty()) env = environmentWith(extra);
-    BOOL ok = CreateProcessW(ffmpeg.c_str(), cmd.data(), nullptr, nullptr, TRUE,
-                             CREATE_NO_WINDOW | (env.empty() ? 0 : CREATE_UNICODE_ENVIRONMENT),
-                             env.empty() ? nullptr : env.data(), nullptr, &si, &pi);
+    const bool ok = startProcessGroup(ffmpeg, cmd, env.empty() ? nullptr : env.data(), si, pi, encoderGroup_);
     CloseHandle(readPipe);
     if (err != INVALID_HANDLE_VALUE) CloseHandle(err);
     if (nul != INVALID_HANDLE_VALUE) CloseHandle(nul);
     if (!ok) {
       CloseHandle(stdin_);
       stdin_ = nullptr;
-      return fail(L"无法启动 FFmpeg：" + ffmpeg);
+      return fail(messages_.format(L"plugin.encoderStartFailed", textParam(L"path", ffmpeg)));
     }
     CloseHandle(pi.hThread);
     encoder_ = pi.hProcess;
@@ -641,7 +655,7 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
 
   void writeFrame(const BYTE* data, DWORD bytes) {
     const DWORD rowBytes = (DWORD)row_.size(), srcStride = stride();
-    if (!data || bytes < srcStride * (DWORD)height_) return fail(L"MMD 送来的画面大小不对");
+    if (!data || bytes < srcStride * (DWORD)height_) return fail(messages_.text(L"plugin.frameSizeInvalid"));
     auto write = [&](const BYTE* p, DWORD n) {
       while (n) {
         DWORD done = 0;
@@ -654,7 +668,7 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
     bool ok = srcStride == rowBytes ? write(data, rowBytes * (DWORD)height_) : true;
     if (srcStride != rowBytes)  // 24-bit rows are padded to 4 bytes; FFmpeg wants them packed
       for (long y = 0; ok && y < height_; y++) ok = write(data + (size_t)y * srcStride, rowBytes);
-    if (!ok) fail(L"FFmpeg 提前退出，详见 FFmpeg 日志");
+    if (!ok) fail(messages_.text(L"plugin.encoderExited"));
   }
 
   // End of render: let FFmpeg finish, then hand over to the finish step.
@@ -667,13 +681,16 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
     DWORD code = 1;
     if (encoder_) {
       if (WaitForSingleObject(encoder_, 30 * 60 * 1000) == WAIT_TIMEOUT) {
-        TerminateProcess(encoder_, 1);
-        fail(L"FFmpeg 超过 30 分钟未结束，已停止");
+        TerminateJobObject(encoderGroup_, 1);
+        WaitForSingleObject(encoder_, 5000);
+        fail(messages_.text(L"plugin.encoderTimeout"));
       }
       GetExitCodeProcess(encoder_, &code);
       CloseHandle(encoder_);
       encoder_ = nullptr;
-      if (code != 0) fail(L"FFmpeg 编码失败（退出码 " + std::to_wstring(code) + L"），详见 FFmpeg 日志");
+      CloseHandle(encoderGroup_);
+      encoderGroup_ = nullptr;
+      if (code != 0) fail(messages_.format(L"plugin.encoderFailed", textParam(L"exitCode", std::to_wstring(code))));
     }
     plog(L"render end: %llu frames, ffmpeg exit %lu", frames_, code);
     // Whether a frame queue would help: share of the render MMD sat waiting
@@ -697,9 +714,11 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
         plog(L"finish step started for %s", output_.c_str());
         return;
       }
-      fail(L"无法启动收尾步骤（合成音频、删除占位 AVI）");
+      fail(messages_.text(L"plugin.finishStartFailed"));
     }
-    std::wstring text = L"MMDEncoder 导出失败：\n" + error_ + L"\n\n日志：" + Log::get().path();
+    Json params = textParam(L"detail", error_);
+    params.o[L"path"].type = Json::String; params.o[L"path"].s = Log::get().path();
+    std::wstring text = messages_.format(L"plugin.exportFailed", params);
     MessageBoxW(nullptr, text.c_str(), L"MMDEncoder", MB_OK | MB_ICONWARNING | MB_TOPMOST);
   }
 
@@ -742,8 +761,9 @@ class Encoder : public IMediaObject, public IAMVfwCompressDialogs {
   int bits_ = 0;
   MmdState mmd_;
   Json config_;
+  PluginMessages messages_;
   std::wstring avi_, temp_, output_, appExe_, helper_, error_;
-  HANDLE stdin_ = nullptr, encoder_ = nullptr;
+  HANDLE stdin_ = nullptr, encoder_ = nullptr, encoderGroup_ = nullptr;
   std::vector<BYTE> row_;
 };
 

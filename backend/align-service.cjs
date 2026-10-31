@@ -9,9 +9,11 @@
 // quits. They are not the service's `children`: a few seconds of alignment
 // must not hold up starting a queue (isBusy).
 const path = require("node:path");
+const fs = require("node:fs");
 const { spawn } = require("node:child_process");
 const { createLimit } = require("./limit.cjs");
 const { appError } = require("./errors.cjs");
+const { createWorkerErrorReader } = require("./worker-protocol.cjs");
 
 const WORKER = path.join(__dirname, "align-worker.cjs");
 // Preview: mono 16-bit at this rate, up to this long (as the dialog draws).
@@ -27,6 +29,29 @@ function createAlignService({ engineInfo, locate }) {
   const running = new Set();
   const slots = new Map();
   const limit = createLimit(3);
+  // Reopening the same two tracks should not launch FFmpeg again. This owner
+  // retains at most two decoded previews / 64 MiB, never alignment results.
+  const previews = new Map();
+  function previewKey(file, ffmpeg) {
+    try {
+      const stat = fs.statSync(file, { bigint: true });
+      if (!stat.isFile()) return null;
+      return JSON.stringify([
+        path.resolve(file),
+        ffmpeg,
+        String(stat.size),
+        String(stat.mtimeNs),
+        String(stat.ctimeNs),
+      ]);
+    } catch {
+      return null;
+    }
+  }
+  function previewResult(buf) {
+    const pcm = new Int16Array(buf.length >> 1);
+    pcm.set(new Int16Array(buf.buffer, buf.byteOffset, buf.length >> 1));
+    return { rate: PREVIEW_RATE, duration: pcm.length / PREVIEW_RATE, pcm };
+  }
   function task(slot) {
     const t = {
       cancelled: false,
@@ -67,10 +92,10 @@ function createAlignService({ engineInfo, locate }) {
         t.cancel();
       }, timeout);
       const chunks = [];
-      let err = "";
+      const errors = createWorkerErrorReader();
       child.stdin.on("error", () => {});
       child.stdout.on("data", (b) => chunks.push(b));
-      child.stderr.on("data", (b) => (err = (err + b).slice(-4000)));
+      child.stderr.on("data", (b) => errors.write(b));
       child.on("error", reject);
       child.on("close", (code) => {
         clearTimeout(timer);
@@ -78,10 +103,7 @@ function createAlignService({ engineInfo, locate }) {
         if (t.timedOut) return reject(appError("ALIGN_TIMEOUT"));
         if (t.cancelled) return reject(appError("ALIGN_CANCELLED"));
         if (code === 0) resolve(Buffer.concat(chunks));
-        else
-          reject(
-            appError("ALIGN_FAILED", { detail: err.trim() || String(code) }),
-          );
+        else reject(errors.finish(code));
       });
     });
   }
@@ -92,17 +114,43 @@ function createAlignService({ engineInfo, locate }) {
     });
   }
   const queries = {
+    async alignReferenceInfo(payload) {
+      if (typeof payload?.path !== "string" || !path.isAbsolute(payload.path))
+        throw appError("ALIGN_INPUT_INVALID");
+      await locate();
+      const ffprobe = engineInfo().ffprobe;
+      if (!ffprobe) throw appError("FFPROBE_REQUIRED");
+      const out = await start(
+        payload.slot,
+        {
+          mode: "reference",
+          ffprobe,
+          file: payload.path,
+        },
+        30000,
+      );
+      return JSON.parse(out.toString());
+    },
     // The sound of a file for the dialog's waveform and playback.
     async alignPreview(payload) {
       const file = payload?.path;
       if (typeof file !== "string" || !path.isAbsolute(file))
         throw appError("ALIGN_INPUT_INVALID");
       await locate();
+      const ffmpeg = engineInfo().ffmpeg;
+      const key = previewKey(file, ffmpeg);
+      if (key && previews.has(key)) {
+        slots.get(payload.slot)?.cancel();
+        const buf = previews.get(key);
+        previews.delete(key);
+        previews.set(key, buf);
+        return previewResult(buf);
+      }
       let buf = await start(
         payload.slot,
         {
           mode: "preview",
-          ffmpeg: engineInfo().ffmpeg,
+          ffmpeg,
           file,
           rate: PREVIEW_RATE,
           length: PREVIEW_LENGTH,
@@ -112,8 +160,23 @@ function createAlignService({ engineInfo, locate }) {
       if (!buf.length) throw appError("ALIGN_NO_AUDIO");
       // An Int16Array over the bytes needs an even offset.
       if (buf.byteOffset % 2) buf = Buffer.from(buf);
-      const pcm = new Int16Array(buf.buffer, buf.byteOffset, buf.length >> 1);
-      return { rate: PREVIEW_RATE, duration: pcm.length / PREVIEW_RATE, pcm };
+      if (
+        key &&
+        key === previewKey(file, ffmpeg) &&
+        buf.length <= 64 * 1024 * 1024
+      ) {
+        previews.set(key, buf);
+        while (
+          previews.size > 2 ||
+          [...previews.values()].reduce(
+            (total, value) => total + value.length,
+            0,
+          ) >
+            64 * 1024 * 1024
+        )
+          previews.delete(previews.keys().next().value);
+      }
+      return previewResult(buf);
     },
     // Where the reference starts in the target (see align.cjs).
     async alignRun(payload) {
@@ -144,6 +207,7 @@ function createAlignService({ engineInfo, locate }) {
     actions: {},
     queries,
     stopAll() {
+      previews.clear();
       for (const t of slots.values()) t.cancel();
       for (const t of running) t.cancel();
     },

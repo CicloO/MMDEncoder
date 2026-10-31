@@ -27,6 +27,50 @@ const pluginDir = path.join(
 const configPath = path.join(pluginDir, "mmd-export.json");
 const historyPath = path.join(pluginDir, "exports.jsonl");
 const selectionPath = path.join(pluginDir, "mmd-selection.json");
+fs.mkdirSync(path.join(root, "verification"), { recursive: true });
+const evidenceDir = fs.mkdtempSync(
+  path.join(root, "verification", "plugin-config-"),
+);
+function selectionSnapshot(stage, expectedId, validate = true) {
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const selection = JSON.parse(fs.readFileSync(selectionPath, "utf8"));
+  const snapshot = {
+    stage,
+    expectedId,
+    configIds: config.presets.map((p) => p.id),
+    selectedId: selection.presetId,
+    writtenAt: config.writtenAt,
+    savedAt: selection.savedAt,
+    helper: config.helper,
+  };
+  fs.writeFileSync(
+    path.join(evidenceDir, stage + ".json"),
+    JSON.stringify(snapshot, null, 2),
+  );
+  if (
+    validate &&
+    (selection.presetId !== expectedId ||
+      !snapshot.configIds.includes(expectedId))
+  )
+    throw Error(
+      "Test configuration changed before " +
+        stage +
+        ": " +
+        JSON.stringify(snapshot),
+    );
+}
+function simulate(args, stage, expectedId) {
+  selectionSnapshot(stage + "-before", expectedId);
+  try {
+    return execFileSync(path.join(build, "mmd-sim.exe"), args, {
+      encoding: "utf8",
+      timeout: 120000,
+      windowsHide: true,
+    });
+  } finally {
+    selectionSnapshot(stage + "-after", expectedId, false);
+  }
+}
 for (const image of ["MMDEncoder.exe", "MikuMikuDance.exe"]) {
   const running = execFileSync(
     "tasklist",
@@ -150,8 +194,7 @@ try {
     : 0;
 
   const avi = path.join(dir, "导出 test.avi");
-  const out = execFileSync(
-    path.join(build, "mmd-sim.exe"),
+  const out = simulate(
     [
       path.join(build, "MMDEncoderPlugin.dll"),
       template,
@@ -163,7 +206,8 @@ try {
       "300",
       "359",
     ],
-    { encoding: "utf8" },
+    "software",
+    "builtin-1080-sw",
   );
   check(
     /frames=120 placeholders=120/.test(out),
@@ -252,8 +296,7 @@ try {
       "NVEncC: plugin config points at this checkout (MMDEncoder closed)",
     );
     const nvAvi = path.join(dir, "NVEncC test.avi");
-    const nvOut = execFileSync(
-      path.join(build, "mmd-sim.exe"),
+    const nvOut = simulate(
       [
         path.join(build, "MMDEncoderPlugin.dll"),
         template,
@@ -265,7 +308,8 @@ try {
         "300",
         "359",
       ],
-      { encoding: "utf8" },
+      "nvencc",
+      "nvencc-test",
     );
     check(/frames=120/.test(nvOut), "NVEncC: MMD side sent 120 frames");
     const nvMp4 = path.join(dir, "NVEncC test_0300-0359f.mp4");
@@ -430,6 +474,52 @@ try {
       );
     }
   }
+  // A wrong selection must be reported and close itself; it must not look like
+  // a successful render or require the user to press OK during an automated run.
+  configure();
+  mx.writeSelection({ presetId: "not-in-config" });
+  selectionSnapshot("expected-missing", "not-in-config", false);
+  let rejected;
+  try {
+    execFileSync(
+      path.join(build, "mmd-sim.exe"),
+      [
+        path.join(build, "MMDEncoderPlugin.dll"),
+        template,
+        path.join(dir, "expected-failure.avi"),
+        pmm,
+        "320",
+        "240",
+        "30",
+        "0",
+        "0",
+      ],
+      { encoding: "utf8", timeout: 10000, windowsHide: true },
+    );
+  } catch (error) {
+    rejected = error;
+  }
+  fs.writeFileSync(
+    path.join(evidenceDir, "expected-missing-result.json"),
+    JSON.stringify(
+      {
+        status: rejected?.status,
+        code: rejected?.code,
+        signal: rejected?.signal,
+        message: rejected?.message,
+        stdout: String(rejected?.stdout || ""),
+        stderr: String(rejected?.stderr || ""),
+      },
+      null,
+      2,
+    ),
+  );
+  check(
+    rejected?.status === 1 &&
+      String(rejected.stdout).includes("renderFailure=") &&
+      String(rejected.stdout).includes("所选导出预设已不存在"),
+    "render failure: error box closes automatically and simulator exits nonzero",
+  );
 } finally {
   if (savedConfig) fs.writeFileSync(configPath, savedConfig);
   else fs.rmSync(configPath, { force: true });
@@ -447,4 +537,5 @@ try {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 console.log(failures ? `E2E FAILED (${failures})` : "E2E OK");
+console.log("Configuration evidence: " + evidenceDir);
 process.exit(failures ? 1 : 0);

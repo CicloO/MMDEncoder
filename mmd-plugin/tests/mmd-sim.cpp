@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 #include <thread>
+#include <atomic>
 
 #pragma comment(lib, "msdmo.lib")
 #pragma comment(lib, "dmoguids.lib")
@@ -26,6 +27,7 @@
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "uuid.lib")
 #pragma comment(lib, "user32.lib")
+#pragma comment(lib, "gdi32.lib")
 
 static const GUID CLSID_MMDEncoderPlugin = {
     0xdc3f6bd1, 0x923f, 0x467a, {0xbf, 0x73, 0xf1, 0x15, 0xaf, 0x70, 0x50, 0x33}};
@@ -82,8 +84,150 @@ static HWND makeWindow(const wchar_t* cls, const std::wstring& title, bool visib
   return h;
 }
 
+static void inspectSettings(HWND dialog) {
+  wchar_t title[1024]{}; GetWindowTextW(dialog, title, 1024);
+  char bytes[4096]{}; WideCharToMultiByte(CP_UTF8, 0, title, -1, bytes, 4096, nullptr, nullptr);
+  std::printf("dialogTitle=%s\n", bytes);
+  HWND presets = GetDlgItem(dialog, 101);
+  int count = (int)SendMessageW(presets, CB_GETCOUNT, 0, 0);
+  for (int i = 0; i < count; ++i) {
+    int length = (int)SendMessageW(presets, CB_GETLBTEXTLEN, i, 0);
+    std::wstring option(length + 1, 0);
+    SendMessageW(presets, CB_GETLBTEXT, i, (LPARAM)option.data());
+    int size = WideCharToMultiByte(CP_UTF8, 0, option.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string encoded(size, 0);
+    WideCharToMultiByte(CP_UTF8, 0, option.c_str(), -1, encoded.data(), size, nullptr, nullptr);
+    std::printf("presetOption=%s\n", encoded.c_str());
+  }
+  bool fits = true;
+  RECT client{}; GetClientRect(dialog, &client);
+  for (int id : {102, 106, 108, 109, 110, 105, 107, IDOK, IDCANCEL, 112, 115}) {
+    HWND child = GetDlgItem(dialog, id); RECT r{}; GetClientRect(child, &r);
+    wchar_t text[8192]{}; GetWindowTextW(child, text, 8192);
+    HDC dc = GetDC(child); auto old = SelectObject(dc, (HFONT)SendMessageW(child, WM_GETFONT, 0, 0));
+    RECT measured{0,0,r.right,0};
+    if (id == 108) DrawTextW(dc, text, -1, &measured, DT_CALCRECT | DT_WORDBREAK);
+    else { SIZE size{}; GetTextExtentPoint32W(dc, text, (int)wcslen(text), &size); measured.right = size.cx + ((id == 102 || id == 106 || id == 112) ? 24 : (id == 109 || id == 110 || id == 115) ? 0 : 16); measured.bottom=size.cy; }
+    SelectObject(dc, old); ReleaseDC(child, dc);
+    RECT position{}; GetWindowRect(child,&position); MapWindowPoints(nullptr,dialog,(POINT*)&position,2);
+    if (measured.right > r.right || measured.bottom > r.bottom || position.right > client.right || position.bottom > client.bottom) fits = false;
+  }
+  for (int id : {101, 103, 104}) {
+    RECT r{}; if (!SendDlgItemMessageW(dialog,id,CB_GETDROPPEDCONTROLRECT,0,(LPARAM)&r) || r.bottom-r.top < 50) fits=false;
+  }
+  RECT edit{}; GetWindowRect(GetDlgItem(dialog, 111), &edit);
+  MapWindowPoints(nullptr, dialog, (POINT*)&edit, 2);
+  if (edit.left < 0 || edit.right > client.right || edit.right <= edit.left) fits = false;
+  std::printf("layoutFits=%d\n", fits ? 1 : 0);
+  wchar_t file[32768]{};
+  if (GetEnvironmentVariableW(L"MMD_SIM_SCREENSHOT", file, 32768)) {
+    RECT r{}; GetWindowRect(dialog,&r); int w=r.right-r.left,h=r.bottom-r.top;
+    HDC dc=GetWindowDC(dialog), memory=CreateCompatibleDC(dc); HBITMAP bitmap=CreateCompatibleBitmap(dc,w,h);
+    auto old=SelectObject(memory,bitmap); BOOL printed=PrintWindow(dialog,memory,0);
+    SendMessageW(dialog, WM_PRINT, (WPARAM)memory, PRF_CLIENT | PRF_CHILDREN | PRF_ERASEBKGND | PRF_NONCLIENT);
+    BITMAPINFO info{}; info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER); info.bmiHeader.biWidth=w; info.bmiHeader.biHeight=-h; info.bmiHeader.biPlanes=1; info.bmiHeader.biBitCount=32; info.bmiHeader.biCompression=BI_RGB;
+    SelectObject(memory,old);
+    std::vector<BYTE> data((size_t)w*h*4); int rows=GetDIBits(dc,bitmap,0,h,data.data(),&info,DIB_RGB_COLORS);
+    std::printf("screenshotPrinted=%d rows=%d\n", printed ? 1 : 0, rows);
+    BITMAPFILEHEADER header{}; header.bfType=0x4D42; header.bfOffBits=sizeof(header)+sizeof(info.bmiHeader); header.bfSize=header.bfOffBits+(DWORD)data.size();
+    HANDLE output=CreateFileW(file,GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,0,nullptr); DWORD written=0;
+    if(output!=INVALID_HANDLE_VALUE){WriteFile(output,&header,sizeof(header),&written,nullptr);WriteFile(output,&info.bmiHeader,sizeof(info.bmiHeader),&written,nullptr);WriteFile(output,data.data(),(DWORD)data.size(),&written,nullptr);CloseHandle(output);}
+    DeleteObject(bitmap); DeleteDC(memory); ReleaseDC(dialog,dc);
+  }
+}
+
+// A render failure must fail this simulator, not wait for a person to dismiss
+// the plugin's error box. Only inspect our render thread's own MB_OK window.
+static std::wstring renderErrorPrefix() {
+  wchar_t value[4096]{};
+  const DWORD count = GetEnvironmentVariableW(L"MMD_SIM_RENDER_ERROR_PREFIX", value, 4096);
+  return count && count < 4096 ? value : L"MMDEncoder 导出失败：";
+}
+class RenderFailureGuard {
+ public:
+  explicit RenderFailureGuard(DWORD thread) : thread_(thread), prefix_(renderErrorPrefix()), watcher_([this] {
+    while (!stop_) {
+      HWND dialog = nullptr;
+      EnumThreadWindows(thread_, [](HWND window, LPARAM data) -> BOOL {
+        wchar_t cls[64]{};
+        GetClassNameW(window, cls, 64);
+        if (!wcscmp(cls, L"#32770")) {
+          *(HWND*)data = window;
+          return FALSE;
+        }
+        return TRUE;
+      }, (LPARAM)&dialog);
+      if (dialog) inspect(dialog);
+      Sleep(10);
+    }
+  }) {}
+  ~RenderFailureGuard() { stop_ = true; watcher_.join(); }
+  bool failed() const { return failed_; }
+ private:
+  void inspect(HWND dialog) {
+    wchar_t cls[64]{}, title[128]{};
+    DWORD pid = 0;
+    GetWindowThreadProcessId(dialog, &pid);
+    GetClassNameW(dialog, cls, 64);
+    if (pid != GetCurrentProcessId() || wcscmp(cls, L"#32770")) return;
+    DWORD_PTR copied = 0;
+    if (!SendMessageTimeoutW(dialog, WM_GETTEXT, 128, (LPARAM)title,
+          SMTO_ABORTIFHUNG | SMTO_BLOCK, 100, &copied) || wcscmp(title, L"MMDEncoder")) return;
+    std::wstring text;
+    std::vector<HWND> children, buttons;
+    EnumChildWindows(dialog, [](HWND child, LPARAM p) -> BOOL {
+      wchar_t name[64]{};
+      GetClassNameW(child, name, 64);
+      if (!wcscmp(name, L"Static")) ((std::vector<HWND>*)p)->push_back(child);
+      return TRUE;
+    }, (LPARAM)&children);
+    EnumChildWindows(dialog, [](HWND child, LPARAM p) -> BOOL {
+      wchar_t name[64]{};
+      GetClassNameW(child, name, 64);
+      if (!wcscmp(name, L"Button")) ((std::vector<HWND>*)p)->push_back(child);
+      return TRUE;
+    }, (LPARAM)&buttons);
+    if (buttons.size() != 1) return;
+    HWND ok = buttons[0];
+    const int buttonId = GetDlgCtrlID(ok);
+    if (buttonId != IDOK && buttonId != IDCANCEL) return;
+    for (HWND child : children) {
+      wchar_t value[8192]{};
+      if (SendMessageTimeoutW(child, WM_GETTEXT, 8192, (LPARAM)value,
+            SMTO_ABORTIFHUNG | SMTO_BLOCK, 100, &copied) && copied)
+        text += std::wstring(value) + L"\n";
+    }
+    // A single-button export error can use IDCANCEL on Windows. Match its
+    // known body as well as process/thread/title before dismissing anything.
+    if (text.rfind(prefix_, 0) != 0) return;
+    if (!failed_.exchange(true)) {
+      int size = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, nullptr, 0, nullptr, nullptr);
+      std::string bytes(size, 0);
+      WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, bytes.data(), size, nullptr, nullptr);
+      std::printf("renderFailure=%s\n", bytes.c_str());
+      std::printf("renderFailureButton=%d\n", buttonId);
+    }
+    PostMessageW(ok, BM_CLICK, 0, 0);
+  }
+  DWORD thread_;
+  std::wstring prefix_;
+  std::atomic<bool> stop_{false}, failed_{false};
+  std::thread watcher_;
+};
+
 int wmain(int argc, wchar_t** argv) {
   setvbuf(stdout, nullptr, _IONBF, 0);
+  // A no-argument launch is a bounded visual review on the interactive desktop.
+  // Command-line integration tests keep their existing explicit arguments.
+  const bool review = argc == 1;
+  std::wstring reviewDll;
+  wchar_t dialogMode[] = L"--dialog";
+  std::vector<wchar_t*> reviewArgs;
+  if (review) {
+    wchar_t executable[32768]{}; GetModuleFileNameW(nullptr, executable, 32768);
+    reviewDll = executable; reviewDll = reviewDll.substr(0, reviewDll.find_last_of(L"\\/")) + L"\\MMDEncoderPlugin.dll";
+    reviewArgs = {argv[0], dialogMode, reviewDll.data()}; argc = 3; argv = reviewArgs.data();
+  }
   // --dialog <plugin.dll>: open the codec settings window, as MMD's 詳細設定 does.
   if (argc >= 3 && (wcscmp(argv[1], L"--dialog") == 0 || wcscmp(argv[1], L"--dialog-test") == 0)) {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -97,6 +241,22 @@ int wmain(int argc, wchar_t** argv) {
       return std::printf("cannot create plugin\n"), 1;
     std::thread driver;
     bool tested = false;
+    if (review) {
+      const DWORD threadId = GetCurrentThreadId();
+      driver = std::thread([&tested, threadId] {
+        HWND settings = nullptr;
+        for (int i = 0; i < 500 && !settings; ++i) {
+          EnumThreadWindows(threadId, [](HWND window, LPARAM data) -> BOOL {
+            if (GetDlgItem(window, 107)) { *(HWND*)data = window; return FALSE; } return TRUE;
+          }, (LPARAM)&settings);
+          Sleep(10);
+        }
+        if (!settings) return;
+        tested = true;
+        for (int i = 0; i < 9000 && IsWindow(settings); ++i) Sleep(10);
+        if (IsWindow(settings)) PostMessageW(settings, WM_COMMAND, IDCANCEL, 0);
+      });
+    }
     if (wcscmp(argv[1], L"--dialog-test") == 0 && argc == 5) {
       const DWORD threadId = GetCurrentThreadId();
       const int mask = _wtoi(argv[3]);
@@ -118,8 +278,44 @@ int wmain(int argc, wchar_t** argv) {
         HWND settings = nullptr;
         for (int i = 0; i < 500 && !settings; i++) { settings = find(true); Sleep(10); }
         if (!settings) { std::printf("settings window not found\n"); return; }
+        Sleep(100); // WM_INITDIALOG finishes its font-based layout before inspection.
+        inspectSettings(settings);
         std::printf("settings window found\n");
         std::printf("initialMask=%lld\n", (long long)SendDlgItemMessageW(settings, 104, CB_GETCURSEL, 0, 0));
+        wchar_t initialShift[64]{}; GetDlgItemTextW(settings, 111, initialShift, 64);
+        std::printf("initialShift=%lld initialAutoShift=%d\n", _wtoi64(initialShift), (int)IsDlgButtonChecked(settings, 112));
+        wchar_t invalid[128]{}, validation[1024]{};
+        if (GetEnvironmentVariableW(L"MMD_SIM_AUDIO_INVALID", invalid, 128) && GetEnvironmentVariableW(L"MMD_SIM_VALIDATION_TEXT", validation, 1024)) {
+          SetDlgItemTextW(settings, 111, invalid);
+          PostMessageW(settings, WM_COMMAND, IDOK, 0);
+          HWND error = nullptr;
+          for (int i = 0; i < 500 && !error; ++i) { error = find(false); Sleep(10); }
+          if (!error) { std::printf("validation dialog missing\n"); PostMessageW(settings, WM_CLOSE, 0, 0); return; }
+          std::wstring body;
+          EnumChildWindows(error, [](HWND child, LPARAM data) -> BOOL {
+            wchar_t cls[64]{}, value[2048]{}; GetClassNameW(child, cls, 64);
+            if (!wcscmp(cls, L"Static") && GetWindowTextW(child, value, 2048)) *(std::wstring*)data += value;
+            return TRUE;
+          }, (LPARAM)&body);
+          HWND confirm = GetDlgItem(error, IDOK);
+          if (!confirm) confirm = GetDlgItem(error, IDCANCEL);
+          if (body != validation || !confirm) { std::printf("unexpected validation dialog\n"); return; }
+          PostMessageW(confirm, BM_CLICK, 0, 0);
+          for (int i = 0; i < 500 && IsWindow(error); ++i) Sleep(10);
+          std::printf("validationRejected=%d\n", !IsWindow(error) && IsWindow(settings));
+          tested = true; PostMessageW(settings, WM_COMMAND, IDCANCEL, 0); return;
+        }
+        wchar_t desired[64]{}, automatic[8]{};
+        if (GetEnvironmentVariableW(L"MMD_SIM_AUDIO_SHIFT", desired, 64)) {
+          SetDlgItemTextW(settings, 111, desired);
+          wchar_t after[64]{};
+          SendDlgItemMessageW(settings, 112, BM_CLICK, 0, 0);
+          GetDlgItemTextW(settings, 111, after, 64);
+          std::printf("manualRewrite=%d\n", wcscmp(after, desired) != 0);
+          if (GetEnvironmentVariableW(L"MMD_SIM_AUDIO_AUTO", automatic, 8) && IsDlgButtonChecked(settings, 112) != (_wtoi(automatic) ? BST_CHECKED : BST_UNCHECKED)) SendDlgItemMessageW(settings, 112, BM_CLICK, 0, 0);
+          std::printf("chosenShift=%lld chosenAutoShift=%d\n", _wtoi64(after), (int)IsDlgButtonChecked(settings, 112));
+          inspectSettings(settings);
+        }
         SendDlgItemMessageW(settings, 104, CB_SETCURSEL, mask, 0);
         PostMessageW(settings, WM_COMMAND, MAKEWPARAM(107, BN_CLICKED), (LPARAM)GetDlgItem(settings, 107));
         // The result is shown briefly on the test button (107), starting with
@@ -128,7 +324,7 @@ int wmain(int argc, wchar_t** argv) {
         for (int i = 0; i < 8500; i++) {
           wchar_t part[4096] = {0};
           GetDlgItemTextW(settings, 107, part, 4096);
-          if (part[0] == L'\x2713' || part[0] == L'\x2717') { text = part; break; }
+          if (wcschr(part,L'\x2713') || wcschr(part,L'\x2717')) { text = part; break; }
           Sleep(10);
         }
         if (text.empty()) { std::printf("test result not shown\n"); PostMessageW(settings, WM_CLOSE, 0, 0); return; }
@@ -156,6 +352,7 @@ int wmain(int argc, wchar_t** argv) {
   const LONG w = _wtol(argv[5]), h = _wtol(argv[6]);
   const int fps = _wtoi(argv[7]), start = _wtoi(argv[8]), end = _wtoi(argv[9]);
   const int frames = (end - start + 1) * fps / 30;  // MMD includes the end frame
+  const int pauseAfter = argc >= 12 && wcscmp(argv[10], L"--pause-after") == 0 ? _wtoi(argv[11]) : 0;
   CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
   HWND main = makeWindow(L"Polygon Movie Maker", L"MikuMikuDance [" + pmm + L"]", false);
@@ -197,6 +394,7 @@ int wmain(int argc, wchar_t** argv) {
   if (dmo->SetInputType(0, &in, 0) != S_OK || dmo->GetOutputType(0, 0, &out) != S_OK ||
       dmo->SetOutputType(0, &out, 0) != S_OK)
     return std::printf("type negotiation failed\n"), 1;
+  RenderFailureGuard failureGuard(GetCurrentThreadId());
   dmo->AllocateStreamingResources();
   int placeholders = 0;
   for (int i = 0; i < frames; i++) {
@@ -221,6 +419,11 @@ int wmain(int argc, wchar_t** argv) {
     if (dmo->ProcessOutput(0, 1, &ob, &st) == S_OK && std::memcmp(sample->data_.data(), "MMDE", 4) == 0)
       placeholders++;
     sample->Release();
+    if (pauseAfter && i + 1 == pauseAfter) {
+      std::printf("paused frames=%d\n", i + 1);
+      std::fflush(stdout);
+      std::getchar(); // Tests kill this process after observing the exact count.
+    }
   }
   SetWindowTextW(recWindow, L"done");
   dmo->FreeStreamingResources();
@@ -233,5 +436,5 @@ int wmain(int argc, wchar_t** argv) {
   DestroyWindow(main);
   std::printf("frames=%d placeholders=%d\n", frames, placeholders);
   CoUninitialize();
-  return placeholders == frames ? 0 : 1;
+  return !failureGuard.failed() && placeholders == frames ? 0 : 1;
 }

@@ -6,6 +6,12 @@ const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { pipeline } = require("node:stream/promises");
 const { Readable, Transform } = require("node:stream");
+const {
+  appError,
+  serializeError,
+  sourceText,
+  summary,
+} = require("./errors.cjs");
 const HOSTS = new Set([
   "www.gyan.dev",
   "api.github.com",
@@ -22,7 +28,7 @@ function trusted(url) {
     u.password ||
     (u.port && u.port !== "443")
   )
-    throw Error("下载来源不受信任：" + u.hostname);
+    throw appError("TOOLS_UNTRUSTED_HOST", { host: u.hostname });
   return u.href;
 }
 async function request(url, options = {}, count = 0) {
@@ -34,7 +40,7 @@ async function request(url, options = {}, count = 0) {
     headers: { "User-Agent": "MMDEncoder/1.1.0", ...options.headers },
   });
   if ([301, 302, 303, 307, 308].includes(response.status)) {
-    if (count >= 5) throw Error("下载重定向过多");
+    if (count >= 5) throw appError("TOOLS_TOO_MANY_REDIRECTS");
     await response.body?.cancel();
     return request(
       new URL(response.headers.get("location"), url).href,
@@ -42,7 +48,8 @@ async function request(url, options = {}, count = 0) {
       count + 1,
     );
   }
-  if (!response.ok) throw Error("下载服务器返回 " + response.status);
+  if (!response.ok)
+    throw appError("TOOLS_HTTP_STATUS", { status: response.status });
   return response;
 }
 async function releases() {
@@ -52,15 +59,14 @@ async function releases() {
     /\b[a-f0-9]{64}\b/i,
   )?.[0];
   if (!hash || !version || version.length > 100)
-    throw Error("FFmpeg 发布校验信息无效");
+    throw appError("TOOLS_FFMPEG_RELEASE_INVALID");
   const release = await (
     await request("https://api.github.com/repos/rigaya/NVEnc/releases/latest")
   ).json();
   const asset = release.assets?.find((a) =>
     /^NVEncC.*x64.*\.7z$/i.test(a.name),
   );
-  if (!asset || !release.tag_name)
-    throw Error("NVEncC 发布中未找到 Windows x64 包");
+  if (!asset || !release.tag_name) throw appError("TOOLS_NVENCC_ASSET_MISSING");
   trusted(asset.browser_download_url);
   return [
     { id: "ffmpeg", version, url: base, sha256: hash.toLowerCase() },
@@ -100,17 +106,21 @@ function execute(exe, args) {
     child.on("close", (code) => {
       clearTimeout(timer);
       overflow
-        ? reject(Error("工具输出超过安全限制"))
+        ? reject(appError("TOOLS_OUTPUT_OVERFLOW"))
         : code === 0
           ? resolve(out)
-          : reject(Error(out.slice(-20000) || "工具验证失败：" + code));
+          : reject(
+              out
+                ? Error(out.slice(-20000))
+                : appError("TOOLS_VERIFY_EXIT", { exitCode: code }),
+            );
     });
   });
 }
 function find(root, name) {
   for (const e of fs.readdirSync(root, { withFileTypes: true })) {
     const p = path.join(root, e.name);
-    if (e.isSymbolicLink()) throw Error("工具包包含不支持的链接");
+    if (e.isSymbolicLink()) throw appError("TOOLS_UNSUPPORTED_LINK");
     if (e.isFile() && e.name.toLowerCase() === name.toLowerCase()) return p;
     if (e.isDirectory()) {
       const result = find(p, name);
@@ -134,10 +144,14 @@ function createTools({
 } = {}) {
   let busy = false;
   root = path.resolve(root);
+  function messagePatch(code, params = {}) {
+    const messageData = summary(code, params);
+    return { message: messageData.message, messageData, errorData: null };
+  }
   const state = {
     busy: false,
     phase: "idle",
-    message: "首次使用请下载编码工具",
+    ...messagePatch("TOOLS_FIRST_USE"),
     received: 0,
     total: 0,
     installed: {},
@@ -150,7 +164,7 @@ function createTools({
     );
   } catch {}
   if (Object.keys(state.installed).length)
-    state.message = "已安装编码工具，可离线使用；可检查官方更新";
+    Object.assign(state, messagePatch("TOOLS_INSTALLED_OFFLINE"));
   function paths() {
     const result = {};
     for (const [id, item] of Object.entries(state.installed)) {
@@ -177,27 +191,148 @@ function createTools({
     Object.assign(state, patch);
     onUpdate({ ...state });
   }
-  async function run(install = false) {
-    if (busy) throw Error("工具安装或检查正在进行");
+  async function installArchive(stage, archive, release, digest) {
+    emit({
+      phase: "extracting",
+      ...messagePatch(
+        release.id ? "TOOLS_EXTRACTING" : "TOOLS_LOCAL_EXTRACTING",
+        release.id ? { id: release.id } : {},
+      ),
+    });
+    const unpack = path.join(stage, "unpacked");
+    fs.mkdirSync(unpack);
+    const seven = extractor || path.resolve(__dirname, "../assets/7za.exe");
+    // List first: reject traversal/link entries before any archive data is extracted.
+    const listing = await extract(seven, ["l", "-slt", archive]);
+    for (const line of String(listing).split(/\r?\n/)) {
+      if (line.startsWith("Path = ")) {
+        const entry = line.slice(7);
+        if (entry === archive) continue;
+        if (
+          path.win32.isAbsolute(entry) ||
+          entry.includes(":") ||
+          entry.split(/[\\/]/).includes("..")
+        )
+          throw appError("TOOLS_UNSAFE_ARCHIVE_PATH");
+      }
+      if (/^(Symbolic Link|Hard Link) = /i.test(line))
+        throw appError("TOOLS_ARCHIVE_LINK");
+    }
+    await extract(seven, ["x", "-y", "-o" + unpack, archive]);
+    const ids = release.id
+      ? [release.id]
+      : [
+          ...(find(unpack, "ffmpeg.exe") || find(unpack, "ffprobe.exe")
+            ? ["ffmpeg"]
+            : []),
+          ...(find(unpack, "NVEncC.exe") || find(unpack, "NVEncC64.exe")
+            ? ["nvencc"]
+            : []),
+        ];
+    if (!ids.length) throw appError("TOOLS_ARCHIVE_UNRECOGNIZED");
+    const versions = {};
+    for (const id of ids) {
+      for (const name of id === "ffmpeg"
+        ? ["ffmpeg.exe", "ffprobe.exe"]
+        : ["NVEncC.exe"]) {
+        const exe =
+          find(unpack, name) ||
+          (name === "NVEncC.exe" && find(unpack, "NVEncC64.exe"));
+        if (!exe) throw appError("TOOLS_EXECUTABLE_MISSING", { name });
+        const output = await verify(exe, [
+          id === "nvencc" ? "--version" : "-version",
+        ]);
+        if (!versions[id]) {
+          const line =
+            String(output)
+              .split(/\r?\n/)
+              .find((line) => line.trim()) || "";
+          versions[id] =
+            release.version ||
+            (id === "ffmpeg"
+              ? line.match(/^ffmpeg version (\S+)/i)?.[1]
+              : line.match(/NVEncC.*?\b(\d+\.\d+(?:\.\d+)?)/i)?.[1]) ||
+            line.slice(0, 100);
+          if (!versions[id]) throw appError("TOOLS_VERSION_MISSING", { id });
+        }
+      }
+    }
+    const directory = (release.id || "local") + "-" + crypto.randomUUID();
+    fs.renameSync(unpack, path.join(root, directory));
+    const installed = { ...state.installed };
+    for (const id of ids) {
+      installed[id] = {
+        version: versions[id],
+        directory,
+        sha256: digest,
+        verifiedHash: !!release.sha256,
+        url: release.url,
+        ...(release.id ? {} : { source: "local" }),
+      };
+    }
+    const temporary = path.join(
+      root,
+      "active-" + crypto.randomUUID() + ".json",
+    );
+    fs.writeFileSync(temporary, JSON.stringify(installed, null, 2));
+    fs.renameSync(temporary, path.join(root, "active.json"));
+    emit({ installed });
+  }
+  async function run(install = false, localArchive) {
+    if (busy) throw appError("TOOLS_BUSY");
     busy = true;
     emit({
       busy: true,
       phase: "checking",
-      message: "正在检查官方最新版本…",
+      ...messagePatch(
+        localArchive !== undefined ? "TOOLS_LOCAL_PREPARING" : "TOOLS_CHECKING",
+      ),
       received: 0,
       total: 0,
     });
     try {
+      if (localArchive !== undefined) {
+        if (
+          typeof localArchive !== "string" ||
+          !path.isAbsolute(localArchive) ||
+          !/\.(zip|7z)$/i.test(localArchive)
+        )
+          throw appError("TOOLS_ARCHIVE_INVALID");
+        fs.mkdirSync(root, { recursive: true });
+        const stage = fs.mkdtempSync(path.join(root, "staging-"));
+        try {
+          const archive = path.join(
+            stage,
+            "package" + path.extname(localArchive).toLowerCase(),
+          );
+          const hash = crypto.createHash("sha256");
+          await pipeline(
+            fs.createReadStream(localArchive),
+            new Transform({
+              transform(chunk, _encoding, cb) {
+                hash.update(chunk);
+                cb(null, chunk);
+              },
+            }),
+            fs.createWriteStream(archive, { flags: "wx" }),
+          );
+          await installArchive(stage, archive, {}, hash.digest("hex"));
+          emit({ phase: "ready", ...messagePatch("TOOLS_INSTALLED") });
+        } finally {
+          fs.rmSync(stage, { recursive: true, force: true });
+        }
+        return;
+      }
       const available = await resolveReleases();
       emit({ available });
       if (!install) {
         emit({
           phase: "ready",
-          message: available.some(
-            (r) => state.installed[r.id]?.version !== r.version,
-          )
-            ? "有可安装的新版本"
-            : "已安装最新版本",
+          ...messagePatch(
+            available.some((r) => state.installed[r.id]?.version !== r.version)
+              ? "TOOLS_UPDATE_AVAILABLE"
+              : "TOOLS_UP_TO_DATE",
+          ),
         });
         return;
       }
@@ -214,7 +349,10 @@ function createTools({
         try {
           emit({
             phase: "downloading",
-            message: "正在下载 " + release.id + " " + release.version,
+            ...messagePatch("TOOLS_DOWNLOADING", {
+              id: release.id,
+              version: release.version,
+            }),
             received: 0,
             total: 0,
           });
@@ -240,71 +378,22 @@ function createTools({
           );
           const digest = hash.digest("hex");
           if (release.sha256 && digest !== release.sha256)
-            throw Error("SHA-256 校验失败");
-          emit({
-            phase: "extracting",
-            message: "正在解压并验证 " + release.id,
-          });
-          const unpack = path.join(stage, "unpacked");
-          fs.mkdirSync(unpack);
-          const seven =
-            extractor || path.resolve(__dirname, "../assets/7za.exe");
-          // List first: reject traversal/link entries before any archive data is extracted.
-          const listing = await extract(seven, ["l", "-slt", archive]);
-          for (const line of String(listing).split(/\r?\n/)) {
-            if (line.startsWith("Path = ")) {
-              const entry = line.slice(7);
-              if (entry === archive) continue;
-              if (
-                path.win32.isAbsolute(entry) ||
-                entry.includes(":") ||
-                entry.split(/[\\/]/).includes("..")
-              )
-                throw Error("工具包包含不安全路径");
-            }
-            if (/^(Symbolic Link|Hard Link) = /i.test(line))
-              throw Error("工具包包含链接");
-          }
-          await extract(seven, ["x", "-y", "-o" + unpack, archive]);
-          for (const name of release.id === "ffmpeg"
-            ? ["ffmpeg.exe", "ffprobe.exe"]
-            : ["NVEncC.exe"]) {
-            const exe =
-              find(unpack, name) ||
-              (name === "NVEncC.exe" && find(unpack, "NVEncC64.exe"));
-            if (!exe) throw Error("工具包缺少 " + name);
-            await verify(exe, [
-              name === "NVEncC.exe" ? "--version" : "-version",
-            ]);
-          }
-          const directory = release.id + "-" + crypto.randomUUID();
-          fs.renameSync(unpack, path.join(root, directory));
-          const installed = {
-            ...state.installed,
-            [release.id]: {
-              version: release.version,
-              directory,
-              sha256: digest,
-              verifiedHash: !!release.sha256,
-              url: release.url,
-            },
-          };
-          const temporary = path.join(
-            root,
-            "active-" + crypto.randomUUID() + ".json",
-          );
-          fs.writeFileSync(temporary, JSON.stringify(installed, null, 2));
-          fs.renameSync(temporary, path.join(root, "active.json"));
-          emit({ installed });
+            throw appError("TOOLS_CHECKSUM_MISMATCH");
+          await installArchive(stage, archive, release, digest);
         } finally {
           fs.rmSync(stage, { recursive: true, force: true });
         }
       }
-      emit({ phase: "ready", message: "编码工具已安装，可离线使用" });
+      emit({ phase: "ready", ...messagePatch("TOOLS_INSTALLED") });
     } catch (e) {
+      const errorData = serializeError(e);
       emit({
         phase: "error",
-        message: e.message + "；可重试，已安装版本继续可用",
+        message: sourceText("engine.failureRetry", {
+          detail: errorData.message,
+        }),
+        messageData: null,
+        errorData,
       });
       throw e;
     } finally {
@@ -356,23 +445,23 @@ function createTools({
   // Switch the install folder. Installed tools are moved along (a folder that
   // already holds an installation is reused instead); an empty target is fine.
   function relocate(target) {
-    if (busy) throw Error("工具安装或检查正在进行");
+    if (busy) throw appError("TOOLS_BUSY");
     if (typeof target !== "string" || !path.isAbsolute(target))
-      throw Error("请选择有效的安装位置");
+      throw appError("TOOLS_ROOT_INVALID");
     target = path.resolve(target);
     if (target.toLowerCase() === root.toLowerCase()) return state;
     if (
       target.toLowerCase().startsWith(root.toLowerCase() + path.sep) ||
       root.toLowerCase().startsWith(target.toLowerCase() + path.sep)
     )
-      throw Error("新位置不能在当前安装位置之内或之上");
+      throw appError("TOOLS_ROOT_OVERLAP");
     busy = true;
     try {
       // A folder counts as an installation only when every tool its manifest
       // names is really there; a half-moved one does not.
       const existing = complete(target);
       if (!existing && fs.existsSync(path.join(target, "active.json")))
-        throw Error("新位置里的编码工具不完整，请换一个空文件夹");
+        throw appError("TOOLS_ROOT_INCOMPLETE");
       fs.mkdirSync(target, { recursive: true });
       const probe = path.join(target, ".write-test");
       fs.writeFileSync(probe, "");
@@ -380,7 +469,7 @@ function createTools({
       const installed = fs.existsSync(path.join(root, "active.json"));
       if (installed && !existing) {
         if (fs.readdirSync(target).length)
-          throw Error("新位置需要是空文件夹，或已有本软件安装的编码工具");
+          throw appError("TOOLS_ROOT_NOT_EMPTY");
         // Tools first, the manifest last: until it moves, the old place is
         // still a working installation. Any failure moves everything back.
         const names = fs
@@ -397,22 +486,35 @@ function createTools({
             try {
               move(path.join(target, name), path.join(root, name));
             } catch {}
-          throw Error("移动编码工具失败，已恢复原位置：" + e.message);
+          const error = serializeError(e);
+          const wrapper = appError("TOOLS_MOVE_FAILED", {
+            detail: error.message,
+          });
+          wrapper.params = { error };
+          throw wrapper;
         }
       }
       root = target;
       load();
       emit({
         root,
-        message: Object.keys(state.installed).length
-          ? "已安装编码工具，可离线使用；可检查官方更新"
-          : "首次使用请下载编码工具",
+        ...messagePatch(
+          Object.keys(state.installed).length
+            ? "TOOLS_INSTALLED_OFFLINE"
+            : "TOOLS_FIRST_USE",
+        ),
       });
       return state;
     } finally {
       busy = false;
     }
   }
-  return { state, paths, run, relocate };
+  return {
+    state,
+    paths,
+    run,
+    installLocal: (file) => run(true, file ?? null),
+    relocate,
+  };
 }
 module.exports = { createTools, trusted, releases, DEFAULT_ROOT };

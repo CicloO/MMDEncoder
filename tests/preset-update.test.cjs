@@ -60,7 +60,7 @@ test("an update that changes an edited built-in asks before dropping the edit", 
       id: "builtin-alpha",
       keep: true,
     });
-    const copy = find("我的 ProRes（我的修改）");
+    const copy = find("我的 ProRes (Modified)");
     assert.ok(copy && !copy.builtin);
     assert.equal(copy.settings.quality, 4);
     const ids = state().presets.map((p) => p.id);
@@ -71,7 +71,7 @@ test("an update that changes an edited built-in asks before dropping the edit", 
       id: "builtin-alpha-mask",
       keep: false,
     });
-    assert.equal(find("我的分离（我的修改）"), undefined);
+    assert.equal(find("我的分离 (Modified)"), undefined);
     assert.equal(state().presetConflicts.length, 0);
     await assert.rejects(
       svc.invoke("resolvePresetConflict", { id: "builtin-alpha", keep: true }),
@@ -82,7 +82,7 @@ test("an update that changes an edited built-in asks before dropping the edit", 
     svc.dispose();
     svc = open();
     assert.equal(state().presetConflicts.length, 0);
-    assert.ok(find("我的 ProRes（我的修改）"));
+    assert.ok(find("我的 ProRes (Modified)"));
   } finally {
     svc.dispose();
     process.env.LOCALAPPDATA = savedLocal;

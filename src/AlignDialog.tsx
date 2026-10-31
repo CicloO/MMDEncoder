@@ -1,47 +1,78 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  AudioLines,
-  FolderOpen,
-  Minus,
-  Pause,
-  Play,
-  Plus,
-  Wand2,
-} from "lucide-react";
+import { AudioLines, FolderOpen, Minus, Pause, Play, Plus } from "lucide-react";
 import { Button, Modal } from "./components";
-import { draw, envelope, type Track } from "./alignWave";
+import { AlignmentIcon } from "./AlignmentIcon";
+import {
+  effectiveAudioOffset,
+  parseFrameRate,
+  type ReferenceTiming,
+} from "../backend/audio-timing.mjs";
+import { draw, envelope } from "./alignWave";
 import { useAlignPlayer } from "./useAlignPlayer";
-import { ask, isCancelled } from "./alignRequests";
+import {
+  useAlignSession,
+  type Alignment,
+  type AlignBusy,
+} from "./useAlignSession";
+import { t, localeRuntime, errorMessage, type MessageKey } from "./i18n";
+export type { Alignment } from "./useAlignSession";
 
 // Nudge steps (seconds): an MMD frame, 10 ms, 1 ms, one sample at 48 kHz.
-const STEPS = [
-  { value: String(1 / 30), label: "1 帧（1/30 秒）" },
-  { value: "0.01", label: "10 毫秒" },
-  { value: "0.001", label: "1 毫秒" },
-  { value: String(1 / 48000), label: "1 个采样" },
+const steps = (frameSeconds: number, actual: boolean) => [
+  {
+    value: "frame",
+    label: actual
+      ? t("align.stepReferenceFrame", {
+          seconds: localeRuntime.number(frameSeconds, {
+            maximumFractionDigits: 6,
+          }),
+        })
+      : t("align.stepFrame"),
+  },
+  { value: "0.01", label: t("align.step10ms") },
+  { value: "0.001", label: t("align.step1ms") },
+  { value: String(1 / 48000), label: t("align.stepSample") },
 ];
-// The dialog's requests: one of each at a time; a newer one, or closing,
-// stops the older (align-service.cjs), which then fails with "已取消".
-const SLOTS = {
-  target: "align:target",
-  reference: "align:reference",
-  run: "align:run",
-};
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
-const seconds = (t: number) =>
-  `${t < 0 ? "-" : ""}${Math.floor(Math.abs(t) / 60)}:${(Math.abs(t) % 60).toFixed(3).padStart(6, "0")}`;
+const decimal = (value: number, digits: number) =>
+  localeRuntime.number(value, {
+    useGrouping: false,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+const seconds = (value: number) =>
+  t("align.clock", {
+    sign: value < 0 ? "-" : "",
+    minutes: localeRuntime.number(Math.floor(Math.abs(value) / 60), {
+      useGrouping: false,
+    }),
+    seconds: localeRuntime.number(Math.abs(value) % 60, {
+      useGrouping: false,
+      minimumIntegerDigits: 2,
+      minimumFractionDigits: 3,
+      maximumFractionDigits: 3,
+    }),
+  });
+const busyKeys: Record<Exclude<AlignBusy, "">, MessageKey> = {
+  loading: "align.loading",
+  reference: "align.readingReference",
+  aligning: "align.aligning",
+  saving: "align.saving",
+};
 
 // 音频对齐: line a file's audio (the target) up with a reference, for
 // extracting it cut or padded to match (see media.command, alignFilter).
 // The result: the reference used, the offset (target time = reference time
 // + offset) and, where offered (withTrim), whether to end with the reference.
-export type Alignment = { reference: string; offset: number; trim: boolean };
 export function AlignDialog({
   open,
   targetPath,
   fixedReference,
   initial,
   withTrim = false,
+  autoAlign = true,
+  frameShift = false,
+  fixedTiming,
   description,
   call,
   onApply,
@@ -55,6 +86,9 @@ export function AlignDialog({
   fixedReference?: string;
   initial?: Partial<Alignment>;
   withTrim?: boolean;
+  autoAlign?: boolean;
+  frameShift?: boolean;
+  fixedTiming?: ReferenceTiming;
   description: string;
   call: (action: string, payload?: unknown) => Promise<any>;
   onApply: (a: Alignment) => Promise<void>;
@@ -62,22 +96,11 @@ export function AlignDialog({
   onClear?: () => Promise<void>;
   onClose: () => void;
 }) {
-  const [target, setTarget] = useState<Track | null>(null),
-    [reference, setReference] = useState<Track | null>(null),
-    [refPath, setRefPath] = useState(""),
-    [offset, setOffset] = useState(0),
-    [result, setResult] = useState<{
-      confidence: number;
-      reliable: boolean;
-    } | null>(null),
-    [busy, setBusy] = useState(""),
-    [error, setError] = useState(""),
-    [trim, setTrim] = useState(true),
-    [view, setView] = useState({ start: 0, span: 10 }),
+  const [view, setView] = useState({ start: 0, span: 10 }),
     [playhead, setPlayhead] = useState(0),
     [listen, setListen] = useState("both"),
     [split, setSplit] = useState(false),
-    [step, setStep] = useState(STEPS[0].value),
+    [step, setStep] = useState("frame"),
     [dropping, setDropping] = useState(false);
   const refCanvas = useRef<HTMLCanvasElement>(null),
     tgtCanvas = useRef<HTMLCanvasElement>(null);
@@ -94,9 +117,67 @@ export function AlignDialog({
       t > v.start + v.span ? { ...v, start: t - v.span * 0.1 } : v,
     );
   });
+  const {
+    target,
+    reference,
+    refPath,
+    offset,
+    setOffset,
+    result,
+    busy,
+    setBusy,
+    error,
+    setError,
+    trim,
+    setTrim,
+    run,
+    takeReference,
+    frameInput,
+    setFrameInput,
+    referenceInfo,
+  } = useAlignSession({
+    open,
+    autoAlign,
+    targetPath,
+    fixedReference,
+    initial,
+    frameShift,
+    fixedTiming,
+    stop,
+    release,
+    fit,
+    resetPlayhead: () => setPlayhead(0),
+    showRange: setView,
+  });
+  const frames = Number(frameInput);
+  const validFrames = frameInput.trim() !== "" && Number.isSafeInteger(frames);
+  const computedShift = frameShift
+    ? effectiveAudioOffset(offset, frames, referenceInfo?.fpsText)
+    : offset;
+  const shift = Number.isFinite(computedShift) ? computedShift : offset;
+  const validShift =
+    !frameShift ||
+    (!!referenceInfo &&
+      validFrames &&
+      Number.isFinite(computedShift) &&
+      Math.abs(computedShift) <= 24 * 3600);
+  const frameError = !validFrames
+    ? "error.ALIGN_SHIFT_FRAMES_INVALID"
+    : Number.isFinite(computedShift) && Math.abs(computedShift) > 24 * 3600
+      ? "error.ALIGN_SHIFT_RANGE_INVALID"
+      : null;
+  const frameSeconds = 1 / (parseFrameRate(referenceInfo?.fpsText)?.fps || 30);
   // From the playhead (or `from`), the target shifted by `shift`.
-  const play = (from = playhead, shift = offset) =>
-    playFrom({ from, shift, reference, target, listen, split, length });
+  const play = (from = playhead, atShift = shift) =>
+    playFrom({
+      from,
+      shift: atShift,
+      reference,
+      target,
+      listen,
+      split,
+      length,
+    });
   const refEnv = useMemo(
     () => (reference ? envelope(reference.pcm) : null),
     [reference],
@@ -106,120 +187,30 @@ export function AlignDialog({
     [target],
   );
   const length = Math.max(
-    reference?.duration || 0,
-    target ? target.duration - offset : 0,
+    reference?.duration || referenceInfo?.duration || 0,
+    target ? target.duration - shift : 0,
     1,
   );
   // Both recordings from their starts, with a little room so the start
   // lines are not on the edge.
-  function fit(shift = offset, refDuration = reference?.duration || 0) {
-    const lo = Math.min(0, -shift);
+  function fit(
+    atShift = shift,
+    refDuration = reference?.duration || referenceInfo?.duration || 0,
+  ) {
+    const lo = Math.min(0, -atShift);
     const hi = Math.max(
       refDuration,
-      target ? target.duration - shift : 0,
+      target ? target.duration - atShift : 0,
       lo + 1,
     );
     const pad = (hi - lo) * 0.02;
     setView({ start: lo - pad, span: hi - lo + 2 * pad });
   }
 
-  async function load(path: string, slot: string) {
-    const t = (await ask("alignPreview", { path, slot })) as Track;
-    // Used as it arrives; copied only if it came as another kind of view.
-    return t.pcm instanceof Int16Array
-      ? t
-      : { ...t, pcm: new Int16Array(t.pcm) };
-  }
-  async function run(ref = refPath, refDuration = reference?.duration || 0) {
-    if (!targetPath || !ref) return;
-    setBusy("正在自动对齐…");
-    setError("");
-    try {
-      const r = await ask("alignRun", {
-        reference: ref,
-        target: targetPath,
-        slot: SLOTS.run,
-      });
-      setOffset(r.offset);
-      fit(r.offset, refDuration);
-      setResult({ confidence: r.confidence, reliable: r.reliable });
-    } catch (e) {
-      if (!isCancelled(e)) setError((e as Error).message);
-    } finally {
-      setBusy("");
-    }
-  }
   async function pickReference() {
     const file = await call("pickMedia", { multiple: false }).catch(() => null);
     if (typeof file === "string") await takeReference(file);
   }
-  async function takeReference(file: string) {
-    stop();
-    setBusy("正在读取参考音频…");
-    setError("");
-    try {
-      const r = await load(file, SLOTS.reference);
-      setReference(r);
-      setRefPath(file);
-      fit(offset, r.duration);
-      setBusy("");
-      await run(file, r.duration);
-    } catch (e) {
-      if (!isCancelled(e)) setError((e as Error).message);
-      setBusy("");
-    }
-  }
-  // Open: the target's sound, the reference's, and an earlier alignment; a
-  // given reference not yet aligned is aligned at once.
-  useEffect(() => {
-    if (!open || !targetPath) return;
-    let cancelled = false;
-    const ref = fixedReference || initial?.reference || "";
-    setTarget(null);
-    setReference(null);
-    setRefPath(ref);
-    setOffset(initial?.offset || 0);
-    setTrim(initial?.trim ?? true);
-    setResult(null);
-    setError("");
-    setPlayhead(0);
-    setBusy("正在读取音频…");
-    (async () => {
-      try {
-        const t = await load(targetPath, SLOTS.target);
-        if (cancelled) return;
-        setTarget(t);
-        let span = t.duration;
-        if (ref) {
-          const r = await load(ref, SLOTS.reference);
-          if (cancelled) return;
-          setReference(r);
-          span = r.duration;
-        }
-        const lo = Math.min(0, -(initial?.offset || 0));
-        const pad = (span - lo) * 0.02;
-        setView({ start: lo - pad, span: Math.max(1, span - lo + 2 * pad) });
-        if (ref && initial?.offset === undefined) {
-          setBusy("");
-          await run(ref, span);
-        }
-      } catch (e) {
-        if (!cancelled && !isCancelled(e)) setError((e as Error).message);
-      } finally {
-        if (!cancelled) setBusy("");
-      }
-    })();
-    // Closed (or opened on another file): stop what is still being read or
-    // aligned, and let go of the sound.
-    return () => {
-      cancelled = true;
-      release();
-      void ask("alignCancel", { slots: Object.values(SLOTS) }).catch(() => {});
-      setTarget(null);
-      setReference(null);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, targetPath, fixedReference]);
   // Redraw on any change; the canvases follow their box on resize.
   useEffect(() => {
     const paint = () => {
@@ -239,11 +230,11 @@ export function AlignDialog({
         tgtEnv,
         view.start,
         view.span,
-        offset,
+        shift,
         playhead,
         [
           { t: 0, color: "--wave-zero" },
-          { t: -offset, color: "--wave-start" },
+          { t: -shift, color: "--wave-start" },
         ],
       );
     };
@@ -255,10 +246,31 @@ export function AlignDialog({
   // A change while playing is heard at once.
   function setShift(next: number) {
     setOffset(next);
-    if (playing) play(playhead, next);
+    if (playing)
+      play(
+        playhead,
+        frameShift
+          ? effectiveAudioOffset(next, frames, referenceInfo?.fpsText)
+          : next,
+      );
   }
   function nudge(dir: number, big = false) {
-    setShift(offset + dir * Number(step) * (big ? 10 : 1));
+    setShift(
+      offset +
+        dir * (step === "frame" ? frameSeconds : Number(step)) * (big ? 10 : 1),
+    );
+  }
+  function setFrameValue(next: string) {
+    setFrameInput(next);
+    if (playing) {
+      const value = effectiveAudioOffset(
+        offset,
+        Number(next),
+        referenceInfo?.fpsText,
+      );
+      if (Number.isFinite(value)) play(playhead, value);
+      else stop();
+    }
   }
   const timeAt = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -310,7 +322,7 @@ export function AlignDialog({
   // part shown as a window on it. Drag the window to move it, its edges to
   // zoom; a press beside it centres it there.
   const whole = {
-    lo: Math.min(0, -offset, view.start),
+    lo: Math.min(0, -shift, view.start),
     hi: Math.max(length, view.start + view.span),
   };
   const share = (x: number) => ((x - whole.lo) / (whole.hi - whole.lo)) * 100;
@@ -356,19 +368,24 @@ export function AlignDialog({
     const span = Math.min(Math.max(0.01, view.span * factor), length * 1.2);
     const start = around - ((around - view.start) * span) / view.span;
     setView({
-      start: Math.max(Math.min(0, -offset) - span * 0.1, start),
+      start: Math.max(Math.min(0, -shift) - span * 0.1, start),
       span,
     });
   }
   async function apply() {
     if (!refPath) return;
     stop();
-    setBusy("正在保存…");
+    setBusy("saving");
     try {
-      await onApply({ reference: refPath, offset, trim: withTrim && trim });
+      await onApply({
+        reference: refPath,
+        offset,
+        trim: withTrim && trim,
+        ...(frameShift ? { shiftFrames: frames } : {}),
+      });
       onClose();
     } catch (e) {
-      setError((e as Error).message);
+      setError(e);
     } finally {
       setBusy("");
     }
@@ -380,16 +397,16 @@ export function AlignDialog({
       await onClear();
       onClose();
     } catch (e) {
-      setError((e as Error).message);
+      setError(e);
     }
   }
 
   const where =
-    Math.abs(offset) < 1 / 96000
-      ? "目标与参考同时开始"
-      : offset > 0
-        ? `目标开头多出 ${offset.toFixed(4)} 秒，导出时截掉`
-        : `目标晚 ${(-offset).toFixed(4)} 秒开始，导出时在前面补静音`;
+    Math.abs(shift) < 1 / 96000
+      ? t("align.simultaneous")
+      : shift > 0
+        ? t("align.trimHead", { seconds: decimal(shift, 4) })
+        : t("align.padHead", { seconds: decimal(-shift, 4) });
   return (
     <Modal
       open={open}
@@ -398,9 +415,9 @@ export function AlignDialog({
         onClose();
       }}
       wide
-      title="音频对齐"
+      title={t("align.title")}
       description={description}
-      error={error}
+      error={error ? errorMessage(error) : ""}
     >
       <div
         className={`align-dialog${dropping ? " dropping" : ""}`}
@@ -426,61 +443,75 @@ export function AlignDialog({
         }}
       >
         <div className="align-ref">
-          <span className="align-label">参考</span>
+          <span className="align-label">{t("align.reference")}</span>
           <span className="path-text" title={refPath}>
             {refPath
-              ? baseName(refPath) + (fixedReference ? "（视频自带的声音）" : "")
-              : "尚未添加：选择或拖入音频 / 视频"}
+              ? fixedReference
+                ? t("align.videoReference", { name: baseName(refPath) })
+                : baseName(refPath)
+              : t("align.emptyReference")}
           </span>
           {!fixedReference && (
             <Button onClick={pickReference} disabled={!!busy}>
               <FolderOpen size={15} />
-              {refPath ? "更换参考" : "添加参考音频"}
+              {refPath ? t("align.changeReference") : t("align.addReference")}
             </Button>
           )}
-          <Button onClick={() => run()} disabled={!refPath || !!busy}>
-            <Wand2 size={15} />
-            自动对齐
+          <Button
+            onClick={() => run()}
+            disabled={
+              !refPath ||
+              !!busy ||
+              !validShift ||
+              (frameShift && !referenceInfo?.hasAudio)
+            }
+          >
+            <AlignmentIcon size={15} active={busy === "aligning"} />
+            {t("align.auto")}
           </Button>
         </div>
         <p className="align-status" role="status">
-          {busy ||
+          {(busy && t(busyKeys[busy])) ||
             (refPath ? (
               <>
                 {where}
                 {result &&
                   (result.reliable ? (
                     <span className="align-ok">
-                      {" "}
-                      · 匹配可信（{result.confidence.toFixed(1)}）
+                      {t("align.reliable", {
+                        confidence: decimal(result.confidence, 1),
+                      })}
                     </span>
                   ) : (
                     <span className="align-warn">
-                      {" "}
-                      · 可信度低（{result.confidence.toFixed(2)}
-                      ），两段可能不是同一版本，请试听确认
+                      {t("align.unreliable", {
+                        confidence: decimal(result.confidence, 2),
+                      })}
                     </span>
                   ))}
               </>
             ) : (
-              "添加参考音频后会自动对齐，也可以拖动下方的目标波形手动对齐。"
+              t("align.emptyHint")
             ))}
         </p>
+        {frameShift && referenceInfo && !referenceInfo.hasAudio && (
+          <p className="hint">{t("align.noReferenceAudio")}</p>
+        )}
         <div className="align-waves">
-          <span className="align-label">参考</span>
+          <span className="align-label">{t("align.reference")}</span>
           <canvas
             ref={refCanvas}
             className="align-wave reference"
-            aria-label="参考音频波形：左键拖动平移，右键拖动移动播放位置，滚轮缩放"
+            aria-label={t("align.referenceWave")}
             onWheel={(e) => zoom(e.deltaY > 0 ? 1.25 : 0.8, timeAt(e))}
             {...pointerHandlers("reference")}
           />
-          <span className="align-label">目标</span>
+          <span className="align-label">{t("align.target")}</span>
           <canvas
             ref={tgtCanvas}
             className="align-wave target"
             tabIndex={0}
-            aria-label="目标音频波形：左键拖动或用左右方向键调整对齐（按住 Shift 步长乘 10），右键拖动移动播放位置"
+            aria-label={t("align.targetWave")}
             onWheel={(e) => zoom(e.deltaY > 0 ? 1.25 : 0.8, timeAt(e))}
             {...pointerHandlers("target")}
             onKeyDown={(e) => {
@@ -499,14 +530,14 @@ export function AlignDialog({
             <span>{seconds(view.start)}</span>
             <span>{seconds(view.start + view.span)}</span>
           </div>
-          <span className="align-label">视图</span>
+          <span className="align-label">{t("align.view")}</span>
           {/* Same width as the waveforms: the shown part of the whole. */}
           <div
             ref={zoomBar}
             className="align-zoom"
             role="scrollbar"
             aria-orientation="horizontal"
-            aria-label="视图范围：拖动中间平移，拖动两端缩放；方向键平移"
+            aria-label={t("align.viewRange")}
             aria-valuemin={Math.round(whole.lo * 1000)}
             aria-valuemax={Math.round(whole.hi * 1000)}
             aria-valuenow={Math.round(view.start * 1000)}
@@ -544,22 +575,26 @@ export function AlignDialog({
                 variant="primary"
                 onClick={() => (playing ? stop() : play())}
                 disabled={!target}
-                aria-label={playing ? "暂停" : "播放"}
+                aria-label={playing ? t("align.pause") : t("align.play")}
               >
                 {playing ? <Pause size={15} /> : <Play size={15} />}
-                {playing ? "暂停" : "播放"}
+                {playing ? t("align.pause") : t("align.play")}
               </Button>
-              <span className="align-time" title="播放位置">
+              <span className="align-time" title={t("align.playhead")}>
                 {seconds(playhead)}
               </span>
             </div>
             <div className="align-group">
-              <span className="align-row-label">试听</span>
-              <div className="segmented" role="radiogroup" aria-label="试听">
+              <span className="align-row-label">{t("align.listen")}</span>
+              <div
+                className="segmented"
+                role="radiogroup"
+                aria-label={t("align.listen")}
+              >
                 {[
-                  ["reference", "参考"],
-                  ["target", "目标"],
-                  ["both", "叠听"],
+                  ["reference", t("align.reference")],
+                  ["target", t("align.target")],
+                  ["both", t("align.both")],
                 ].map(([value, label]) => (
                   <label key={value}>
                     <input
@@ -582,31 +617,35 @@ export function AlignDialog({
                   checked={split}
                   onChange={(e) => setSplit(e.target.checked)}
                 />
-                左右分声道
+                {t("align.split")}
               </label>
             </div>
           </div>
           <div className="align-row">
             <div className="align-group">
-              <span className="align-row-label">缩放</span>
-              <Button aria-label="缩小" title="缩小" onClick={() => zoom(1.5)}>
+              <span className="align-row-label">{t("align.zoom")}</span>
+              <Button
+                aria-label={t("align.zoomOut")}
+                title={t("align.zoomOut")}
+                onClick={() => zoom(1.5)}
+              >
                 <Minus size={15} />
               </Button>
               <Button
-                aria-label="放大"
-                title="放大"
+                aria-label={t("align.zoomIn")}
+                title={t("align.zoomIn")}
                 onClick={() => zoom(1 / 1.5)}
               >
                 <Plus size={15} />
               </Button>
               <Button onClick={() => fit()}>
                 <AudioLines size={15} />
-                全部
+                {t("align.fit")}
               </Button>
             </div>
             <div className="align-group">
               <label className="align-row-label" htmlFor="align-step">
-                微调
+                {t("align.nudge")}
               </label>
               <select
                 id="align-step"
@@ -614,28 +653,88 @@ export function AlignDialog({
                 value={step}
                 onChange={(e) => setStep(e.target.value)}
               >
-                {STEPS.map((s) => (
+                {steps(frameSeconds, frameShift).map((s) => (
                   <option key={s.value} value={s.value}>
                     {s.label}
                   </option>
                 ))}
               </select>
               <Button
-                aria-label="目标左移"
-                title="目标左移（←，按住 Shift 乘 10）"
+                aria-label={t("align.left")}
+                title={t("align.leftHint")}
                 onClick={() => nudge(1)}
               >
                 ←
               </Button>
               <Button
-                aria-label="目标右移"
-                title="目标右移（→，按住 Shift 乘 10）"
+                aria-label={t("align.right")}
+                title={t("align.rightHint")}
                 onClick={() => nudge(-1)}
               >
                 →
               </Button>
             </div>
+            {frameShift && (
+              <div className="align-group">
+                <label className="align-row-label" htmlFor="align-audio-shift">
+                  {t("align.shiftFrames")}
+                </label>
+                <input
+                  id="align-audio-shift"
+                  className="align-shift-input"
+                  type="number"
+                  step="1"
+                  value={frameInput}
+                  disabled={!!busy || !referenceInfo}
+                  aria-invalid={!validShift && !!referenceInfo}
+                  aria-describedby={
+                    [
+                      referenceInfo?.fallback && "align-audio-shift-hint",
+                      frameError && "align-audio-shift-error",
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || undefined
+                  }
+                  title={referenceInfo?.fpsText}
+                  onChange={(event) => setFrameValue(event.target.value)}
+                />
+                <Button
+                  aria-label={t("align.shiftEarlier")}
+                  title={t("align.shiftEarlier")}
+                  disabled={!!busy || !referenceInfo || !validFrames}
+                  onClick={() => setFrameValue(String(frames - 1))}
+                >
+                  ←
+                </Button>
+                <Button
+                  aria-label={t("align.shiftLater")}
+                  title={t("align.shiftLater")}
+                  disabled={!!busy || !referenceInfo || !validFrames}
+                  onClick={() => setFrameValue(String(frames + 1))}
+                >
+                  →
+                </Button>
+              </div>
+            )}
           </div>
+          {frameShift && (referenceInfo?.fallback || frameError) && (
+            <div className="align-shift-feedback">
+              {referenceInfo?.fallback && (
+                <p id="align-audio-shift-hint" className="hint">
+                  {t("align.shiftAudioFallback")}
+                </p>
+              )}
+              {frameError && (
+                <p
+                  id="align-audio-shift-error"
+                  className="inline-error"
+                  role="alert"
+                >
+                  {t(frameError)}
+                </p>
+              )}
+            </div>
+          )}
           {withTrim && (
             <label className="checkbox-row">
               <input
@@ -644,18 +743,15 @@ export function AlignDialog({
                 disabled={!refPath}
                 onChange={(e) => setTrim(e.target.checked)}
               />
-              导出时截到参考的长度（不够时补静音）
+              {t("align.trim")}
             </label>
           )}
-          <p className="hint align-hint">
-            虚线标出起点：灰色为参考 0
-            秒，蓝色为目标开头。左键单击设置播放位置；左键拖动目标波形对齐；右键拖动或拖动视图条平移；拖动视图条两端或滚轮缩放。
-          </p>
+          <p className="hint align-hint">{t("align.hint")}</p>
         </div>
         <div className="modal-actions">
           {onClear && (
             <Button onClick={clear} disabled={!!busy}>
-              清除对齐
+              {t("align.clear")}
             </Button>
           )}
           <Button
@@ -664,14 +760,14 @@ export function AlignDialog({
               onClose();
             }}
           >
-            取消
+            {t("align.cancel")}
           </Button>
           <Button
             variant="primary"
             onClick={apply}
-            disabled={!refPath || !target || !!busy}
+            disabled={!refPath || !target || !!busy || !validShift}
           >
-            应用
+            {t("align.apply")}
           </Button>
         </div>
       </div>

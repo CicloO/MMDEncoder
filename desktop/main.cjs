@@ -5,8 +5,11 @@ const {
   dialog,
   clipboard,
   shell,
+  protocol,
+  nativeTheme,
 } = require("electron");
 const path = require("node:path");
+const { Readable } = require("node:stream");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const { createService } = require("../backend/service.cjs");
@@ -14,9 +17,35 @@ const {
   checkForUpdate,
   RELEASES_URL,
   PROJECT_PAGES,
-  changelogSection,
 } = require("../backend/update.cjs");
 const { createUpdater } = require("../backend/selfupdate.cjs");
+const { appError } = require("../backend/errors.cjs");
+const { commandText } = require("../backend/command-text.cjs");
+const { createTranslator } = require("../locales/runtime.mjs");
+const localeRegistry = require("../locales/registry.json");
+const { createSettingsStore } = require("../backend/settings-store.cjs");
+const {
+  normalizeTheme,
+  normalizeAccent,
+  resolveTheme,
+} = require("../backend/preferences.cjs");
+const themeColors = require("./theme-colors.json");
+const localeCatalogs = Object.fromEntries(
+  localeRegistry.locales.map((entry) => [
+    entry.id,
+    require(path.resolve(__dirname, "../locales", entry.file)),
+  ]),
+);
+const desktopLocale = createTranslator({
+  sourceLocale: localeRegistry.sourceLocale,
+  catalogs: localeCatalogs,
+});
+// Native pickers use the saved locale at opening; they keep their own text
+// while open. Shared service preferences remain the only locale authority.
+function desktopText(key) {
+  desktopLocale.setLocale(service.getState().locale);
+  return desktopLocale.t(key);
+}
 let win,
   service,
   updater,
@@ -29,6 +58,17 @@ const engineDir = process.env.MMD_ENCODER_ENGINES;
 const dataDir = process.env.MMD_ENCODER_DATA || path.join(base, "data");
 app.setPath("userData", path.join(dataDir, "electron"));
 app.setName("MMDEncoder");
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "mmd-preview",
+    privileges: {
+      standard: true,
+      secure: true,
+      stream: true,
+      supportFetchAPI: true,
+    },
+  },
+]);
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -42,6 +82,26 @@ else {
   app
     .whenReady()
     .then(async () => {
+      let initialPreference = "light",
+        initialAccent = "cyan";
+      try {
+        const saved = createSettingsStore(dataDir).read().preferences;
+        initialPreference = normalizeTheme(saved?.theme);
+        initialAccent = normalizeAccent(saved?.accent);
+      } catch {
+        /* The service reports and backs up unreadable settings. */
+      }
+      let appliedTheme = resolveTheme(
+        initialPreference,
+        nativeTheme.shouldUseDarkColors,
+      );
+      const applyWindowTheme = (preference) => {
+        const next = resolveTheme(preference, nativeTheme.shouldUseDarkColors);
+        if (next !== appliedTheme && win && !win.isDestroyed()) {
+          win.setBackgroundColor(themeColors[next].background);
+          appliedTheme = next;
+        }
+      };
       win = new BrowserWindow({
         width: 1280,
         height: 900,
@@ -49,7 +109,7 @@ else {
         minHeight: 600,
         title: "MMDEncoder",
         icon: path.join(__dirname, "../assets/icon.ico"),
-        backgroundColor: "#f3f5f8",
+        backgroundColor: themeColors[appliedTheme].background,
         show: !process.env.MMD_ENCODER_TEST,
         autoHideMenuBar: true,
         webPreferences: {
@@ -58,8 +118,17 @@ else {
           nodeIntegration: false,
           sandbox: true,
           backgroundThrottling: false,
+          additionalArguments: [
+            `--mmd-theme=${appliedTheme}`,
+            `--mmd-accent=${initialAccent}`,
+          ],
         },
       });
+      nativeTheme.on("updated", () =>
+        applyWindowTheme(
+          service?.getState().preferences.theme || initialPreference,
+        ),
+      );
       win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       win.webContents.on("will-navigate", (event) => event.preventDefault());
       win.webContents.session.setPermissionRequestHandler(
@@ -75,20 +144,109 @@ else {
       service = createService({
         engineDir,
         dataDir,
+        localeCatalogs,
+        systemLanguages: app.getPreferredSystemLanguages(),
+        formatCopiedCommand: (commands, locale) => {
+          desktopLocale.setLocale(locale);
+          return commandText(commands, {
+            prepare: true,
+            text: desktopLocale.t,
+          });
+        },
         toolsRoot:
           process.env.MMD_ENCODER_TOOLS_ROOT || process.env.MMD_ENCODER_TOOLS,
         onUpdate: (s) => {
+          applyWindowTheme(s.preferences.theme);
           if (win && !win.isDestroyed())
             win.webContents.send("encoder:state", s);
         },
       });
       const { registerAction } = require("./actions.cjs");
+      protocol.handle("mmd-preview", async (request) => {
+        if (!["GET", "HEAD"].includes(request.method))
+          return new Response(null, { status: 405 });
+        try {
+          const url = new URL(request.url);
+          if (
+            url.host !== "clip" ||
+            url.username ||
+            url.password ||
+            url.search ||
+            url.hash
+          )
+            return new Response(null, { status: 404 });
+          const id = decodeURIComponent(url.pathname.slice(1));
+          if (!id || url.pathname !== `/${encodeURIComponent(id)}`)
+            return new Response(null, { status: 404 });
+          const file = await service.invoke("trimPreviewSource", { id });
+          const stat = await fs.stat(file);
+          if (!stat.isFile()) return new Response(null, { status: 404 });
+          const headers = {
+            "Content-Type":
+              {
+                ".mp4": "video/mp4",
+                ".m4v": "video/mp4",
+                ".mov": "video/quicktime",
+                ".mkv": "video/x-matroska",
+                ".avi": "video/x-msvideo",
+                ".webm": "video/webm",
+                ".ts": "video/mp2t",
+                ".m2ts": "video/mp2t",
+              }[path.extname(file).toLowerCase()] || "application/octet-stream",
+            "Accept-Ranges": "bytes",
+            "Content-Length": String(stat.size),
+            "Cache-Control": "no-store",
+          };
+          if (request.method === "HEAD") return new Response(null, { headers });
+          let start = 0,
+            end = stat.size - 1,
+            status = 200;
+          const range = request.headers.get("range");
+          if (range) {
+            const match = /^bytes=(\d*)-(\d*)$/i.exec(range);
+            if (match && (match[1] || match[2])) {
+              start = match[1]
+                ? Number(match[1])
+                : Math.max(0, stat.size - Number(match[2]));
+              end =
+                match[1] && match[2] ? Math.min(Number(match[2]), end) : end;
+            }
+            if (
+              !match ||
+              (!match[1] && !Number(match[2])) ||
+              !Number.isSafeInteger(start) ||
+              !Number.isSafeInteger(end) ||
+              start > end ||
+              start >= stat.size
+            )
+              return new Response(null, {
+                status: 416,
+                headers: { "Content-Range": `bytes */${stat.size}` },
+              });
+            status = 206;
+            headers["Content-Range"] = `bytes ${start}-${end}/${stat.size}`;
+            headers["Content-Length"] = String(end - start + 1);
+          }
+          if (!stat.size) return new Response(null, { status, headers });
+          const stream = fsSync.createReadStream(file, { start, end });
+          const abort = () => stream.destroy();
+          request.signal.addEventListener("abort", abort, { once: true });
+          stream.once("close", () =>
+            request.signal.removeEventListener("abort", abort),
+          );
+          if (request.signal.aborted) abort();
+          return new Response(Readable.toWeb(stream), { status, headers });
+        } catch {
+          return new Response(null, { status: 404 });
+        }
+      });
+      const { mediaOutputDialogOptions } = require("./media-output-dialog.cjs");
       registerAction(ipcMain, async (event, action, payload) => {
         if (
           event.sender !== win.webContents ||
           event.senderFrame !== win.webContents.mainFrame
         )
-          throw new Error("不受信任的界面");
+          throw appError("DESKTOP_UNTRUSTED_UI");
         if (action === "quit") {
           await service.invoke("cancel");
           await service.invoke("trimCancel");
@@ -106,11 +264,11 @@ else {
         }
         if (action === "pickFiles") {
           const result = await dialog.showOpenDialog(win, {
-            title: "添加视频",
+            title: desktopText("dialog.video.add"),
             properties: ["openFile", "multiSelections"],
             filters: [
               {
-                name: "视频文件",
+                name: desktopText("dialog.video.files"),
                 extensions: [
                   "avi",
                   "mov",
@@ -128,10 +286,10 @@ else {
                 ],
               },
               {
-                name: "PNG 图片序列（选其中任意一张）",
+                name: desktopText("dialog.video.pngSequence"),
                 extensions: ["png"],
               },
-              { name: "所有文件", extensions: ["*"] },
+              { name: desktopText("dialog.files.all"), extensions: ["*"] },
             ],
           });
           return result.canceled
@@ -140,13 +298,13 @@ else {
         }
         if (action === "pickMedia") {
           const result = await dialog.showOpenDialog(win, {
-            title: "选择媒体文件",
+            title: desktopText("dialog.media.pick"),
             properties: payload?.multiple
               ? ["openFile", "multiSelections"]
               : ["openFile"],
             filters: [
               {
-                name: "音视频文件",
+                name: desktopText("dialog.media.files"),
                 extensions: [
                   "avi",
                   "mov",
@@ -163,70 +321,77 @@ else {
                   "mka",
                 ],
               },
-              { name: "全部文件", extensions: ["*"] },
+              { name: desktopText("dialog.media.allFiles"), extensions: ["*"] },
             ],
           });
           if (result.canceled) return null;
           return payload?.multiple ? result.filePaths : result.filePaths[0];
         }
-        if (action === "pickMediaOutput") {
-          const extensions = {
-            wav: "wav",
-            flac: "flac",
-            aac: "m4a",
-            opus: "opus",
-            copy: "mka",
-          };
-          const ext =
-            payload?.operation === "audio"
-              ? extensions[payload.audioFormat] || "wav"
-              : "mkv";
-          const result = await dialog.showSaveDialog(win, {
-            title: "选择新的输出文件",
-            defaultPath: "输出." + ext,
-            filters: [{ name: "输出文件", extensions: [ext] }],
+        if (action === "pickToolsArchive") {
+          const result = await dialog.showOpenDialog(win, {
+            title: desktopText("dialog.tools.archive"),
+            properties: ["openFile"],
+            filters: [
+              {
+                name: desktopText("dialog.tools.archiveFiles"),
+                extensions: ["zip", "7z"],
+              },
+            ],
           });
+          return result.canceled ? null : result.filePaths[0];
+        }
+        if (action === "pickMediaOutput") {
+          const result = await dialog.showSaveDialog(
+            win,
+            mediaOutputDialogOptions(payload, desktopText),
+          );
           return result.canceled ? null : result.filePath;
         }
         if (action === "pickDirectory") {
           const r = await dialog.showOpenDialog(win, {
-            title: payload?.title || "选择统一输出目录",
+            title: payload?.title || desktopText("dialog.directory.output"),
             properties: ["openDirectory", "createDirectory"],
           });
           return r.canceled ? null : r.filePaths[0];
         }
         if (action === "copyCommand") {
           const p = await service.invoke("preview", payload);
-          if (p.errors.length) throw new Error(p.errors.join("\n"));
+          if (p.errors.length)
+            throw appError("VIDEO_COMMAND_INVALID", {
+              detail: p.errors.join("\n"),
+              errors: p.issues || [],
+            });
           clipboard.writeText(p.command);
           return p;
         }
         if (action === "importPresetsFile") {
           const r = await dialog.showOpenDialog(win, {
-            title: "导入预设",
+            title: desktopText("dialog.preset.import"),
             properties: ["openFile"],
-            filters: [{ name: "JSON 预设", extensions: ["json"] }],
+            filters: [
+              { name: desktopText("dialog.preset.json"), extensions: ["json"] },
+            ],
           });
           if (r.canceled) return { cancelled: true };
           let content;
           try {
             content = JSON.parse(await fs.readFile(r.filePaths[0], "utf8"));
           } catch {
-            throw new Error(
-              "无法读取预设 JSON。请检查文件格式，已有预设未被修改。",
-            );
+            throw appError("PRESET_FILE_UNREADABLE");
           }
           if (!Array.isArray(content) && content?.version !== 1)
-            throw new Error("预设文件版本不受支持，请使用版本 1 的预设文件");
+            throw appError("PRESET_FILE_VERSION");
           return service.invoke("importPresets", {
             presets: Array.isArray(content) ? content : content.presets,
           });
         }
         if (action === "exportPresetsFile") {
           const r = await dialog.showSaveDialog(win, {
-            title: "导出预设",
+            title: desktopText("dialog.preset.export"),
             defaultPath: "MMDEncoder-presets.json",
-            filters: [{ name: "JSON 预设", extensions: ["json"] }],
+            filters: [
+              { name: desktopText("dialog.preset.json"), extensions: ["json"] },
+            ],
           });
           if (r.canceled) return { cancelled: true };
           if (r.filePath)
@@ -275,7 +440,7 @@ else {
               } catch {}
             }
           } catch {}
-          if (!last) throw new Error("还没有 MMD 导出记录");
+          if (!last) throw appError("MMD_HISTORY_EMPTY");
           const file = [last.output, last.mask].find(
             (f) => f && fsSync.existsSync(f),
           );
@@ -285,7 +450,7 @@ else {
           }
           const dir = path.dirname(last.output);
           if (!fsSync.existsSync(dir))
-            throw new Error("上次导出的文件夹已不存在：" + dir);
+            throw appError("MMD_HISTORY_DIRECTORY_MISSING", { path: dir });
           await shell.openPath(dir);
           return null;
         }
@@ -301,7 +466,8 @@ else {
           return {
             ...updateInfo,
             canInstall: !!updateInfo.assets && !blocked,
-            installBlocked: blocked,
+            installBlocked: blocked?.message || "",
+            installBlockedData: blocked,
           };
         }
         if (action === "appUpdateStatus") return { ...updater.state };
@@ -312,9 +478,7 @@ else {
         if (action === "installAppUpdate") {
           const s = service.getState();
           if (s.running || s.trim?.running || s.detecting || s.tools?.busy)
-            throw new Error(
-              "请等待当前压制、剪辑导出、检测或工具安装结束后再更新",
-            );
+            throw appError("UPDATE_BUSY");
           updater.install();
           quitting = true;
           service.dispose();
@@ -322,29 +486,18 @@ else {
           return null;
         }
         if (action === "aboutInfo") {
-          // The packaged app has CHANGELOG.md beside the exe.
-          const file = app.isPackaged
-            ? path.join(base, "CHANGELOG.md")
-            : path.join(base, "docs", "CHANGELOG.md");
-          let notes = "";
-          try {
-            notes = changelogSection(
-              await fs.readFile(file, "utf8"),
-              app.getVersion(),
-            );
-          } catch {}
-          return { version: app.getVersion(), notes };
+          return { version: app.getVersion() };
         }
         if (action === "openProjectPage") {
           const url = PROJECT_PAGES[payload?.page];
-          if (!url) throw new Error("未知的项目页面");
+          if (!url) throw appError("PROJECT_PAGE_UNKNOWN");
           await shell.openExternal(url);
           return null;
         }
         if (action === "openReleasePage") {
           const url = String(payload?.url || RELEASES_URL);
           if (url !== RELEASES_URL && !url.startsWith(RELEASES_URL + "/"))
-            throw new Error("只能打开本项目的发行页");
+            throw appError("RELEASE_PAGE_UNTRUSTED");
           await shell.openExternal(url);
           return null;
         }
@@ -359,12 +512,17 @@ else {
             ]),
           ].filter(Boolean);
           if (!allowed.includes(payload?.path))
-            throw new Error("只能打开当前任务的文件位置");
+            throw appError("REVEAL_PATH_UNTRUSTED");
           shell.showItemInFolder(payload.path);
           return null;
         }
         const allowed = [
           "state",
+          "setLocale",
+          "setTheme",
+          "setAccent",
+          "setAutoAlignAudio",
+          "installToolsArchive",
           "compatibility",
           "testEnhancements",
           "mediaStart",
@@ -396,6 +554,7 @@ else {
           "mediaSetAudioOffset",
           "setAudioOffset",
           "alignPreview",
+          "alignReferenceInfo",
           "alignRun",
           "alignCancel",
           "mmdStatus",
@@ -427,7 +586,8 @@ else {
           "preview",
           "logs",
         ];
-        if (!allowed.includes(action)) throw new Error("不支持的操作");
+        if (!allowed.includes(action))
+          throw appError("DESKTOP_ACTION_UNSUPPORTED");
         return service.invoke(action, payload);
       });
       await win.loadFile(path.join(__dirname, "../dist/index.html"));

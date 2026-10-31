@@ -1,3 +1,4 @@
+const { appError, sourceText } = require("./errors.cjs");
 const path = require("node:path");
 // Audio codecs that store every sample exactly; "follow source" bitrate uses 320k for these.
 const LOSSLESS = /^(pcm_|flac$|alac$|wavpack$|ape$|tta$|truehd$|mlp$)/;
@@ -23,13 +24,20 @@ function audioBitrate(requested, encoder, source = {}) {
 const HIRES_FORMATS = { wav: "pcm_s24le", flac: "flac" };
 function hiResPlan(format, source = {}) {
   const codec = HIRES_FORMATS[format];
-  if (!codec) throw Error("Hi-Res 只支持 WAV / FLAC 输出");
+  if (!codec) throw appError("MEDIA_HIRES_FORMAT");
   const sr = Number(source.sampleRate) || 0;
-  if (!sr) throw Error("读不到源音频的采样率，无法按 Hi-Res 输出");
+  if (!sr) throw appError("MEDIA_SAMPLE_RATE");
   const rate = sr < 48000 ? sr * 2 : sr;
   const bits = Number(source.bits) || 0;
-  const from = `${sr / 1000} kHz / ${source.float ? "浮点" : bits ? bits + "-bit" : "位深未知"}`;
-  const to = `${rate / 1000} kHz / 24-bit`;
+  const from = sourceText("media.hiresFrom", {
+    rate: sr / 1000,
+    depth: source.float
+      ? sourceText("media.hiresFloat")
+      : bits
+        ? bits + "-bit"
+        : sourceText("media.hiresUnknownDepth"),
+  });
+  const to = sourceText("media.hiresTo", { rate: rate / 1000 });
   // Same 24-bit codec at the target rate: the samples go across untouched.
   const same =
     rate === sr &&
@@ -43,7 +51,7 @@ function hiResPlan(format, source = {}) {
       rate,
       from,
       to,
-      reason: "源音频已是 24-bit，直接复制",
+      reason: sourceText("media.hiresCopyReason"),
     };
   const reduce = source.float || bits > 24;
   return {
@@ -56,10 +64,10 @@ function hiResPlan(format, source = {}) {
     dither: reduce,
     reason:
       rate !== sr
-        ? `源低于 48 kHz，升到 ${rate / 1000} kHz`
+        ? sourceText("media.hiresResampleReason", { rate: rate / 1000 })
         : reduce
-          ? "降为 24-bit（加抖动）"
-          : "无损转为 24-bit",
+          ? sourceText("media.hiresDitherReason")
+          : sourceText("media.hiresEncodeReason"),
   };
 }
 // Audio options for a Hi-Res plan; soxr is FFmpeg's best resampler when the
@@ -144,14 +152,14 @@ function alignFilter(a, rate) {
 }
 function command(p, tools, output) {
   if (!["audio", "video", "merge"].includes(p.operation))
-    throw Error("请选择提取音频、提取视频或音视频合并");
+    throw appError("MEDIA_OPERATION");
   for (const value of [
     p.input,
     ...(p.operation === "merge" ? [p.audioInput] : []),
     p.output,
   ])
     if (typeof value !== "string" || !path.isAbsolute(value))
-      throw Error("请选择有效的输入文件与绝对输出路径");
+      throw appError("MEDIA_PATHS");
   if (
     [p.input, p.audioInput]
       .filter(Boolean)
@@ -161,7 +169,7 @@ function command(p, tools, output) {
           path.resolve(p.output).toLowerCase(),
       )
   )
-    throw Error("输出不能覆盖输入文件");
+    throw appError("MEDIA_OVERWRITE");
   const audio = {
     wav: ["pcm_s16le", "wav"],
     flac: ["flac", "flac"],
@@ -170,29 +178,27 @@ function command(p, tools, output) {
     mp3: ["libmp3lame", "mp3"],
     copy: ["copy", "mka"],
   }[p.audioFormat || "wav"];
-  if (!audio) throw Error("音频格式无效");
+  if (!audio) throw appError("MEDIA_AUDIO_FORMAT");
   const ext = path.extname(p.output).toLowerCase();
   if (p.operation === "audio" && ext !== "." + audio[1])
-    throw Error("所选音频格式需要 ." + audio[1] + " 输出文件");
+    throw appError("MEDIA_AUDIO_EXTENSION", { extension: audio[1] });
   if (
     ["merge", "video"].includes(p.operation) &&
     ![".mkv", ".mp4"].includes(ext)
   )
-    throw Error("视频提取 / 合并使用 .mp4 或 .mkv 输出");
+    throw appError("MEDIA_VIDEO_EXTENSION");
   const hiRes = p.hiRes && p.operation !== "video";
   const fade = p.operation === "video" ? 0 : Number(p.fade) || 0;
-  if (fade && p.audioFormat === "copy")
-    throw Error("复制原音轨时不能淡入淡出，请改为重新编码的格式");
+  if (fade && p.audioFormat === "copy") throw appError("MEDIA_COPY_FADE");
   const plan = hiRes && hiResPlan(p.audioFormat, p.sourceAudio);
   let codecArgs = hiRes
-    ? // A fade means re-encoding even when Hi-Res would copy.
-      fade && plan.action === "copy"
+    ? // Padding/trimming a merge also needs decoded samples.
+      (fade || p.operation === "merge") && plan.action === "copy"
       ? hiResCodec(plan)
       : hiResArgs(plan, p.soxr)
     : ["-c:a", audio[0]];
-  // A merge lasts as long as the video: the audio is read no further than
-  // the video's length, and (unless copied) a shorter one is padded with
-  // silence, stopped by -shortest at the video's end.
+  // Output duration belongs to the video. Copied audio may end earlier;
+  // re-encoded audio is padded and trimmed to the video's duration.
   const merge = p.operation === "merge";
   const pad = merge && p.audioFormat !== "copy";
   // Extracting: p.align (with a reference length); merging: p.audioOffset
@@ -200,35 +206,25 @@ function command(p, tools, output) {
   const aligned =
     p.operation === "audio"
       ? p.align
-      : merge && p.audioOffset
-        ? { offset: Number(p.audioOffset) }
+      : merge && (p.audioOffset || pad)
+        ? {
+            offset: Number(p.audioOffset) || 0,
+            length: Number(p.videoDuration) || 0,
+          }
         : null;
-  if (aligned && p.audioFormat === "copy")
-    throw Error("对齐需要重新编码音频，请选择复制原音轨以外的格式");
+  if (aligned && p.audioFormat === "copy") throw appError("MEDIA_COPY_ALIGN");
   codecArgs = withAudioFilter(
     codecArgs,
     [
       aligned ? alignFilter(aligned, p.sourceAudio?.sampleRate) : "",
       fadeFilter(fade, p.fadeLength),
-      pad ? "apad" : "",
+      pad && !(Number(p.videoDuration) > 0) ? "apad" : "",
     ]
       .filter(Boolean)
       .join(","),
   );
   const args = ["-hide_banner", "-nostdin", "-n", "-i", p.input];
-  if (merge)
-    args.push(
-      ...(Number(p.videoDuration) > 0
-        ? [
-            "-t",
-            (
-              Number(p.videoDuration) + Math.max(0, Number(p.audioOffset) || 0)
-            ).toFixed(6),
-          ]
-        : []),
-      "-i",
-      p.audioInput,
-    );
+  if (merge) args.push("-i", p.audioInput);
   if (p.operation === "audio") args.push("-map", "0:a:0", "-vn", ...codecArgs);
   else
     args.push(
@@ -246,7 +242,9 @@ function command(p, tools, output) {
       "-b:a",
       audioBitrate(p.audioBitrate, audio[0], p.sourceAudio) + "k",
     );
-  if (pad) args.push("-shortest");
+  if (merge && Number(p.videoDuration) > 0)
+    args.push("-t", Number(p.videoDuration).toFixed(6));
+  else if (pad) args.push("-shortest");
   if (ext === ".mp4") args.push("-movflags", "+faststart");
   args.push("-progress", "pipe:1", output);
   return { exe: tools.ffmpeg, args };
@@ -269,7 +267,9 @@ function suggestOutput(p, settings, exists) {
       : p.container === "mp4"
         ? "mp4"
         : "mkv";
-  const suffix = { audio: "", video: "_无音频", merge: "_合并" }[p.operation];
+  const suffix = { audio: "", video: "_no_audio", merge: "_merged" }[
+    p.operation
+  ];
   if (suffix === undefined) return "";
   let dir = path.dirname(p.input);
   if (settings.outputMode === "encoded") dir = path.join(dir, "Encoded");
@@ -287,7 +287,7 @@ function suggestOutput(p, settings, exists) {
     if (!inputs.includes(output.toLowerCase()) && !exists(output))
       return output;
   }
-  throw Error("无法分配不重名的输出文件");
+  throw appError("MEDIA_NAME_EXHAUSTED");
 }
 module.exports = {
   FADES,

@@ -3,18 +3,33 @@ const require = createRequire(import.meta.url);
 import { _electron as electron, expect } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
+const { ff } = require("./engines.cjs");
 const root = path.resolve(import.meta.dirname, "..");
 const evidence = path.resolve(root, "verification");
-const data = fs.mkdtempSync(
-  path.resolve(root, "verification/work") + "/alpha-ui-",
+const work = path.resolve(root, "verification/work");
+fs.mkdirSync(work, { recursive: true });
+const data = fs.mkdtempSync(path.join(work, "alpha-ui-"));
+const input = path.join(data, "alpha.mkv");
+execFileSync(
+  ff,
+  [
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "testsrc2=s=160x90:r=30:d=0.3,format=yuva444p,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a=128",
+    "-c:v",
+    "ffv1",
+    input,
+  ],
+  { windowsHide: true },
 );
-const input = JSON.parse(
-  fs.readFileSync(path.join(evidence, "debug-state.json"), "utf8"),
-).jobs[0].path;
+const packaged = process.env.MMD_PACKAGE_EXE;
 const app = await electron.launch({
-  executablePath:
-    process.env.MMD_PACKAGE_EXE ||
-    path.resolve(root, "release/MMDEncoder/MMDEncoder.exe"),
+  executablePath: packaged || require("electron"),
+  args: packaged ? [] : [root],
   env: {
     ...process.env,
     MMD_ENCODER_DATA: data,
@@ -31,6 +46,18 @@ try {
   await page.evaluate(async (input) => {
     await window.encoder.invoke("add", { paths: [input] });
   }, input);
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const job = (await window.encoder.invoke("state")).jobs[0];
+        return {
+          status: job?.status,
+          width: job?.meta?.width,
+          height: job?.meta?.height,
+        };
+      }),
+    )
+    .toEqual({ status: "ready", width: 160, height: 90 });
   await page.selectOption("#resizeMode", "custom");
   await page.locator("#width").fill("320");
   await expect(page.locator("#height")).toHaveValue("180");
@@ -48,7 +75,9 @@ try {
     path: path.join(evidence, "07-preserve-alpha.png"),
     timeout: 15000,
   });
-  console.log("Packaged resolution and alpha UI PASS");
+  console.log(
+    `${packaged ? "Packaged" : "Source"} resolution and alpha UI PASS`,
+  );
   passed = true;
 } finally {
   await app.close();
