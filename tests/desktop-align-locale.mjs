@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 const require = createRequire(import.meta.url);
 require("./isolate.cjs");
 const root = path.resolve(import.meta.dirname, "..");
+const source = require("../locales/zh-CN.json");
 const dir = fs.mkdtempSync(path.join(root, "verification/i18n/align-locale-"));
 const outDir = path.join(dir, "fixture-dist");
 const audio = path.join(dir, "User 音频.wav");
@@ -380,6 +381,8 @@ try {
       short,
     );
     dialog = page.getByRole("dialog", { name: "音频对齐", exact: true });
+    // A fixed reference no longer re-matches on open; run it explicitly.
+    await dialog.getByRole("button", { name: "自动对齐", exact: true }).click();
     await expect(dialog.getByRole("alert")).toHaveText(
       "自动对齐失败：音频太短，至少需要 1 秒",
     );
