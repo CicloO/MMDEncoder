@@ -137,6 +137,7 @@ export function AboutDialog({
       onClose={onClose}
       title={text("about.title")}
       description={text("about.description")}
+      fixedHeight
     >
       <div className="about-hero">
         <span className="brand-icon" aria-hidden="true">
