@@ -128,7 +128,7 @@ export function TrimSettings({
               value={String(o.fade ?? 0)}
               disabled={running}
               options={fadeOptions()}
-              hint={text("trim.fadeHint")}
+              help={text("trim.fadeHint")}
               onChange={(v) => set("fade", Number(v))}
             />
           )}

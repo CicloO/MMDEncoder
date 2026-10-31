@@ -289,9 +289,8 @@ try {
   await expect(
     longDialog.getByLabel(labels["mmd.follow"], { exact: false }),
   ).toBeChecked();
-  await expect(
-    longDialog.getByLabel(labels["mmd.mask"], { exact: true }),
-  ).toBeVisible();
+  // The label also names its info button, so address the select by id.
+  await expect(longDialog.locator("#mmd-mask-mode")).toBeVisible();
   await longDialog
     .locator("#mmd-export-preset")
     .selectOption("test-preset-policy");
