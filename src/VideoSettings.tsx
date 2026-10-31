@@ -84,7 +84,7 @@ export function VideoSettings({
     label: string,
     min: number,
     max: number,
-    hint?: string,
+    help?: string,
   ) {
     const value = Number(s?.[key]);
     const automatic = key === "gop" || key === "bframes";
@@ -124,7 +124,7 @@ export function VideoSettings({
         aria-invalid={!!fieldError}
         aria-describedby={
           [
-            fieldError ? `${key}-error` : hint ? `${key}-hint` : "",
+            fieldError ? `${key}-error` : "",
             unavailable ? `${tooltipId}-${key}-reason` : "",
           ]
             .filter(Boolean)
@@ -143,7 +143,7 @@ export function VideoSettings({
       />
     );
     return (
-      <Field id={key} label={label} hint={hint} error={fieldError}>
+      <Field id={key} label={label} help={help} error={fieldError}>
         {unavailable ? (
           <Tooltip
             id={`${tooltipId}-${key}-reason`}
@@ -158,6 +158,17 @@ export function VideoSettings({
       </Field>
     );
   }
+
+  const rateHint =
+    s.encoder === "prores_ks"
+      ? t("video.proresHint")
+      : s.rateControl === "bitrate"
+        ? t("video.bitrateHint")
+        : s.rateControl === "qp"
+          ? t("video.qpHint")
+          : backend === "cpu"
+            ? t("video.crfHint")
+            : t("video.cqHint");
 
   return (
     <form
@@ -264,7 +275,13 @@ export function VideoSettings({
               onChange={(v) => set("rateControl", v)}
             />
             {s.rateControl === "bitrate"
-              ? fieldNumber("bitrate", t("video.bitrate"), 100, 1000000)
+              ? fieldNumber(
+                  "bitrate",
+                  t("video.bitrate"),
+                  100,
+                  1000000,
+                  rateHint,
+                )
               : fieldNumber(
                   "quality",
                   s.encoder === "prores_ks"
@@ -283,19 +300,9 @@ export function VideoSettings({
                     : ["h264", "hevc"].includes(engine?.codec || "")
                       ? 51
                       : 63,
+                  rateHint,
                 )}
           </div>
-          <p className="hint">
-            {s.encoder === "prores_ks"
-              ? t("video.proresHint")
-              : s.rateControl === "bitrate"
-                ? t("video.bitrateHint")
-                : s.rateControl === "qp"
-                  ? t("video.qpHint")
-                  : backend === "cpu"
-                    ? t("video.crfHint")
-                    : t("video.cqHint")}
-          </p>
           <Select
             id="speed"
             label={t("video.speed")}
@@ -321,7 +328,7 @@ export function VideoSettings({
                     : ["p1", "p2", "p3", "p4", "p5", "p6", "p7"],
             )}
             onChange={(v) => set("preset", v)}
-            hint={
+            help={
               s.encoder === "prores_ks"
                 ? t("video.speedProresHint")
                 : backend === "nvenc" || backend === "nvencc"
@@ -464,12 +471,13 @@ export function VideoSettings({
               setCustomFPS(v === "custom");
               if (v !== "custom") set("fps", v);
             }}
+            help={t("video.fpsConversionHint")}
           />
           {(customFPS || !frameOptions().some((o) => o.value === s.fps)) && (
             <Field
               id="custom-fps"
               label={t("video.customFPS")}
-              hint={t("video.fpsHint")}
+              help={t("video.fpsHint")}
             >
               <input
                 id="custom-fps"
@@ -478,7 +486,6 @@ export function VideoSettings({
               />
             </Field>
           )}
-          <p className="hint">{t("video.fpsConversionHint")}</p>
         </>
       )}
       {tab === "audio" && (
@@ -507,7 +514,7 @@ export function VideoSettings({
             )}
             onChange={(v) => set("audioBitrate", Number(v))}
             disabled={!["aac", "libopus"].includes(s.audio)}
-            hint={
+            help={
               s.audio === "none"
                 ? t("video.audioBitrateNoneHint")
                 : ["flac", "pcm_s16le"].includes(s.audio)
@@ -521,7 +528,7 @@ export function VideoSettings({
             value={String(s.audioFade ?? 0)}
             options={fadeOptions()}
             disabled={s.audio === "none"}
-            hint={
+            help={
               s.audio === "none" ? t("video.audioFadeNoneHint") : fadeHint()
             }
             onChange={(v) => set("audioFade", Number(v))}
@@ -629,6 +636,19 @@ export function VideoSettings({
               { value: "mask", label: t("video.alphaMask") },
               { value: "color", label: t("video.alphaColor") },
             ]}
+            help={
+              s.alphaMask && s.alphaMode === "discard"
+                ? t("video.alphaSplitHint", {
+                    format: maskFormatLabel(s.maskFormat),
+                  })
+                : s.alphaMode === "mask"
+                  ? t(
+                      (s.maskFormat ?? "lossless") === "lossless"
+                        ? "video.alphaMaskHint"
+                        : "video.alphaMaskLossyHint",
+                    )
+                  : undefined
+            }
             onChange={(v) =>
               changed({
                 ...s,
@@ -656,11 +676,6 @@ export function VideoSettings({
                 <Plus size={16} />
                 <div className="alpha-swatch mask">A</div>
               </div>
-              <p className="hint">
-                {t("video.alphaSplitHint", {
-                  format: maskFormatLabel(s.maskFormat),
-                })}
-              </p>
             </>
           )}
           {s.alphaMode === "mask" && (
@@ -668,13 +683,6 @@ export function VideoSettings({
               <div className="alpha-diagram">
                 <div className="alpha-swatch mask">A</div>
               </div>
-              <p className="hint">
-                {t(
-                  (s.maskFormat ?? "lossless") === "lossless"
-                    ? "video.alphaMaskHint"
-                    : "video.alphaMaskLossyHint",
-                )}
-              </p>
             </>
           )}
           {(s.alphaMask || s.alphaMode === "mask") && (
@@ -718,6 +726,7 @@ export function VideoSettings({
               { value: "custom", label: t("video.outputCustom") },
             ]}
             onChange={(v) => set("outputMode", v)}
+            help={t("video.outputHint")}
           />
           {s.outputMode === "custom" && (
             <Field id="outputDir" label={t("video.outputDirectory")}>
@@ -738,12 +747,11 @@ export function VideoSettings({
               </div>
             </Field>
           )}
-          <p className="hint">{t("video.outputHint")}</p>
           <div className="divider" />
           <Field
             id="nameTemplate"
             label={t("video.nameTemplate")}
-            hint={t("video.nameTemplateHint")}
+            help={`${t("video.nameTemplateHint")}\n${t("video.templateTokens")}`}
           >
             <input
               id="nameTemplate"
@@ -762,7 +770,6 @@ export function VideoSettings({
               </Button>
             ))}
           </div>
-          <p className="hint">{t("video.templateTokens")}</p>
           <div className="path-preview">
             <span>{t("video.outputExample")}</span>
             <code>{preview?.output || t("video.outputExampleEmpty")}</code>

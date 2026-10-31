@@ -62,7 +62,13 @@ try {
   await page.getByRole("heading", { name: "视频队列" }).click();
   await help.hover();
   await expect(tip).toBeVisible();
-  await tip.hover();
+  // Move straight onto the tooltip: locator.hover() scrolls first, and any
+  // scroll closes a positioned tooltip.
+  const tipBox = await tip.boundingBox();
+  await page.mouse.move(
+    tipBox.x + tipBox.width / 2,
+    tipBox.y + tipBox.height / 2,
+  );
   await expect(tip).toBeVisible();
   await page.screenshot({ path: path.join(dir, "encoder-help.png") });
   await page.getByRole("heading", { name: "视频队列" }).hover();
@@ -75,16 +81,24 @@ try {
     0,
   );
   checks.push("label-help-focus-click-enter-hover-and-escape");
-  const standaloneHintGap = await page.locator("#fps").evaluate((input) => {
-    const field = input.closest(".field"),
-      hint = field.nextElementSibling;
-    return hint.classList.contains("hint")
-      ? hint.getBoundingClientRect().top - field.getBoundingClientRect().bottom
-      : null;
+  // Explanations live behind the label's info button, not as captions.
+  const fpsField = await page.locator("#fps").evaluate((input) => {
+    const field = input.closest(".field");
+    return {
+      help: !!field.querySelector(".field-help"),
+      caption: !!field.querySelector(".hint"),
+      sibling: !!field.nextElementSibling?.classList.contains("hint"),
+    };
   });
-  // Chromium returns fractional CSS coordinates at Windows display scaling.
-  assert.ok(Math.abs(standaloneHintGap - 4) < 0.01);
-  checks.push("standalone-caption-stays-four-pixels-below-its-field");
+  assert.deepEqual(fpsField, { help: true, caption: false, sibling: false });
+  assert.equal(
+    await page
+      .locator(".hint")
+      .filter({ hasText: source["video.crfHint"] })
+      .count(),
+    0,
+  );
+  checks.push("settings-explanations-move-into-label-help");
   await page.getByRole("button", { name: "高级", exact: true }).click();
   for (const [id, manual] of [
     ["gop", "48"],
