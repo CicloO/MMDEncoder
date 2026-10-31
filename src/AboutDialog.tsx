@@ -284,7 +284,6 @@ export function AboutDialog({
           onChange={(value) =>
             void changePreference("setAccent", { accent: value })
           }
-          hint={text("about.accentHint")}
         />
         {preferenceError && (
           <p className="inline-error" role="alert">
