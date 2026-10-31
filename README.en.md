@@ -19,9 +19,25 @@ Project page: <https://github.com/CicloO/MMDEncoder>
 - **Safe output**: never overwrites the source or existing outputs; a failed hardware encode can be retried with software encoding; the command actually run can be copied.
 - **Interface**: English / 简体中文 / 日本語, optionally following the Windows display language; Day / Night themes with a Neon Cyan or Cobalt Blue accent color.
 
-## Installation
+## System requirements
 
-Requires Windows 10 / 11 x64.
+|         | Minimum (suggested)                 | Recommended                                            |
+| ------- | ----------------------------------- | ------------------------------------------------------ |
+| OS      | Windows 10 / 11, 64-bit             | Windows 11, 64-bit                                     |
+| CPU     | 4-core x64                          | 6 cores or more (for 4K)                               |
+| Memory  | 8 GB                                | 16 GB or more (16–32 GB for 4K and AI upscaling)       |
+| GPU     | Not needed for basic features       | NVIDIA / AMD / Intel GPU with a hardware encoder       |
+| Storage | Room for the app, tools and outputs | SSD; reserve 2–3× the expected output for complex jobs |
+
+- Software encoding, ProRes, lossless trimming and audio/video tools use only the CPU.
+- Hardware encoding needs a matching NVIDIA (NVENC), Intel (QSV) or AMD (AMF) GPU and driver; ArtCNN upscaling needs a GPU with Vulkan.
+- RTX VSR needs an NVIDIA RTX GPU; RTX VFG frame generation needs an RTX 40 / 50 series GPU and NVEncC 9.36 or later. Both encode with NVEncC.
+- Installing the encoding tools the first time needs an internet connection; after that, local encoding works offline.
+- Whether a feature works on your PC is decided by the in-app detection and test encodes.
+
+Per-feature requirements, sizing by task and storage notes are in [System and hardware requirements](docs/系统与硬件要求.md) (in Chinese).
+
+## Installation
 
 1. Download `MMDEncoder-<version>-win-x64.zip` from [Releases](https://github.com/CicloO/MMDEncoder/releases), extract it anywhere and run `MMDEncoder.exe`.
 2. On first use, open "Encoding engines" and click "Download and install the latest tools", or click "Install from archive" to choose a ZIP / 7z tool package you already have. After that it works offline.
