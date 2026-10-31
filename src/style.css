@@ -598,7 +598,7 @@ html[lang="en"] .header-actions .button {
 :root:not([data-accent="blue"]) progress::-webkit-progress-value {
   background: linear-gradient(
     90deg,
-    var(--color-logoCyan) calc(100% - 32px),
+    var(--color-logoCyan) 70%,
     var(--color-logoPink)
   );
 }
