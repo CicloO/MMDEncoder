@@ -106,7 +106,7 @@ execFileSync(
 const appDir = path.join(dest, "resources", "app");
 for (const [from, to] of [
   ["README.md", "README.md"],
-  ["README.zh-CN.md", "README.zh-CN.md"],
+  ["README.en.md", "README.en.md"],
   ["README.ja.md", "README.ja.md"],
   ["docs/THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"],
   // The root LICENSE beside the exe is Electron's own.

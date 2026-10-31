@@ -1,6 +1,6 @@
 # MMDEncoder
 
-[English](README.md) | [简体中文](README.zh-CN.md) | **日本語**
+[English](README.en.md) | [简体中文](README.md) | **日本語**
 
 MMD クリエイター向けの Windows 用ポータブル動画エンコードツールです。レンダリング動画の一括エンコード、アルファチャンネルの処理、AI / RTX による高解像度化とフレーム補間、無劣化カットに対応し、MMD の動画エンコーダーとして完成動画を直接書き出すこともできます。
 
