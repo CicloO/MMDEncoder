@@ -6,6 +6,18 @@ const BITRATE_LIMITS = { aac: 512, libopus: 512, libmp3lame: 320 };
 // Codecs MP4 can hold; anything else falls back to MKV so the copy never fails.
 const MP4_VIDEO = ["h264", "hevc", "av1", "vp9", "mpeg4"];
 const MP4_AUDIO = ["aac", "mp3", "opus", "flac", "alac", "ac3", "eac3"];
+// Audio a container can hold as copied (ffprobe codec names; MKV holds all).
+function copyFits(container, codec) {
+  if (!codec) return true;
+  if (container === "mp4") return MP4_AUDIO.includes(codec);
+  if (container === "mov")
+    return (
+      ["aac", "mp3", "alac", "ac3", "eac3"].includes(codec) ||
+      codec.startsWith("pcm_")
+    );
+  if (container === "webm") return ["opus", "vorbis"].includes(codec);
+  return true;
+}
 // Resolve "follow source" (0) to a concrete kbps for a lossy target codec.
 function audioBitrate(requested, encoder, source = {}) {
   const max = BITRATE_LIMITS[encoder] || 320;
@@ -301,6 +313,7 @@ module.exports = {
   suggestOutput,
   audioBitrate,
   mergeContainer,
+  copyFits,
   alignFilter,
   EXTENSIONS,
 };

@@ -122,6 +122,47 @@ try {
       .replace("{next}", source["app.theme.darkName"]),
   );
   checks.push("explicit-light-persists-and-old-local-storage-is-ignored");
+  // Right-click: follow Windows; a later click picks Day / Night again.
+  await page.locator(".theme-toggle").click({ button: "right" });
+  await expect
+    .poll(async () => (await state()).preferences.theme)
+    .toBe("system");
+  // The native title bar follows nativeTheme: Windows only in this mode.
+  const titleBar = () =>
+    app.evaluate(({ nativeTheme }) => nativeTheme.themeSource);
+  await expect.poll(titleBar).toBe("system");
+  for (const mode of ["dark", "light"]) {
+    await page.emulateMedia({ colorScheme: mode });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", mode);
+  }
+  await page.emulateMedia({ colorScheme: null });
+  // Click flips whatever Windows shows now.
+  const shown = await page.locator("html").getAttribute("data-theme");
+  const flipped = shown === "light" ? "dark" : "light";
+  await expect(page.locator(".theme-toggle")).toHaveAccessibleName(
+    source["app.theme.switch"]
+      .replace("{current}", source["app.theme.system"])
+      .replace("{next}", source["app.theme." + flipped + "Name"]),
+  );
+  await page.locator(".theme-toggle").click();
+  await expect
+    .poll(async () => (await state()).preferences.theme)
+    .toBe(flipped);
+  if (flipped === "light") {
+    await page.locator(".theme-toggle").click();
+    await expect
+      .poll(async () => (await state()).preferences.theme)
+      .toBe("dark");
+  }
+  await expect.poll(titleBar).toBe("dark");
+  await page.locator(".theme-toggle").click();
+  await expect
+    .poll(async () => (await state()).preferences.theme)
+    .toBe("light");
+  await expect.poll(titleBar).toBe("light");
+  checks.push(
+    "right-click-follows-system-click-returns-to-day-night-title-bar-follows",
+  );
   await app.close();
   app = null;
   app = await electron.launch({

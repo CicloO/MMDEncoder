@@ -168,7 +168,9 @@ try {
     "title",
     pseudo["app.theme.switch"]
       .replace("{current}", pseudo["app.theme.darkName"])
-      .replace("{next}", pseudo["app.theme.lightName"]),
+      .replace("{next}", pseudo["app.theme.lightName"]) +
+      "\n" +
+      pseudo["app.theme.systemHint"],
   );
   await expect(page.locator(".brand h1")).toHaveText("MMDEncoder");
   assert.equal(

@@ -95,7 +95,7 @@ function validateIssues(s, meta) {
     bitDepth: [8, 10],
     chroma: ["420", "422", "444"],
     rateControl: ["quality", "qp", "bitrate"],
-    audio: ["aac", "flac", "pcm_s16le", "libopus", "none"],
+    audio: ["aac", "flac", "pcm_s16le", "libopus", "copy", "none"],
     // color = composited over alphaBackground; mask = only the
     // black-and-white alpha mask, no colour video.
     alphaMode: ["discard", "color", "preserve", "mask"],
@@ -151,6 +151,8 @@ function validateIssues(s, meta) {
       ["flac", "pcm_s16le"].includes(s.audio),
       "HIRES_AUDIO_FORMAT_INVALID",
     );
+  // Copied audio keeps its packets, so it cannot be faded.
+  if (s.audio === "copy") check(!s.audioFade, "AUDIO_COPY_FADE");
   check(
     typeof s.preset === "string" && /^[a-zA-Z0-9_-]{1,24}$/.test(s.preset),
     "SPEED_PRESET_INVALID",
@@ -200,6 +202,7 @@ function validateIssues(s, meta) {
       check(
         [
           "aac",
+          "copy", // whether the source's codec fits is checked per video
           "none",
           ...(s.container === "mov" ? ["pcm_s16le"] : []),
         ].includes(s.audio),

@@ -36,11 +36,15 @@ function createPreferences(registry = shippedRegistry, systemLanguages = []) {
     },
   };
 }
+// Day and Night are chosen with the theme button; right-click sets "system",
+// which follows Windows' app mode.
 function normalizeTheme(value) {
-  return ["light", "dark"].includes(value) ? value : "light";
+  return ["light", "dark", "system"].includes(value) ? value : "light";
 }
-function resolveTheme(value) {
-  return normalizeTheme(value);
+function resolveTheme(value, systemDark = false) {
+  const theme = normalizeTheme(value);
+  if (theme !== "system") return theme;
+  return systemDark ? "dark" : "light";
 }
 // Accent colours combine with either day or night. Neon Cyan is the default;
 // Cobalt Blue is the original palette.

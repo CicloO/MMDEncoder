@@ -89,7 +89,8 @@ export const fadeOptions = () =>
 export const fadeHint = () => t("presentation.fadeHint");
 export const audioLabels = (): Record<string, string> =>
   Object.fromEntries(
-    ["aac", "flac", "pcm_s16le", "libopus", "none"].map((id) => [
+    // Same order as the media page: lossy, lossless, copy, then none.
+    ["aac", "libopus", "flac", "pcm_s16le", "copy", "none"].map((id) => [
       id,
       t(`presentation.audio.${id}` as MessageKey),
     ]),

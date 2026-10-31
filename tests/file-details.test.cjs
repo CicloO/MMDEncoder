@@ -154,3 +154,59 @@ test("metadata presentation refreshes labels, counts, units and stored detail er
   assert.match(renderDetails(), /User 文件.mov/);
   assert.equal(JSON.stringify({ meta, details }), before);
 });
+
+test("details name MP4 by extension and line up before/after stream rows", () => {
+  const i18n = load("src/i18n.ts");
+  const presentation = load("src/presentation.ts", { "./i18n": i18n });
+  const { MediaDetails, containerName } = load("src/MediaDetails.tsx", {
+    "./i18n": i18n,
+    "./presentation": presentation,
+  });
+  const family = { format_name: "mov,mp4,m4a,3gp,3g2,mj2" };
+  assert.equal(containerName(family, "C:/a.mp4"), "MP4");
+  assert.equal(containerName(family, "C:/a.MOV"), "QuickTime / MOV");
+  assert.equal(
+    containerName({ ...family, tags: { major_brand: "qt  " } }, "C:/a.bin"),
+    "QuickTime / MOV",
+  );
+  assert.equal(
+    containerName({
+      format_name: "matroska,webm",
+      format_long_name: "Matroska / WebM",
+    }),
+    "Matroska / WebM",
+  );
+  const side = (file, colour) => ({
+    path: file,
+    format: { ...family, size: "1", duration: "1", bit_rate: "1000" },
+    streams: [
+      { index: 0, codec_type: "video", codec_name: "h264", ...colour },
+      {
+        index: 1,
+        codec_type: "audio",
+        codec_name: "aac",
+        sample_rate: "48000",
+        bits_per_sample: 0,
+        avg_frame_rate: "0/0",
+        r_frame_rate: "0/0",
+      },
+    ],
+  });
+  const html = renderToStaticMarkup(
+    React.createElement(MediaDetails, {
+      details: {
+        before: side("C:/in.mp4", {}),
+        after: side("C:/out.mp4", { color_space: "bt709", color_range: "tv" }),
+      },
+      media: true,
+    }),
+  );
+  const [before, after] = html.split("<section").slice(1);
+  const rows = (part) => (part.match(/<dt>/g) || []).length;
+  assert.equal(rows(before), rows(after));
+  assert.match(before, /<dd>—<\/dd>/);
+  assert.match(html, /MP4 ·/);
+  // Audio's "0" bit depth and "0/0" frame rate are hidden (raw JSON keeps them).
+  assert.doesNotMatch(html, /<dd>0\/0/);
+  assert.doesNotMatch(html, /<dd>0<\/dd>/);
+});

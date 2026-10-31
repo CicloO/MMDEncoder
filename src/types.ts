@@ -211,7 +211,7 @@ export type Engine = {
 export type State = {
   preferences: {
     locale: string | null;
-    theme: "light" | "dark";
+    theme: "light" | "dark" | "system";
     accent: "blue" | "cyan";
     autoAlignAudio: boolean;
   };
