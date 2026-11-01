@@ -36,7 +36,7 @@ test("MMD plan notes and recovery errors preserve codes, raw paths and original 
     });
     const plan = mx.plan(runtime, { ...config, maskMode: "with" });
     assert.deepEqual(plan.notes, [
-      "音频偏移 +0 帧 = 设置 +0 + 起点为 1 自动 +0",
+      "音频偏移 +0 帧",
       "MMD 没有提供 Alpha 画面，未导出遮罩",
     ]);
     const warning = plan.notesData.find(

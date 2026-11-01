@@ -118,7 +118,6 @@ function createService({
       followMmd: true,
       audioFade: 0,
       audioShiftFrames: 0,
-      audioAutoShift: true,
       // "off" | "with" | "only"; "" until a preset decides (settings from 1.4.1).
       maskMode: "",
       rangeSuffix: true,
@@ -285,7 +284,6 @@ function createService({
         followMmd: state.mmd.followMmd,
         audioFade: state.mmd.audioFade,
         audioShiftFrames: state.mmd.audioShiftFrames,
-        audioAutoShift: state.mmd.audioAutoShift,
         maskMode: state.mmd.maskMode,
         rangeSuffix: state.mmd.rangeSuffix,
         savedAt: state.mmd.savedAt,
@@ -320,7 +318,6 @@ function createService({
       followMmd: s.followMmd,
       audioFade: s.audioFade,
       audioShiftFrames: s.audioShiftFrames,
-      audioAutoShift: s.audioAutoShift,
       maskMode:
         s.maskMode ||
         mmdExport.presetMask(
@@ -416,8 +413,6 @@ function createService({
         state.mmd.audioFade = saved.mmdExport.audioFade;
       if (Number.isSafeInteger(saved.mmdExport.audioShiftFrames))
         state.mmd.audioShiftFrames = saved.mmdExport.audioShiftFrames;
-      if (typeof saved.mmdExport.audioAutoShift === "boolean")
-        state.mmd.audioAutoShift = saved.mmdExport.audioAutoShift;
       if (typeof saved.mmdExport.savedAt === "string")
         state.mmd.savedAt = saved.mmdExport.savedAt;
       if (typeof saved.mmdExport.followMmd === "boolean")
@@ -986,11 +981,6 @@ function createService({
       case "mmdExportSet": {
         if (payload.audioShiftFrames !== undefined)
           validateAudioShift(payload.audioShiftFrames);
-        if (
-          payload.audioAutoShift !== undefined &&
-          typeof payload.audioAutoShift !== "boolean"
-        )
-          throw appError("MMD_AUDIO_AUTO_SHIFT_INVALID");
         // Apply the change on top of a choice made meanwhile in MMD.
         adoptMmdSelection();
         if (typeof payload.presetId === "string") {
@@ -1011,10 +1001,6 @@ function createService({
         }
         if (payload.audioShiftFrames !== undefined) {
           state.mmd.audioShiftFrames = payload.audioShiftFrames;
-          state.mmd.test = null;
-        }
-        if (payload.audioAutoShift !== undefined) {
-          state.mmd.audioAutoShift = payload.audioAutoShift;
           state.mmd.test = null;
         }
         if (typeof payload.followMmd === "boolean")

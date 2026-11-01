@@ -101,13 +101,13 @@ static void inspectSettings(HWND dialog) {
   }
   bool fits = true;
   RECT client{}; GetClientRect(dialog, &client);
-  for (int id : {102, 106, 108, 109, 110, 105, 107, IDOK, IDCANCEL, 112, 115}) {
+  for (int id : {102, 106, 108, 109, 110, 105, 107, IDOK, IDCANCEL, 115}) {
     HWND child = GetDlgItem(dialog, id); RECT r{}; GetClientRect(child, &r);
     wchar_t text[8192]{}; GetWindowTextW(child, text, 8192);
     HDC dc = GetDC(child); auto old = SelectObject(dc, (HFONT)SendMessageW(child, WM_GETFONT, 0, 0));
     RECT measured{0,0,r.right,0};
     if (id == 108) DrawTextW(dc, text, -1, &measured, DT_CALCRECT | DT_WORDBREAK);
-    else { SIZE size{}; GetTextExtentPoint32W(dc, text, (int)wcslen(text), &size); measured.right = size.cx + ((id == 102 || id == 106 || id == 112) ? 24 : (id == 109 || id == 110 || id == 115) ? 0 : 16); measured.bottom=size.cy; }
+    else { SIZE size{}; GetTextExtentPoint32W(dc, text, (int)wcslen(text), &size); measured.right = size.cx + ((id == 102 || id == 106) ? 24 : (id == 109 || id == 110 || id == 115) ? 0 : 16); measured.bottom=size.cy; }
     SelectObject(dc, old); ReleaseDC(child, dc);
     RECT position{}; GetWindowRect(child,&position); MapWindowPoints(nullptr,dialog,(POINT*)&position,2);
     if (measured.right > r.right || measured.bottom > r.bottom || position.right > client.right || position.bottom > client.bottom) fits = false;
@@ -283,7 +283,7 @@ int wmain(int argc, wchar_t** argv) {
         std::printf("settings window found\n");
         std::printf("initialMask=%lld\n", (long long)SendDlgItemMessageW(settings, 104, CB_GETCURSEL, 0, 0));
         wchar_t initialShift[64]{}; GetDlgItemTextW(settings, 111, initialShift, 64);
-        std::printf("initialShift=%lld initialAutoShift=%d\n", _wtoi64(initialShift), (int)IsDlgButtonChecked(settings, 112));
+        std::printf("initialShift=%lld autoShiftControl=%d\n", _wtoi64(initialShift), GetDlgItem(settings, 112) != nullptr);
         wchar_t invalid[128]{}, validation[1024]{};
         if (GetEnvironmentVariableW(L"MMD_SIM_AUDIO_INVALID", invalid, 128) && GetEnvironmentVariableW(L"MMD_SIM_VALIDATION_TEXT", validation, 1024)) {
           SetDlgItemTextW(settings, 111, invalid);
@@ -305,15 +305,13 @@ int wmain(int argc, wchar_t** argv) {
           std::printf("validationRejected=%d\n", !IsWindow(error) && IsWindow(settings));
           tested = true; PostMessageW(settings, WM_COMMAND, IDCANCEL, 0); return;
         }
-        wchar_t desired[64]{}, automatic[8]{};
+        wchar_t desired[64]{};
         if (GetEnvironmentVariableW(L"MMD_SIM_AUDIO_SHIFT", desired, 64)) {
           SetDlgItemTextW(settings, 111, desired);
           wchar_t after[64]{};
-          SendDlgItemMessageW(settings, 112, BM_CLICK, 0, 0);
           GetDlgItemTextW(settings, 111, after, 64);
           std::printf("manualRewrite=%d\n", wcscmp(after, desired) != 0);
-          if (GetEnvironmentVariableW(L"MMD_SIM_AUDIO_AUTO", automatic, 8) && IsDlgButtonChecked(settings, 112) != (_wtoi(automatic) ? BST_CHECKED : BST_UNCHECKED)) SendDlgItemMessageW(settings, 112, BM_CLICK, 0, 0);
-          std::printf("chosenShift=%lld chosenAutoShift=%d\n", _wtoi64(after), (int)IsDlgButtonChecked(settings, 112));
+          std::printf("chosenShift=%lld\n", _wtoi64(after));
           inspectSettings(settings);
         }
         SendDlgItemMessageW(settings, 104, CB_SETCURSEL, mask, 0);

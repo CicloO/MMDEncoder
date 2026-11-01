@@ -54,7 +54,6 @@ void fitSettingsLayout(HWND dialog, const std::vector<std::wstring>& testLabels)
   RECT shiftRect = childRect(dialog, shift);
   const int editWidth = std::max<int>(shiftRect.right - shiftRect.left, textWidth(shift, L"-9007199254740991") + 12);
   column = std::max(column, editWidth);
-  column = std::max(column, textWidth(GetDlgItem(dialog, 112), windowText(GetDlgItem(dialog, 112))) + 24);
   RECT mask = childRect(dialog, GetDlgItem(dialog, 104));
   RECT fade = childRect(dialog, GetDlgItem(dialog, 103));
   int middle = fade.left - mask.right;
@@ -81,10 +80,8 @@ void fitSettingsLayout(HWND dialog, const std::vector<std::wstring>& testLabels)
     int height = (id == 103 || id == 104) ? comboHeight(child, r.bottom - r.top) : r.bottom - r.top;
     SetWindowPos(child, nullptr, (id == 103 || id == 110) ? margin + half + middle : margin, r.top, half, height, SWP_NOZORDER);
   }
-  for (int id : {115, 112}) {
-    HWND child = GetDlgItem(dialog, id); RECT r = childRect(dialog, child);
-    SetWindowPos(child, nullptr, id == 112 ? margin + half + middle : margin, r.top, half, r.bottom - r.top, SWP_NOZORDER);
-  }
+  HWND label = GetDlgItem(dialog, 115); RECT labelRect = childRect(dialog, label);
+  SetWindowPos(label, nullptr, margin, labelRect.top, half, labelRect.bottom - labelRect.top, SWP_NOZORDER);
   SetWindowPos(shift, nullptr, margin, shiftRect.top, half, shiftRect.bottom - shiftRect.top, SWP_NOZORDER);
   int x = margin;
   for (int i = 0; i < 4; i++) {

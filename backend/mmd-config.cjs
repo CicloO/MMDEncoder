@@ -52,7 +52,6 @@ function readSelection() {
       audioShiftFrames: Number.isSafeInteger(s.audioShiftFrames)
         ? s.audioShiftFrames
         : 0,
-      audioAutoShift: s.audioAutoShift !== false,
       // "" = the preset decides.
       maskMode: MASK_MODES.includes(s.maskMode) ? s.maskMode : "",
       // Add the MMD frame range to the file name (_0400-0600f).
@@ -69,7 +68,6 @@ function writeSelection({
   followMmd = true,
   audioFade = 0,
   audioShiftFrames = 0,
-  audioAutoShift = true,
   maskMode = "off",
   rangeSuffix = true,
   savedAt,
@@ -79,7 +77,6 @@ function writeSelection({
     followMmd,
     audioFade,
     audioShiftFrames: validateAudioShift(audioShiftFrames),
-    audioAutoShift: audioAutoShift !== false,
     rangeSuffix: rangeSuffix !== false,
     maskMode: MASK_MODES.includes(maskMode) ? maskMode : "off",
     savedAt: savedAt || new Date().toISOString(),
@@ -99,7 +96,6 @@ function writeConfig({
   followMmd = true,
   audioFade = 0,
   audioShiftFrames = 0,
-  audioAutoShift = true,
   maskMode = "",
   rangeSuffix = true,
   engines,
@@ -117,7 +113,6 @@ function writeConfig({
       followMmd,
       audioFade,
       audioShiftFrames,
-      audioAutoShift,
       maskMode: maskMode || presetMask(settings),
     });
   }
@@ -173,7 +168,6 @@ function readConfig(selection = readSelection()) {
     followMmd: selection.followMmd,
     audioFade: selection.audioFade,
     audioShiftFrames: validateAudioShift(selection.audioShiftFrames ?? 0),
-    audioAutoShift: selection.audioAutoShift !== false,
     maskMode,
     rangeSuffix: selection.rangeSuffix,
   };
