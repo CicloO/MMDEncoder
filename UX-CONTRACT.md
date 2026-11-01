@@ -2,7 +2,7 @@
 
 Locale zh-CN, local Windows desktop, offline by default. No accounts or uploads.
 
-程序自有文案由 `locales/zh-CN.json` 和 `src/i18n.ts` 管理。业务错误用稳定 code 与参数跨 IPC 传递；界面调用方使用 `src/ipc.ts`，未知 code 回退消息。用户内容、技术值与外部诊断保留原文。当前只提供简体中文，迁移规则与后续翻译入口见 `docs/i18n.md`。
+程序自有文案由 `locales/zh-CN.json` 和 `src/i18n.ts` 管理。业务错误用稳定 code 与参数跨 IPC 传递；界面调用方使用 `src/ipc.ts`，未知 code 回退消息。用户内容、技术值与外部诊断保留原文。当前提供简体中文、日本語和 English，三份 `locales/*.json` 必须同 key、同参数，`npm run i18n:check` 会检查。
 
 程序级语言偏好由 `backend/preferences.cjs` 解析，通过原有 `settings.json` 持久化。`null` 为将来的跟随系统模式保留，准备阶段与未知值均显示中文。`src/LocaleRoot.tsx` 订阅已保存的语言状态，更新页面语言、标题并刷新已迁移文案，不重新挂载页面或修改编码设置 / 预设 / 正在执行的任务；正式选择器在第二种语言交付时开放。
 
