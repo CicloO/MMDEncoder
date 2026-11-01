@@ -78,10 +78,7 @@ function configure(locale = "zh-CN") {
     catalogs: { "zh-CN": source, "en-XA": pseudo },
   });
 }
-function dialog(
-  name,
-  { shift, automatic, save = false, invalid, catalog = source } = {},
-) {
+function dialog(name, { shift, save = false, invalid, catalog = source } = {}) {
   const before = fs.readFileSync(mx.selectionPath());
   const out = run(
     path.join(build, "mmd-sim.exe"),
@@ -92,12 +89,7 @@ function dialog(
       env: {
         ...process.env,
         MMD_SIM_SCREENSHOT: path.join(dir, name + ".bmp"),
-        ...(shift !== undefined
-          ? {
-              MMD_SIM_AUDIO_SHIFT: String(shift),
-              MMD_SIM_AUDIO_AUTO: automatic ? "1" : "0",
-            }
-          : {}),
+        ...(shift !== undefined ? { MMD_SIM_AUDIO_SHIFT: String(shift) } : {}),
         ...(invalid !== undefined
           ? {
               MMD_SIM_AUDIO_INVALID: invalid,
@@ -115,12 +107,7 @@ function dialog(
     assert.match(out, /testResult=.*✓/);
     if (shift !== undefined) {
       assert.match(out, /manualRewrite=0/);
-      assert.ok(
-        out.includes(
-          `chosenShift=${shift} chosenAutoShift=${automatic ? 1 : 0}`,
-        ),
-        out,
-      );
+      assert.match(out, new RegExp(`^chosenShift=${shift}\\r?$`, "m"));
       const tested = fs
         .readFileSync(capture, "utf8")
         .trim()
@@ -128,7 +115,7 @@ function dialog(
         .map(JSON.parse)
         .at(-1);
       assert.equal(tested.selection.audioShiftFrames, shift);
-      assert.equal(tested.selection.audioAutoShift, automatic);
+      assert.equal("audioAutoShift" in tested.selection, false);
       assert.deepEqual(tested.stored, JSON.parse(before));
     }
   }
@@ -138,24 +125,19 @@ function dialog(
 }
 try {
   configure();
-  assert.match(dialog("source-defaults"), /initialShift=0 initialAutoShift=1/);
-  dialog("source-cancel", { shift: 1, automatic: false });
-  dialog("source-save", { shift: -2, automatic: false, save: true });
+  // The automatic +1 for start frame 1 is gone, control and all.
+  assert.match(dialog("source-defaults"), /initialShift=0 autoShiftControl=0/);
+  dialog("source-cancel", { shift: 1 });
+  dialog("source-save", { shift: -2, save: true });
   assert.equal(mx.readSelection().audioShiftFrames, -2);
-  assert.equal(mx.readSelection().audioAutoShift, false);
-  assert.match(dialog("source-reopen"), /initialShift=-2 initialAutoShift=0/);
+  assert.equal("audioAutoShift" in mx.readSelection(), false);
+  assert.match(dialog("source-reopen"), /initialShift=-2 autoShiftControl=0/);
   dialog("fraction-rejected", { invalid: "1.5" });
   dialog("whitespace-rejected", { invalid: " " });
   configure("en-XA");
-  dialog("pseudo-cancel", { shift: 1, automatic: true, catalog: pseudo });
-  dialog("pseudo-save", {
-    shift: 1,
-    automatic: true,
-    save: true,
-    catalog: pseudo,
-  });
+  dialog("pseudo-cancel", { shift: 1, catalog: pseudo });
+  dialog("pseudo-save", { shift: 1, save: true, catalog: pseudo });
   assert.equal(mx.readSelection().audioShiftFrames, 1);
-  assert.equal(mx.readSelection().audioAutoShift, true);
   configure();
   const sampleRate = 48000,
     pcm = Buffer.alloc(sampleRate * 2 * 2);
@@ -228,143 +210,138 @@ try {
   }
   for (const kind of ["avi", "wav"])
     for (const shift of [0, 1, -2])
-      for (const automatic of [false, true])
-        for (const startFrame of [0, 1]) {
-          const label = `${kind}-${shift}-${automatic}-${startFrame}`,
-            avi = path.join(dir, label + ".avi");
-          const selected = mx.writeSelection({
-            presetId: "audio-shift",
-            followMmd: true,
-            rangeSuffix: false,
-            maskMode: "off",
-            audioShiftFrames: shift,
-            audioAutoShift: automatic,
-          });
-          const beforeLogs = new Set(
-            fs.existsSync(logsDir) ? fs.readdirSync(logsDir) : [],
+      for (const startFrame of [0, 1]) {
+        const label = `${kind}-${shift}-${startFrame}`,
+          avi = path.join(dir, label + ".avi");
+        const selected = mx.writeSelection({
+          presetId: "audio-shift",
+          followMmd: true,
+          rangeSuffix: false,
+          maskMode: "off",
+          audioShiftFrames: shift,
+        });
+        const beforeLogs = new Set(
+          fs.existsSync(logsDir) ? fs.readdirSync(logsDir) : [],
+        );
+        const native = run(
+          path.join(build, "mmd-sim.exe"),
+          [
+            dll,
+            kind === "avi" ? withAudio : template,
+            avi,
+            pmm,
+            "64",
+            "48",
+            "30",
+            String(startFrame),
+            String(startFrame + 29),
+          ],
+          { encoding: "utf8", timeout: 30000 },
+        );
+        assert.match(native, /frames=30 placeholders=30/);
+        let entry;
+        const end = Date.now() + 60000;
+        while (!entry && Date.now() < end) {
+          const records = fs.existsSync(mx.historyPath())
+            ? fs
+                .readFileSync(mx.historyPath(), "utf8")
+                .trim()
+                .split("\n")
+                .filter(Boolean)
+                .map(JSON.parse)
+            : [];
+          entry = records.find(
+            (record) =>
+              record.avi === avi ||
+              record.output === path.join(dir, label + ".mkv"),
           );
-          const native = run(
-            path.join(build, "mmd-sim.exe"),
-            [
-              dll,
-              kind === "avi" ? withAudio : template,
-              avi,
-              pmm,
-              "64",
-              "48",
-              "30",
-              String(startFrame),
-              String(startFrame + 29),
-            ],
-            { encoding: "utf8", timeout: 30000 },
-          );
-          assert.match(native, /frames=30 placeholders=30/);
-          let entry;
-          const end = Date.now() + 60000;
-          while (!entry && Date.now() < end) {
-            const records = fs.existsSync(mx.historyPath())
-              ? fs
-                  .readFileSync(mx.historyPath(), "utf8")
-                  .trim()
-                  .split("\n")
-                  .filter(Boolean)
-                  .map(JSON.parse)
-              : [];
-            entry = records.find(
-              (record) =>
-                record.avi === avi ||
-                record.output === path.join(dir, label + ".mkv"),
-            );
-            if (!entry) await new Promise((resolve) => setTimeout(resolve, 20));
-          }
-          assert.ok(entry, label + " finish history");
-          assert.equal(entry.ok, true, JSON.stringify(entry));
-          assert.equal(entry.audio, kind);
-          assert.equal(entry.frames, 30);
-          assert.equal(
-            fs.existsSync(avi),
-            false,
-            label + " placeholder cleanup",
-          );
-          const decoded = run(ff, [
-            "-v",
-            "error",
-            "-i",
-            entry.output,
-            "-map",
-            "0:a:0",
-            "-f",
-            "s16le",
-            "pipe:1",
-          ]);
-          const effective = shift + (automatic && startFrame === 1 ? 1 : 0),
-            samples = (effective * sampleRate) / 30;
-          const origin = kind === "wav" ? (startFrame * sampleRate) / 30 : 0;
-          const expected = Buffer.alloc(sampleRate * 2);
-          for (let i = 0; i < sampleRate; i++) {
-            const sourceSample = origin + i - samples;
-            if (
-              i >= Math.max(0, samples) &&
-              sourceSample >= origin &&
-              sourceSample < pcm.length / 2
-            )
-              expected.writeInt16LE(pcm.readInt16LE(sourceSample * 2), i * 2);
-          }
-          assert.equal(decoded.length, expected.length, label + " samples");
-          if (!decoded.equals(expected)) {
-            let at = 0;
-            while (decoded.readInt16LE(at * 2) === expected.readInt16LE(at * 2))
-              at++;
-            assert.fail(
-              `${label} sample ${at}: ${decoded.readInt16LE(at * 2)} != ${expected.readInt16LE(at * 2)}`,
-            );
-          }
-          assert.deepEqual(mx.readSelection(), selected);
-          const data = entry.notesData.find(
-            (note) => note.code === "MMD_AUDIO_SHIFT",
-          );
-          assert.equal(
-            data.params.frames,
-            (effective >= 0 ? "+" : "") + effective,
-          );
-          const nativeLog = fs
-            .readdirSync(logsDir)
-            .filter(
-              (name) => !beforeLogs.has(name) && !name.endsWith("-ffmpeg.log"),
-            )
-            .map((name) => fs.readFileSync(path.join(logsDir, name), "utf8"))
-            .join("\n");
-          assert.ok(
-            nativeLog.includes(data.message),
-            label + " actual plugin log",
-          );
-          const videoFrames = Number(
-            run(
-              fp,
-              [
-                "-v",
-                "error",
-                "-select_streams",
-                "v:0",
-                "-count_packets",
-                "-show_entries",
-                "stream=nb_read_packets",
-                "-of",
-                "csv=p=0",
-                entry.output,
-              ],
-              { encoding: "utf8" },
-            ).trim(),
-          );
-          assert.equal(videoFrames, 30);
-          results.push({
-            label,
-            effective,
-            samples: decoded.length / 2,
-            videoFrames,
-            note: data,
-          });
+          if (!entry) await new Promise((resolve) => setTimeout(resolve, 20));
         }
+        assert.ok(entry, label + " finish history");
+        assert.equal(entry.ok, true, JSON.stringify(entry));
+        assert.equal(entry.audio, kind);
+        assert.equal(entry.frames, 30);
+        assert.equal(fs.existsSync(avi), false, label + " placeholder cleanup");
+        const decoded = run(ff, [
+          "-v",
+          "error",
+          "-i",
+          entry.output,
+          "-map",
+          "0:a:0",
+          "-f",
+          "s16le",
+          "pipe:1",
+        ]);
+        // Start frame 1 adds nothing: only the chosen shift moves audio.
+        const effective = shift,
+          samples = (effective * sampleRate) / 30;
+        const origin = kind === "wav" ? (startFrame * sampleRate) / 30 : 0;
+        const expected = Buffer.alloc(sampleRate * 2);
+        for (let i = 0; i < sampleRate; i++) {
+          const sourceSample = origin + i - samples;
+          if (
+            i >= Math.max(0, samples) &&
+            sourceSample >= origin &&
+            sourceSample < pcm.length / 2
+          )
+            expected.writeInt16LE(pcm.readInt16LE(sourceSample * 2), i * 2);
+        }
+        assert.equal(decoded.length, expected.length, label + " samples");
+        if (!decoded.equals(expected)) {
+          let at = 0;
+          while (decoded.readInt16LE(at * 2) === expected.readInt16LE(at * 2))
+            at++;
+          assert.fail(
+            `${label} sample ${at}: ${decoded.readInt16LE(at * 2)} != ${expected.readInt16LE(at * 2)}`,
+          );
+        }
+        assert.deepEqual(mx.readSelection(), selected);
+        const data = entry.notesData.find(
+          (note) => note.code === "MMD_AUDIO_SHIFT",
+        );
+        assert.equal(
+          data.params.frames,
+          (effective >= 0 ? "+" : "") + effective,
+        );
+        const nativeLog = fs
+          .readdirSync(logsDir)
+          .filter(
+            (name) => !beforeLogs.has(name) && !name.endsWith("-ffmpeg.log"),
+          )
+          .map((name) => fs.readFileSync(path.join(logsDir, name), "utf8"))
+          .join("\n");
+        assert.ok(
+          nativeLog.includes(data.message),
+          label + " actual plugin log",
+        );
+        const videoFrames = Number(
+          run(
+            fp,
+            [
+              "-v",
+              "error",
+              "-select_streams",
+              "v:0",
+              "-count_packets",
+              "-show_entries",
+              "stream=nb_read_packets",
+              "-of",
+              "csv=p=0",
+              entry.output,
+            ],
+            { encoding: "utf8" },
+          ).trim(),
+        );
+        assert.equal(videoFrames, 30);
+        results.push({
+          label,
+          effective,
+          samples: decoded.length / 2,
+          videoFrames,
+          note: data,
+        });
+      }
 } finally {
   files.forEach((file, i) =>
     originals[i] === null

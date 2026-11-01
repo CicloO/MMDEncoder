@@ -1369,12 +1369,6 @@
   },
   {
     "file": "mmd-plugin/src/settings.cpp",
-    "text": ",\\\"audioAutoShift\\\":",
-    "category": "technical",
-    "reason": "Selection JSON field serialization; preserves the fixed English protocol name and delimiters."
-  },
-  {
-    "file": "mmd-plugin/src/settings.cpp",
     "text": "message.",
     "category": "technical",
     "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
@@ -1435,12 +1429,6 @@
   },
   {
     "file": "mmd-plugin/src/settings.cpp",
-    "text": "audioAutoShift",
-    "category": "technical",
-    "reason": "Exact configuration/descriptor field, locale ID, numeric format or serialization delimiter; consumers depend on its technical value."
-  },
-  {
-    "file": "mmd-plugin/src/settings.cpp",
     "text": "plugin.title",
     "category": "technical",
     "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
@@ -1489,12 +1477,6 @@
   },
   {
     "file": "mmd-plugin/src/settings.cpp",
-    "text": "plugin.audioAutoShift",
-    "category": "technical",
-    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
-  },
-  {
-    "file": "mmd-plugin/src/settings.cpp",
     "text": "plugin.note",
     "category": "technical",
     "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
@@ -1520,12 +1502,6 @@
   {
     "file": "mmd-plugin/src/settings.cpp",
     "text": ",\\n  \\\"audioShiftFrames\\\": ",
-    "category": "technical",
-    "reason": "Selection JSON field serialization; preserves the fixed English protocol name and delimiters."
-  },
-  {
-    "file": "mmd-plugin/src/settings.cpp",
-    "text": ",\\n  \\\"audioAutoShift\\\": ",
     "category": "technical",
     "reason": "Selection JSON field serialization; preserves the fixed English protocol name and delimiters."
   },

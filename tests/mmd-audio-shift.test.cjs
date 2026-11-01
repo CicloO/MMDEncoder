@@ -49,11 +49,9 @@ function expectedPcm(
   startFrame,
   isWav,
   manual,
-  automatic,
   count,
 ) {
-  const shiftedFrames = manual + (automatic && startFrame === 1 ? 1 : 0);
-  const shift = Math.round((shiftedFrames * sampleRate) / 30);
+  const shift = Math.round((manual * sampleRate) / 30);
   const origin = isWav ? Math.round((startFrame * sampleRate) / 30) : 0;
   const result = Buffer.alloc(count * 2);
   for (let i = 0; i < count; i++) {
@@ -80,42 +78,32 @@ test("MMD audio choices persist independently, reject fractional frames and foll
   try {
     const presets = svc.getState().presets;
     assert.equal(svc.getState().mmd.audioShiftFrames, 0);
-    assert.equal(svc.getState().mmd.audioAutoShift, true);
     await svc.invoke("mmdExportSet", { audioShiftFrames: 1 });
     assert.equal(mx.readSelection().audioShiftFrames, 1);
-    assert.equal(mx.readSelection().audioAutoShift, true);
-    await svc.invoke("mmdExportSet", { audioAutoShift: false });
-    assert.equal(mx.readSelection().audioShiftFrames, 1);
+    // The automatic +1 for start frame 1 is gone: no such choice is kept.
+    assert.equal("audioAutoShift" in mx.readSelection(), false);
+    assert.equal("audioAutoShift" in svc.getState().mmd, false);
     await assert.rejects(
       svc.invoke("mmdExportSet", { audioShiftFrames: 1.5 }),
       { code: "MMD_AUDIO_SHIFT_INVALID" },
     );
-    await assert.rejects(
-      svc.invoke("mmdExportSet", { audioAutoShift: "false" }),
-      { code: "MMD_AUDIO_AUTO_SHIFT_INVALID" },
-    );
     assert.equal(mx.readSelection().audioShiftFrames, 1);
-    assert.equal(mx.readSelection().audioAutoShift, false);
     svc.dispose();
     svc = createService({ dataDir });
     assert.equal(svc.getState().mmd.audioShiftFrames, 1);
-    assert.equal(svc.getState().mmd.audioAutoShift, false);
     mx.writeSelection({
       ...mx.readSelection(),
       audioShiftFrames: -2,
-      audioAutoShift: true,
       savedAt: "2099-01-01T00:00:00Z",
     });
     await svc.invoke("mmdStatus");
     assert.equal(svc.getState().mmd.audioShiftFrames, -2);
-    assert.equal(svc.getState().mmd.audioAutoShift, true);
     const stored = JSON.parse(
       fs.readFileSync(path.join(dataDir, "settings.json"), "utf8"),
     );
     assert.equal(stored.mmdExport.audioShiftFrames, -2);
-    assert.equal(stored.mmdExport.audioAutoShift, true);
+    assert.equal(stored.mmdExport.audioAutoShift, undefined);
     assert.equal(stored.settings.audioShiftFrames, undefined);
-    assert.equal(stored.settings.audioAutoShift, undefined);
     assert.deepEqual(svc.getState().presets, presets);
   } finally {
     svc.dispose();
@@ -146,7 +134,6 @@ test(
       startFrame,
       source,
       manual,
-      automatic,
       label,
     }) {
       const caseDir = path.join(dir, String(++number).padStart(3, "0"));
@@ -168,7 +155,6 @@ test(
         settings,
         engines,
         audioShiftFrames: manual,
-        audioAutoShift: automatic,
         rangeSuffix: false,
       };
       const result = await mx.finish(job, config, (_line, data) => {
@@ -202,7 +188,6 @@ test(
           startFrame,
           source === "wav",
           manual,
-          automatic,
           count,
         ),
         label,
@@ -227,19 +212,16 @@ test(
       );
       assert.equal(videoFrames, 30, label + " video frames");
       const shift = notes.find((n) => n.code === "MMD_AUDIO_SHIFT");
-      const actual = manual + (automatic && startFrame === 1 ? 1 : 0);
       assert.equal(
         shift.params.frames,
-        (actual >= 0 ? "+" : "") + actual,
+        (manual >= 0 ? "+" : "") + manual,
         label + " log",
       );
-      assert.equal(shift.params.manual, (manual >= 0 ? "+" : "") + manual);
       assert.ok(!fs.existsSync(temp));
       results.push({
         label,
         source,
         manual,
-        automatic,
         startFrame,
         sampleRate,
         avgTimePerFrame,
@@ -303,22 +285,20 @@ test(
         ]);
         for (const source of ["avi", "wav"])
           for (const manual of [0, 1, -2])
-            for (const automatic of [false, true])
-              for (const startFrame of [0, 1]) {
-                await check({
-                  video,
-                  avi: source === "avi" ? withAudio : silentAvi,
-                  pmm,
-                  pcm,
-                  sampleRate,
-                  avgTimePerFrame,
-                  source,
-                  manual,
-                  automatic,
-                  startFrame,
-                  label: `${source}/${sampleRate}/${rate}/${manual}/${automatic}/${startFrame}`,
-                });
-              }
+            for (const startFrame of [0, 1]) {
+              await check({
+                video,
+                avi: source === "avi" ? withAudio : silentAvi,
+                pmm,
+                pcm,
+                sampleRate,
+                avgTimePerFrame,
+                source,
+                manual,
+                startFrame,
+                label: `${source}/${sampleRate}/${rate}/${manual}/${startFrame}`,
+              });
+            }
         if (rate === "30" && sampleRate === 48000) {
           for (const [manual, startFrame] of [
             [45, 0],
@@ -334,7 +314,6 @@ test(
               avgTimePerFrame,
               source: "wav",
               manual,
-              automatic: false,
               startFrame,
               label: `boundary/${manual}/${startFrame}`,
             });
@@ -354,14 +333,12 @@ test(
               maskMode: "off",
               followMmd: true,
               audioShiftFrames: 1,
-              audioAutoShift: true,
               presetName: "User 预设",
             },
           );
           const snapshotFile = mx.snapshotPath(plan.temp);
           const snapshot = JSON.parse(fs.readFileSync(snapshotFile, "utf8"));
           assert.equal(snapshot.audioShiftFrames, 1);
-          assert.equal(snapshot.audioAutoShift, true);
           fs.copyFileSync(video, plan.temp);
           fs.writeFileSync(
             snapshotFile,
@@ -370,7 +347,6 @@ test(
           mx.writeSelection({
             presetId: "later",
             audioShiftFrames: -2,
-            audioAutoShift: false,
           });
           const notes = [];
           const recovered = await mx.recover(
@@ -392,15 +368,15 @@ test(
           ]);
           assertPcm(
             decoded,
-            expectedPcm(pcm, sampleRate, 30, 1, true, 1, true, sampleRate),
-            "recovery frozen +2",
+            expectedPcm(pcm, sampleRate, 30, 1, true, 1, sampleRate),
+            "recovery frozen +1",
           );
           assert.equal(
             notes.find((n) => n.code === "MMD_AUDIO_SHIFT").params.frames,
-            "+2",
+            "+1",
           );
           results.push({
-            label: "recovery frozen +2",
+            label: "recovery frozen +1",
             samples: decoded.length / 2,
           });
         }

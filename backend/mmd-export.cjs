@@ -35,17 +35,12 @@ const {
 const historyPath = () => path.join(baseDir(), "exports.jsonl");
 // MMD's timeline runs at 30 fps whatever the export frame rate is.
 const TIMELINE_FPS = 30;
-function audioShift(config, startFrame) {
-  const manual = validateAudioShift(config.audioShiftFrames ?? 0);
-  const automatic = config.audioAutoShift !== false && startFrame === 1 ? 1 : 0;
-  const frames = validateAudioShift(manual + automatic);
-  const signed = (value) => (value >= 0 ? "+" : "") + value;
+function audioShift(config) {
+  const frames = validateAudioShift(config.audioShiftFrames ?? 0);
   return {
     frames,
     data: summary("MMD_AUDIO_SHIFT", {
-      frames: signed(frames),
-      manual: signed(manual),
-      automatic: signed(automatic),
+      frames: (frames >= 0 ? "+" : "") + frames,
     }),
   };
 }
@@ -176,7 +171,7 @@ function plan(runtime, config = readConfig()) {
   // video is skipped, not the export.
   const notes = [];
   const notesData = [];
-  const shift = audioShift(config, runtime.startFrame);
+  const shift = audioShift(config);
   if (audioArgs(s)) {
     notes.push(shift.data.message);
     notesData.push(shift.data);
@@ -304,7 +299,6 @@ function plan(runtime, config = readConfig()) {
       engines: config.engines,
       audioFade: config.audioFade,
       audioShiftFrames: config.audioShiftFrames ?? 0,
-      audioAutoShift: config.audioAutoShift !== false,
       rangeSuffix: config.rangeSuffix !== false,
     });
     return result;
@@ -503,7 +497,7 @@ async function finish(
     note(log, "MMD_AUDIO_COPY_AS", {
       codec: audio[1] === "aac" ? "AAC" : "PCM",
     });
-  const shift = audioShift(config, job.startFrame);
+  const shift = audioShift(config);
   let source = "none";
   // The source audio stream, for Hi-Res.
   let stream = aviInfo?.streams?.find((x) => x.codec_type === "audio");

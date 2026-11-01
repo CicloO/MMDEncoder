@@ -252,7 +252,6 @@ export type State = {
     followMmd: boolean;
     audioFade: number;
     audioShiftFrames: number;
-    audioAutoShift: boolean;
     maskMode: "off" | "with" | "only";
     rangeSuffix?: boolean;
     error: string;
