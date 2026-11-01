@@ -15,8 +15,9 @@ const baseline = require("./fixtures/i18n/preset-baseline.json");
 const bitrateDelta = require("./fixtures/i18n/bitrate-320-baseline.json");
 const hash = (x) =>
   crypto.createHash("sha256").update(JSON.stringify(x)).digest("hex");
-const legacySettings = ({ maskFormat, ...settings }) => {
+const legacySettings = ({ maskFormat, vsrSize, ...settings }) => {
   assert.equal(maskFormat, "lossless");
+  assert.equal(vsrSize, "scale");
   return settings;
 };
 const commands = (p) =>

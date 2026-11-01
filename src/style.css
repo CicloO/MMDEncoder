@@ -282,6 +282,15 @@ svg {
 .button.icon {
   padding: 7px;
 }
+/* VSR 倍率's 跟随分辨率 / 最大: lit like the selected workspace tab. */
+.vsr-size-button[aria-pressed="true"],
+.vsr-size-button[aria-pressed="true"]:hover:not(:disabled) {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+input[readonly]#vsrScale {
+  color: var(--color-muted);
+}
 .app-header {
   height: 88px;
   display: flex;

@@ -41,13 +41,15 @@ function compatibility(s, engines = ENGINES) {
         lookahead: 0,
         lookaheadLevel: 0,
         quality: Math.min(s.quality, 51),
+        // A size already set under 画质 is kept: VSR follows it.
         ...(s.vsr
-          ? {
-              resizeMode: "source",
-              ...(s.vsrQuality >= 8 && s.vsrQuality <= 19
-                ? { vsrScale: 1 }
-                : {}),
-            }
+          ? s.vsrQuality >= 8 && s.vsrQuality <= 19
+            ? { resizeMode: "source", vsrScale: 1, vsrSize: "scale" }
+            : (s.resizeMode ?? "source") !== "source"
+              ? { vsrSize: "resolution" }
+              : s.vsrSize === "resolution"
+                ? {}
+                : { resizeMode: "source" }
           : {}),
         ...(s.vfg ? { fps: "source" } : {}),
       });

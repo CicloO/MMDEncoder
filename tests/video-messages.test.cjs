@@ -191,3 +191,162 @@ test("preview summaries translate technical records at display time and preserve
   );
   assert.equal(JSON.stringify(record), original);
 });
+
+test("NVENC frame size limits are reported before encoding, per codec", () => {
+  const rtxSettings = {
+    ...core.DEFAULTS,
+    encoder: "nvencc:h264",
+    preset: "p4",
+    bitDepth: 8,
+    chroma: "420",
+    vsr: true,
+    vsrScale: 2,
+    vsrQuality: 4,
+    vsrStrength: 1,
+    resizeMode: "source",
+    vfg: true,
+    vfgMultiplier: 2,
+    vfgMode: "high",
+    fps: "source",
+  };
+  const meta = { width: 2848, height: 1602, fps: 30 };
+  const issue = core
+    .validateIssues(rtxSettings, meta)
+    .find((x) => x.code === "VSR_SCALE_LIMIT");
+  assert.deepEqual(issue.params, {
+    width: 5696,
+    height: 3204,
+    max: 4096,
+    codec: "H.264",
+    scale: 1.43,
+  });
+  // HEVC and AV1 go to 8192; a smaller scale fits H.264.
+  for (const s of [
+    { ...rtxSettings, encoder: "nvencc:hevc" },
+    { ...rtxSettings, vsrScale: 1.4 },
+  ])
+    assert.deepEqual(core.validateIssues(s, meta), []);
+  assert.equal(
+    core
+      .validateIssues(
+        { ...rtxSettings, encoder: "nvencc:hevc", vsrScale: 3 },
+        meta,
+      )
+      .find((x) => x.code === "VSR_SCALE_LIMIT").params.max,
+    8192,
+  );
+  // Without VSR the plain limit applies.
+  assert.ok(
+    core
+      .validateIssues(
+        {
+          ...core.DEFAULTS,
+          encoder: "nvencc:h264",
+          preset: "p4",
+          bitDepth: 8,
+          resizeMode: "custom",
+          width: 5000,
+          height: 3000,
+        },
+        meta,
+      )
+      .some((x) => x.code === "NVENC_SIZE_LIMIT"),
+  );
+  // Software encoders have no such limit.
+  assert.deepEqual(
+    core.validateIssues(
+      { ...core.DEFAULTS, resizeMode: "custom", width: 7680, height: 4320 },
+      meta,
+    ),
+    [],
+  );
+});
+
+test("VSR size follows a typed scale, the encoder's maximum or the 画质 resolution", () => {
+  const base = {
+    ...core.DEFAULTS,
+    encoder: "nvencc:h264",
+    preset: "p4",
+    bitDepth: 8,
+    chroma: "420",
+    vsr: true,
+    vsrScale: 2,
+    vsrQuality: 4,
+    vsrStrength: 1,
+    resizeMode: "source",
+  };
+  const meta = { width: 2848, height: 1602, fps: 30 };
+  const over = core.validateIssues(base, meta);
+  assert.deepEqual(over.find((x) => x.code === "VSR_SCALE_LIMIT").params, {
+    width: 5696,
+    height: 3204,
+    max: 4096,
+    codec: "H.264",
+    scale: 1.43,
+  });
+  const max = { ...base, vsrSize: "max" };
+  assert.deepEqual(core.dimensions(max, meta), { width: 4072, height: 2290 });
+  assert.deepEqual(core.validateIssues(max, meta), []);
+  assert.deepEqual(core.dimensions({ ...max, encoder: "nvencc:hevc" }, meta), {
+    width: 8174,
+    height: 4598,
+  });
+  // Never above VSR's own 4×.
+  assert.deepEqual(
+    core.dimensions(
+      { ...max, encoder: "nvencc:hevc" },
+      { width: 640, height: 360 },
+    ),
+    { width: 2560, height: 1440 },
+  );
+  const follow = {
+    ...base,
+    vsrSize: "resolution",
+    resizeMode: "long",
+    width: 3840,
+  };
+  assert.deepEqual(core.dimensions(follow, meta), {
+    width: 3840,
+    height: 2160,
+  });
+  assert.deepEqual(core.validateIssues(follow, meta), []);
+  assert.ok(
+    core
+      .validateIssues({ ...follow, width: 12000, encoder: "nvencc:hevc" }, meta)
+      .some((x) => x.code === "VSR_SCALE_INVALID"),
+  );
+  // A typed scale still needs the source size; quality 8–19 stays at 1×.
+  assert.ok(
+    core
+      .validateIssues({ ...base, resizeMode: "long", width: 3840 }, meta)
+      .some((x) => x.code === "VSR_SOURCE_SIZE_REQUIRED"),
+  );
+  assert.ok(
+    core
+      .validateIssues({ ...max, vsrQuality: 8 }, meta)
+      .some((x) => x.code === "VSR_NATIVE_SCALE_REQUIRED"),
+  );
+});
+
+test("RTX fix keeps a resolution set under 画质 and makes VSR follow it", () => {
+  const engines = core.ENGINES;
+  const fix = (s) =>
+    core
+      .compatibility({ ...core.DEFAULTS, ...s }, engines)
+      .suggestions.find((x) => x.id === "rtx-compatible")?.patch;
+  // A size under 画质: kept, VSR follows it.
+  const kept = fix({ vsr: true, vfg: true, resizeMode: "long", width: 3840 });
+  assert.equal(kept.vsrSize, "resolution");
+  assert.equal(kept.resizeMode, undefined);
+  assert.equal(kept.encoder.startsWith("nvencc:"), true);
+  // No size set: the typed scale, source size.
+  assert.equal(fix({ vsr: true }).resizeMode, "source");
+  // Quality 8–19 only works at 1×.
+  assert.deepEqual(
+    ["resizeMode", "vsrScale", "vsrSize"].map(
+      (k) =>
+        fix({ vsr: true, vsrQuality: 8, resizeMode: "long", width: 3840 })[k],
+    ),
+    ["source", 1, "scale"],
+  );
+});

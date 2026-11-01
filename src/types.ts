@@ -41,6 +41,8 @@ export type Settings = {
   lookaheadLevel: number;
   vsr: boolean;
   vsrScale: number;
+  // "max" / "resolution": worked out for each source (filter.cjs).
+  vsrSize?: "scale" | "max" | "resolution";
   vsrQuality: number;
   vsrStrength: number;
   upscaler: "lanczos" | "artcnn";

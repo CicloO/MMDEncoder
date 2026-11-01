@@ -1,4 +1,5 @@
 import { t, localeRuntime, summaryMessage, errorMessage } from "./i18n";
+import { Maximize2, Ruler } from "lucide-react";
 import { Button, Field, Select } from "./components";
 import type { Settings, State } from "./types";
 // 超分补帧 tab: how to enlarge (Lanczos / ArtCNN / RTX VSR), RTX frame
@@ -8,6 +9,8 @@ export function RtxSettings({
   verification,
   placebo: placeboAvailable,
   canTest,
+  meta,
+  outputSize,
   set,
   patch,
   call,
@@ -16,6 +19,9 @@ export function RtxSettings({
   verification: State["enhancements"];
   placebo?: boolean;
   canTest: boolean;
+  // The selected file and its output size, for the worked-out VSR scale.
+  meta?: { width?: number; height?: number };
+  outputSize?: { width: number; height: number } | null;
   set: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   patch: (p: Partial<Settings>) => void;
   call: (action: string, payload?: unknown) => Promise<any>;
@@ -23,7 +29,7 @@ export function RtxSettings({
   const upscaler = s.vsr ? "vsr" : s.upscaler || "lanczos";
   const placebo = placeboAvailable !== false;
   const number = (
-    key: "vsrScale" | "vsrStrength",
+    key: "vsrStrength",
     label: string,
     min: number,
     max: number,
@@ -39,6 +45,40 @@ export function RtxSettings({
         onChange={(e) => set(key, Number(e.target.value))}
       />
     </Field>
+  );
+  // VSR 倍率: typed in, or worked out for each source ("max" = the largest
+  // the encoder takes, "resolution" = the size set under 画质). The buttons
+  // are exclusive; pressing the lit one goes back to the typed scale.
+  const vsrSize = s.vsrSize ?? "scale";
+  const nativeOnly = s.vsrQuality >= 8 && s.vsrQuality <= 19;
+  const autoScale =
+    vsrSize !== "scale" && meta?.width && outputSize
+      ? (outputSize.width / meta.width).toFixed(2)
+      : "";
+  const sizeButton = (
+    mode: "max" | "resolution",
+    label: string,
+    Icon: typeof Maximize2,
+  ) => (
+    <Button
+      variant="icon"
+      className="vsr-size-button"
+      aria-pressed={vsrSize === mode}
+      aria-label={label}
+      title={nativeOnly ? t("rtx.vsrScaleNative") : label}
+      disabled={nativeOnly && vsrSize !== mode}
+      onClick={() =>
+        patch(
+          vsrSize === mode
+            ? { vsrSize: "scale", resizeMode: "source" }
+            : mode === "max"
+              ? { vsrSize: "max", resizeMode: "source" }
+              : { vsrSize: "resolution" },
+        )
+      }
+    >
+      <Icon size={16} aria-hidden="true" />
+    </Button>
   );
   // Things that stop ArtCNN from doing what the user expects.
   const warnings = [
@@ -78,8 +118,15 @@ export function RtxSettings({
           onChange={(v) =>
             patch(
               v === "vsr"
-                ? // VSR sets the size itself (VSR 倍率).
-                  { vsr: true, resizeMode: "source" }
+                ? // A size already set under 画质: VSR follows it. Otherwise
+                  // VSR sets the size itself (VSR 倍率, source size under 画质).
+                  (s.resizeMode ?? "source") !== "source"
+                  ? { vsr: true, vsrSize: "resolution" }
+                  : {
+                      vsr: true,
+                      resizeMode: "source",
+                      vsrSize: vsrSize === "resolution" ? "scale" : vsrSize,
+                    }
                 : { vsr: false, upscaler: v as Settings["upscaler"] },
             )
           }
@@ -107,7 +154,26 @@ export function RtxSettings({
         {s.vsr && (
           <>
             <div className="form-row">
-              {number("vsrScale", t("rtx.vsrScale"), 1, 4)}
+              <Field id="vsrScale" label={t("rtx.vsrScale")}>
+                <div className="path-picker">
+                  <input
+                    id="vsrScale"
+                    type="number"
+                    min={1}
+                    max={4}
+                    step="0.01"
+                    readOnly={vsrSize !== "scale"}
+                    placeholder={t("rtx.vsrScaleAuto")}
+                    value={vsrSize === "scale" ? s.vsrScale : autoScale}
+                    onChange={(e) =>
+                      vsrSize === "scale" &&
+                      set("vsrScale", Number(e.target.value))
+                    }
+                  />
+                  {sizeButton("resolution", t("rtx.vsrScaleResolution"), Ruler)}
+                  {sizeButton("max", t("rtx.vsrScaleMax"), Maximize2)}
+                </div>
+              </Field>
               {number("vsrStrength", t("rtx.vsrStrength"), 0, 1)}
             </div>
             <Select

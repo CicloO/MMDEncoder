@@ -38,7 +38,8 @@ function createPresetOperations({ schema, reorder }) {
                       (k === "audioFade" && v === 0) ||
                       (k === "artcnnModel" && v === "C4F16") ||
                       (k === "upscaler" && v === "lanczos") ||
-                      (k === "maskFormat" && v === "lossless")
+                      (k === "maskFormat" && v === "lossless") ||
+                      (k === "vsrSize" && v === "scale")
                     ),
                 ),
               ),
@@ -359,9 +360,24 @@ function createPresetOperations({ schema, reorder }) {
       case "resolvePresetConflict": {
         // keep: save the user's old version as a personal preset next to the
         // built-in; otherwise drop it (the new built-in stays either way).
+        // existing: do not overwrite at all; the user's version stays the
+        // built-in (an edit on top of the new definition).
         const c = model.presetConflicts.find((x) => x.id === payload.id);
         if (!c) throw appError("PRESET_CONFLICT_MISSING");
-        if (payload.keep) {
+        const at = model.presets.findIndex((p) => p.id === c.id);
+        if (payload.existing && at >= 0) {
+          const b = model.presets[at];
+          const v = presetValid({ name: c.name, settings: c.settings });
+          const kept = {
+            ...b,
+            name: v.name,
+            settings: v.settings,
+            edited: true,
+            nameSource: v.name === b.name ? b.nameSource : "user",
+          };
+          kept.settingsEdited = settingsEdited(kept);
+          model.presets[at] = kept;
+        } else if (payload.keep) {
           let name = `${c.name} (Modified)`;
           for (
             let n = 2;
@@ -370,7 +386,6 @@ function createPresetOperations({ schema, reorder }) {
           )
             name = `${c.name} (Modified ${n})`;
           const copy = presetValid({ name, settings: c.settings });
-          const at = model.presets.findIndex((p) => p.id === c.id);
           model.presets.splice(at < 0 ? model.presets.length : at + 1, 0, copy);
         }
         model.presetConflicts = model.presetConflicts.filter((x) => x !== c);

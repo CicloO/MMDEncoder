@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 const allowed = new Set([
   "quit",
+  "copyText",
+  "exportLogReport",
   "state",
   "setLocale",
   "setTheme",

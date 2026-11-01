@@ -3,7 +3,12 @@ const { appError, validationIssue, serializeError } = require("./errors.cjs");
 const path = require("node:path");
 const { FADES } = require("./media.cjs");
 const { ENGINES } = require("./definitions.cjs");
-const { parseFps, dimensions } = require("./filter.cjs");
+const {
+  parseFps,
+  dimensions,
+  nvencLimit,
+  maxVsrScale,
+} = require("./filter.cjs");
 const { maskSettings, MASK_FORMATS } = require("./mask-settings.cjs");
 function filename(name) {
   if (
@@ -69,9 +74,20 @@ function validateIssues(s, meta) {
         s.vsrStrength <= 1,
       "VSR_STRENGTH_INVALID",
     );
-    check(s.resizeMode === "source", "VSR_SOURCE_SIZE_REQUIRED");
+    const vsrSize = s.vsrSize ?? "scale";
+    check(
+      ["scale", "max", "resolution"].includes(vsrSize),
+      "SETTING_VALUE_INVALID",
+      { field: "vsrSize" },
+    );
+    // Following the 画质 size is the one way VSR takes a resize setting.
+    if (vsrSize !== "resolution")
+      check(s.resizeMode === "source", "VSR_SOURCE_SIZE_REQUIRED");
     if (s.vsrQuality >= 8 && s.vsrQuality <= 19)
-      check(s.vsrScale === 1, "VSR_NATIVE_SCALE_REQUIRED");
+      check(
+        vsrSize === "scale" && s.vsrScale === 1,
+        "VSR_NATIVE_SCALE_REQUIRED",
+      );
   }
   if (s.vfg) {
     check(
@@ -88,6 +104,33 @@ function validateIssues(s, meta) {
     check(s.fps === "source", "VFG_SOURCE_FPS_REQUIRED");
     if (meta)
       check(meta.fps * s.vfgMultiplier <= 960, "VFG_OUTPUT_FPS_INVALID");
+  }
+  // NVENC refuses frames over 4096 × 4096 in H.264 and 8192 × 8192 in HEVC /
+  // AV1; VSR upscaling reaches that easily, so say so before encoding.
+  if (
+    meta?.width &&
+    meta?.height &&
+    ["nvenc", "nvencc"].includes(eng?.backend)
+  ) {
+    const max = nvencLimit(s.encoder);
+    const size = dimensions(s, meta);
+    const params = {
+      width: size.width,
+      height: size.height,
+      max,
+      codec: eng.codec === "h264" ? "H.264" : eng.codec.toUpperCase(),
+    };
+    // A typed VSR scale: name the largest one that fits this source.
+    const scale =
+      s.vsr && (s.vsrSize ?? "scale") === "scale"
+        ? maxVsrScale(s.encoder, meta)
+        : 0;
+    if (size.width > max || size.height > max)
+      e.push(
+        scale >= 1 && scale < s.vsrScale
+          ? validationIssue("VSR_SCALE_LIMIT", { ...params, scale })
+          : validationIssue("NVENC_SIZE_LIMIT", params),
+      );
   }
   check(!!eng, "ENCODER_INVALID");
   for (const [k, values] of Object.entries({
@@ -260,6 +303,12 @@ function validateIssues(s, meta) {
         size.width <= 16384 && size.height <= 16384,
         "VSR_OUTPUT_SIZE_INVALID",
       );
+      // Following the 画质 size can ask for more than VSR's 4×.
+      if (s.vsrSize === "resolution" && meta.width && meta.height)
+        check(
+          size.width <= meta.width * 4 && size.height <= meta.height * 4,
+          "VSR_SCALE_INVALID",
+        );
     }
     if (s.alphaMode === "preserve")
       check(meta.hasAlpha, "SOURCE_ALPHA_REQUIRED");
