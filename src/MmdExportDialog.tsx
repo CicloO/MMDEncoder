@@ -202,10 +202,11 @@ export function MmdExportDialog({
           <Select
             id="mmd-mask-mode"
             label={t("mmd.mask")}
-            value={mmd.maskMode || "off"}
+            value={mmd.maskMode || "preset"}
             disabled={busy}
             help={t("mmd.maskHint")}
             options={[
+              { value: "preset", label: t("mmd.maskPreset") },
               { value: "off", label: t("mmd.maskOff") },
               { value: "with", label: t("mmd.maskWith") },
               { value: "only", label: t("mmd.maskOnly") },
@@ -218,15 +219,18 @@ export function MmdExportDialog({
             value={String(mmd.audioFade)}
             disabled={busy}
             help={t("mmd.fadeHint")}
-            options={fadeOptions().map(({ value }) => ({
-              value,
-              label:
-                value === "0"
-                  ? t("mmd.fadeOff")
-                  : t("mmd.fadeSeconds", {
-                      seconds: localeRuntime.number(Number(value)),
-                    }),
-            }))}
+            options={[
+              { value: "-1", label: t("mmd.fadePreset") },
+              ...fadeOptions().map(({ value }) => ({
+                value,
+                label:
+                  value === "0"
+                    ? t("mmd.fadeOff")
+                    : t("mmd.fadeSeconds", {
+                        seconds: localeRuntime.number(Number(value)),
+                      }),
+              })),
+            ]}
             onChange={(v) => onCall("mmdExportSet", { audioFade: Number(v) })}
           />
         </div>

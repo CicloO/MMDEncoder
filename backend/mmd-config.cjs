@@ -20,13 +20,17 @@ const configPath = () => path.join(baseDir(), "mmd-export.json");
 // window in MMD ("詳細設定") write it; the newer savedAt wins, and MMDEncoder
 // picks up a choice saved in MMD as soon as it lands.
 const selectionPath = () => path.join(baseDir(), "mmd-selection.json");
-const FADES = [0, 0.5, 1, 2];
+// -1 follows the preset's own audio fade (the default).
+const FOLLOW_FADE = -1;
+const FADES = [FOLLOW_FADE, 0, 0.5, 1, 2];
 // Alpha mask: none, next to the video (<name>_alpha.<ext>), or the mask alone.
-// The choice overrides the preset's own alpha setting.
-const MASK_MODES = ["off", "with", "only"];
-// What a preset would do by itself; the default when a preset is picked.
+// "preset" (the default) follows what the preset does by itself; the others
+// override the preset's own alpha setting.
+const MASK_MODES = ["preset", "off", "with", "only"];
+// What a preset would do by itself.
 const presetMask = (s) =>
   s?.alphaMode === "mask" ? "only" : s?.alphaMask ? "with" : "off";
+const resolveMask = (mode, s) => (mode === "preset" || !mode ? presetMask(s) : mode);
 
 function validateAudioShift(frames) {
   if (!Number.isSafeInteger(frames)) throw appError("MMD_AUDIO_SHIFT_INVALID");
@@ -48,12 +52,11 @@ function readSelection() {
       // Use the size and frame rate set in MMD instead of the preset ones.
       followMmd: s.followMmd !== false,
       // Seconds of audio fade-in and fade-out (0 = off).
-      audioFade: FADES.includes(s.audioFade) ? s.audioFade : 0,
+      audioFade: FADES.includes(s.audioFade) ? s.audioFade : FOLLOW_FADE,
       audioShiftFrames: Number.isSafeInteger(s.audioShiftFrames)
         ? s.audioShiftFrames
         : 0,
-      // "" = the preset decides.
-      maskMode: MASK_MODES.includes(s.maskMode) ? s.maskMode : "",
+      maskMode: MASK_MODES.includes(s.maskMode) ? s.maskMode : "preset",
       // Add the MMD frame range to the file name (_0400-0600f).
       rangeSuffix: s.rangeSuffix !== false,
       savedAt: typeof s.savedAt === "string" ? s.savedAt : "",
@@ -68,7 +71,7 @@ function writeSelection({
   followMmd = true,
   audioFade = 0,
   audioShiftFrames = 0,
-  maskMode = "off",
+  maskMode = "preset",
   rangeSuffix = true,
   savedAt,
 }) {
@@ -78,7 +81,7 @@ function writeSelection({
     audioFade,
     audioShiftFrames: validateAudioShift(audioShiftFrames),
     rangeSuffix: rangeSuffix !== false,
-    maskMode: MASK_MODES.includes(maskMode) ? maskMode : "off",
+    maskMode: MASK_MODES.includes(maskMode) ? maskMode : "preset",
     savedAt: savedAt || new Date().toISOString(),
   };
   writeAtomic(selectionPath(), selection);
@@ -113,7 +116,7 @@ function writeConfig({
       followMmd,
       audioFade,
       audioShiftFrames,
-      maskMode: maskMode || presetMask(settings),
+      maskMode: maskMode || "preset",
     });
   }
   const snapshot = pluginMessages(locale, catalogs);
@@ -154,7 +157,7 @@ function readConfig(selection = readSelection()) {
   if (!selection?.presetId) throw appError("MMD_SELECTION_REQUIRED");
   const preset = config.presets.find((p) => p.id === selection.presetId);
   if (!preset) throw appError("MMD_PRESET_MISSING");
-  const maskMode = selection.maskMode || presetMask(preset.settings);
+  const maskMode = resolveMask(selection.maskMode, preset.settings);
   // The mask alone does not use the preset's encoder.
   if (maskMode !== "only" && preset.unsupported)
     throw Error(preset.unsupported);
@@ -166,7 +169,10 @@ function readConfig(selection = readSelection()) {
     presetName: preset.name,
     settings: preset.settings,
     followMmd: selection.followMmd,
-    audioFade: selection.audioFade,
+    audioFade:
+      selection.audioFade === FOLLOW_FADE
+        ? preset.settings?.audioFade || 0
+        : selection.audioFade,
     audioShiftFrames: validateAudioShift(selection.audioShiftFrames ?? 0),
     maskMode,
     rangeSuffix: selection.rangeSuffix,
@@ -220,8 +226,10 @@ module.exports = {
   configPath,
   selectionPath,
   FADES,
+  FOLLOW_FADE,
   MASK_MODES,
   presetMask,
+  resolveMask,
   validateAudioShift,
   writeAtomic,
   readSelection,

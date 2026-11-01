@@ -102,7 +102,7 @@ test(
       );
 
       // The alpha mask choice is shared with the plugin and reaches the plan.
-      assert.equal(state().mmd.maskMode, "off", "mask is off by default");
+      assert.equal(state().mmd.maskMode, "preset", "mask follows the preset by default");
       await svc.invoke("mmdExportSet", { maskMode: "with" });
       assert.equal(mx.readSelection().maskMode, "with");
       assert.equal(mx.readSelection().alphaMask, undefined);

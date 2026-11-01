@@ -106,7 +106,7 @@ try {
   assert.equal(formatted.brief, "✓ ⟦ 2.2 秒秒 ··· ⟧");
   assert.equal(formatted.unknown, "external fallback {raw}");
   const beforeSelection = fs.readFileSync(mx.selectionPath());
-  const cancelled = dialog("pseudo-settings", 1);
+  const cancelled = dialog("pseudo-settings", 2);
   assert.ok(cancelled.out.includes(pseudo["plugin.title"]), cancelled.out);
   assert.ok(
     cancelled.out.includes(pseudo["preset.default4kSoftware"]),
@@ -129,7 +129,7 @@ try {
     cancelled.log,
   );
   assert.deepEqual(fs.readFileSync(mx.selectionPath()), beforeSelection);
-  const saved = dialog("pseudo-saved", 2, true);
+  const saved = dialog("pseudo-saved", 3, true);
   assert.match(saved.out, /testResult=✓ ⟦/);
   assert.equal(mx.readSelection().maskMode, "only");
   // The next opening reads the newly saved resource snapshot, without an app.
