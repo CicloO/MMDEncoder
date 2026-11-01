@@ -387,7 +387,7 @@ try {
       .join("\n");
     return out + "\n" + (log.match(/encoding test: .*/g) || []).join("\n");
   };
-  const cancelled = dialog(1);
+  const cancelled = dialog(2);
   check(
     /initialMask=0/.test(cancelled),
     "settings: legacy alphaMask no longer read",
@@ -404,7 +404,7 @@ try {
     fs.readFileSync(selectionPath, "utf8") === beforeTest,
     "settings: Cancel after testing leaves selection unchanged",
   );
-  const saved = dialog(2, true);
+  const saved = dialog(3, true);
   const selection = JSON.parse(fs.readFileSync(selectionPath, "utf8"));
   check(
     /测试编码通过/.test(saved) && selection.maskMode === "only",

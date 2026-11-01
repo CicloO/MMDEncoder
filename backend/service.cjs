@@ -116,10 +116,10 @@ function createService({
       // which every editor reads and needs no hardware encoder.
       presetId: "builtin-prores422",
       followMmd: true,
-      audioFade: 0,
+      audioFade: -1, // follow the preset
       audioShiftFrames: 0,
-      // "off" | "with" | "only"; "" until a preset decides (settings from 1.4.1).
-      maskMode: "",
+      // "preset" (follow the preset) | "off" | "with" | "only"
+      maskMode: "preset",
       rangeSuffix: true,
       savedAt: "",
       error: "",
@@ -299,11 +299,6 @@ function createService({
   function adoptMmdSelection() {
     const s = mmdExport.readSelection();
     const m = state.mmd;
-    // Settings from 1.4.1: the mask follows what the preset did by itself.
-    if (!m.maskMode)
-      m.maskMode = mmdExport.presetMask(
-        state.presets.find((p) => p.id === m.presetId)?.settings,
-      );
     if (!s) {
       // First run with a choice from settings.json: publish it for the plugin.
       if (m.presetId) {
@@ -318,11 +313,7 @@ function createService({
       followMmd: s.followMmd,
       audioFade: s.audioFade,
       audioShiftFrames: s.audioShiftFrames,
-      maskMode:
-        s.maskMode ||
-        mmdExport.presetMask(
-          state.presets.find((p) => p.id === s.presetId)?.settings,
-        ),
+      maskMode: s.maskMode,
       rangeSuffix: s.rangeSuffix,
       savedAt: s.savedAt,
     });
@@ -409,7 +400,7 @@ function createService({
     if (saved.mmdExport && typeof saved.mmdExport === "object") {
       if (typeof saved.mmdExport.presetId === "string")
         state.mmd.presetId = saved.mmdExport.presetId;
-      if ([0, 0.5, 1, 2].includes(saved.mmdExport.audioFade))
+      if (mmdExport.FADES.includes(saved.mmdExport.audioFade))
         state.mmd.audioFade = saved.mmdExport.audioFade;
       if (Number.isSafeInteger(saved.mmdExport.audioShiftFrames))
         state.mmd.audioShiftFrames = saved.mmdExport.audioShiftFrames;
@@ -995,7 +986,7 @@ function createService({
           state.mmd.test = null;
         }
         if (payload.audioFade !== undefined) {
-          if (![0, 0.5, 1, 2].includes(payload.audioFade))
+          if (!mmdExport.FADES.includes(payload.audioFade))
             throw appError("MMD_FADE_INVALID");
           state.mmd.audioFade = payload.audioFade;
         }

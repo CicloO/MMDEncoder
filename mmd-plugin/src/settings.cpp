@@ -25,11 +25,13 @@
 enum { IDC_PRESET = 101, IDC_FOLLOW = 102, IDC_FADE = 103, IDC_MASK = 104, IDC_OPEN_APP = 105, IDC_SUFFIX = 106, IDC_TEST = 107,
        IDC_SHIFT = 111, IDC_SHIFT_LABEL = 115 };
 static constexpr long long kMaxShiftFrames = 9007199254740991LL;
-static const double kFades[] = {0, 0.5, 1, 2};
+static const double kFades[] = {-1, 0, 0.5, 1, 2};  // -1: follow the preset
+static constexpr int kFadeCount = 5;
 
-// Alpha mask: the choice overrides the preset's own alpha setting.
-static const char* kMaskModes[] = {"off", "with", "only"};
-static const wchar_t* kMaskKeys[] = {L"plugin.maskOff", L"plugin.maskWith", L"plugin.maskOnly"};
+// Alpha mask: "preset" follows the preset; the others override its own alpha setting.
+static const char* kMaskModes[] = {"preset", "off", "with", "only"};
+static const wchar_t* kMaskKeys[] = {L"plugin.maskPreset", L"plugin.maskOff", L"plugin.maskWith", L"plugin.maskOnly"};
+static constexpr int kMaskCount = 4;
 static Json numberParam(const wchar_t* name, double value) { Json args; args.type=Json::Object; args.o[name].type=Json::Number; args.o[name].n=value; return args; }
 static Json textParam(const wchar_t* name, const std::wstring& value) { Json args; args.type=Json::Object; args.o[name].type=Json::String; args.o[name].s=value; return args; }
 
@@ -42,7 +44,7 @@ struct SettingsContext {
   bool followMmd = true;
   bool rangeSuffix = true;  // name the file with the MMD frame range (_0400-0600f)
   int maskMode = 0;
-  double audioFade = 0;
+  double audioFade = -1;
   long long audioShiftFrames = 0;
   std::wstring appExe;  // MMDEncoder.exe, from mmd-export.json
   std::wstring helper;
@@ -155,13 +157,13 @@ static INT_PTR CALLBACK settingsProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
     SetDlgItemTextW(dlg, IDC_SHIFT, std::to_wstring(ctx->audioShiftFrames).c_str());
     HWND fade = GetDlgItem(dlg, IDC_FADE);
     int fadeIndex = 0;
-    for (int i = 0; i < 4; i++) {
-      SendMessageW(fade, CB_ADDSTRING, 0, (LPARAM)(i ? ctx->messages.format(L"plugin.fadeSeconds", numberParam(L"seconds", kFades[i])) : ctx->messages.text(L"plugin.fadeOff")).c_str());
+    for (int i = 0; i < kFadeCount; i++) {
+      SendMessageW(fade, CB_ADDSTRING, 0, (LPARAM)(i > 1 ? ctx->messages.format(L"plugin.fadeSeconds", numberParam(L"seconds", kFades[i])) : ctx->messages.text(i ? L"plugin.fadeOff" : L"plugin.fadePreset")).c_str());
       if (kFades[i] == ctx->audioFade) fadeIndex = i;
     }
     SendMessageW(fade, CB_SETCURSEL, fadeIndex, 0);
     HWND mask = GetDlgItem(dlg, IDC_MASK);
-    for (int i = 0; i < 3; i++) SendMessageW(mask, CB_ADDSTRING, 0, (LPARAM)ctx->messages.text(kMaskKeys[i]).c_str());
+    for (int i = 0; i < kMaskCount; i++) SendMessageW(mask, CB_ADDSTRING, 0, (LPARAM)ctx->messages.text(kMaskKeys[i]).c_str());
     SendMessageW(mask, CB_SETCURSEL, ctx->maskMode, 0);
     EnableWindow(GetDlgItem(dlg, IDC_TEST), selected >= 0);
     fitSettingsLayout(dlg, {ctx->messages.format(L"plugin.testPassedShort", numberParam(L"seconds", 99.9)),
@@ -259,11 +261,11 @@ void showSettings(HWND parent, HINSTANCE module, const std::wstring& dir, Proces
     ctx.presetId = selection[L"presetId"].s;
     ctx.followMmd = selection[L"followMmd"].type != Json::Bool || selection[L"followMmd"].b;
     ctx.rangeSuffix = selection[L"rangeSuffix"].type != Json::Bool || selection[L"rangeSuffix"].b;
-    ctx.audioFade = selection[L"audioFade"].n;
+    if (selection[L"audioFade"].type == Json::Number) ctx.audioFade = selection[L"audioFade"].n;
     const Json& shift = selection[L"audioShiftFrames"];
     if (shift.type == Json::Number && std::isfinite(shift.n) && std::floor(shift.n) == shift.n &&
         shift.n >= -kMaxShiftFrames && shift.n <= kMaxShiftFrames) ctx.audioShiftFrames = (long long)shift.n;
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < kMaskCount; i++)
       if (selection[L"maskMode"].s == utf16(kMaskModes[i])) ctx.maskMode = i;
   }
   ctx.appExe = config[L"appExe"].s;

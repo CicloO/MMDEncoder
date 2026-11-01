@@ -1285,6 +1285,18 @@
   },
   {
     "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.fadePreset",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
+    "text": "plugin.maskPreset",
+    "category": "technical",
+    "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
+  },
+  {
+    "file": "mmd-plugin/src/settings.cpp",
     "text": "plugin.maskOff",
     "category": "technical",
     "reason": "Locale resource identifier, verified against the Chinese catalog and finite native subset; the identifier is not displayed copy."
