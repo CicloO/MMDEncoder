@@ -2,7 +2,7 @@
 
 正式地址：<https://cicloo.github.io/MMDEncoder/>（GitHub Pages，也是仓库主页链接）。
 
-- 发布源：`gh-pages` 分支根目录，只放 `index.html` 和 `.nojekyll`。
+- 发布源：`gh-pages` 分支根目录，放 `index.html`、`.nojekyll` 和图标文件（`favicon.svg`、`favicon.ico`、`apple-touch-icon.png`）。
 - 源码：本目录 `website/index.html`。官网与桌面程序相互独立，不参与打包，也不使用根目录的 DESIGN.md 或 token 生成器。
 
 ## 更新流程
