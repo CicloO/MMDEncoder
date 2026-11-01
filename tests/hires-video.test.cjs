@@ -49,12 +49,14 @@ test("Hi-Res needs FLAC or PCM; adding the setting does not mark built-ins as ch
     audioFade,
     artcnnModel,
     maskFormat,
+    vsrSize,
     ...before
   } = shipped.settings;
   assert.equal(upscaler, "lanczos");
   assert.equal(editFriendly, false);
   assert.equal(hiRes, false);
   assert.equal(maskFormat, "lossless");
+  assert.equal(vsrSize, "scale");
   const old = crypto
     .createHash("sha256")
     .update(JSON.stringify([shipped.name, before]))

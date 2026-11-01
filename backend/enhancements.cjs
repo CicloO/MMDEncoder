@@ -10,6 +10,7 @@ function signature(s) {
     s.chroma,
     s.vsr,
     s.vsrScale,
+    s.vsrSize,
     s.vsrQuality,
     s.vsrStrength,
     s.vfg,

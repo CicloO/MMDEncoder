@@ -75,6 +75,7 @@ export function VideoSettings({
   pickDirectory: () => void;
 }) {
   const tooltipId = useId();
+  const vsrSetsSize = s.vsr && (s.vsrSize ?? "scale") !== "resolution";
   // 前向分析只对 NVENC / NVEncC 生效；级别只有 HEVC / AV1 支持
   const lookaheadSupported = /_nvenc$|^nvencc:/.test(s?.encoder || "");
   const lookaheadLevelSupported =
@@ -344,7 +345,11 @@ export function VideoSettings({
           <Select
             id="resizeMode"
             label={t("video.resize")}
-            value={s.resizeMode || "source"}
+            // A typed (or maximum) VSR scale sets the size: this stays at the
+            // source size until VSR follows it (跟随分辨率).
+            disabled={vsrSetsSize}
+            help={vsrSetsSize ? t("video.resizeVsrHint") : undefined}
+            value={vsrSetsSize ? "source" : s.resizeMode || "source"}
             options={[
               { value: "source", label: t("video.resizeSource") },
               {
@@ -355,7 +360,8 @@ export function VideoSettings({
             ]}
             onChange={(v) => set("resizeMode", v)}
           />
-          {s.resizeMode === "long" &&
+          {!vsrSetsSize &&
+            s.resizeMode === "long" &&
             fieldNumber(
               "width",
               t("video.longEdge"),
@@ -363,7 +369,7 @@ export function VideoSettings({
               16384,
               t("video.longEdgeHint"),
             )}
-          {s.resizeMode === "custom" && (
+          {!vsrSetsSize && s.resizeMode === "custom" && (
             <>
               <div className="form-row">
                 {(["width", "height"] as const).map((axis) => {
@@ -620,6 +626,8 @@ export function VideoSettings({
           verification={verification}
           placebo={placebo}
           canTest={canTest}
+          meta={job?.meta}
+          outputSize={preview?.dimensions}
           set={set}
           patch={(p) => changed({ ...s, ...p })}
           call={call}

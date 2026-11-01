@@ -19,12 +19,27 @@ function parseFps(value) {
     throw appError("FPS_RANGE_INVALID");
   return { text, value: n };
 }
+// NVENC's largest frame: 4096 × 4096 in H.264, 8192 × 8192 in HEVC / AV1.
+const nvencLimit = (encoder) => (/h264/.test(encoder) ? 4096 : 8192);
+// The largest VSR scale (two decimals, 1–4) whose output NVENC still takes.
+function maxVsrScale(encoder, meta) {
+  const limit = nvencLimit(encoder);
+  const fit = Math.min(limit / meta.width, limit / meta.height);
+  return Math.max(1, Math.min(4, Math.floor(fit * 100) / 100));
+}
 function dimensions(s, meta) {
-  if (s.vsr)
+  // vsrSize: "scale" = the VSR 倍率 typed in; "max" = the largest the encoder
+  // takes for this source; "resolution" = the size set under 画质 (below).
+  if (s.vsr && s.vsrSize !== "resolution") {
+    const scale =
+      s.vsrSize === "max" && meta.width && meta.height
+        ? maxVsrScale(s.encoder, meta)
+        : s.vsrScale;
     return {
-      width: Math.max(2, Math.round((meta.width * s.vsrScale) / 2) * 2),
-      height: Math.max(2, Math.round((meta.height * s.vsrScale) / 2) * 2),
+      width: Math.max(2, Math.round((meta.width * scale) / 2) * 2),
+      height: Math.max(2, Math.round((meta.height * scale) / 2) * 2),
     };
+  }
   if (s.resizeMode === "long" && meta.width && meta.height) {
     // Long edge: landscape sources get this width, portrait ones this height.
     const even = (v) => Math.max(2, Math.round(v / 2) * 2);
@@ -200,6 +215,8 @@ function filter(s, meta, mask) {
 module.exports = {
   parseFps,
   dimensions,
+  nvencLimit,
+  maxVsrScale,
   pix,
   usesArtcnn,
   artcnnSkipped,

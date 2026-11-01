@@ -10,6 +10,8 @@ import {
   Bookmark,
   LoaderCircle,
   Clapperboard,
+  Copy,
+  FileDown,
 } from "lucide-react";
 import { Button, Modal, useDragSort, PAGE_SIZE } from "./components";
 import { MediaTools } from "./MediaTools";
@@ -98,6 +100,7 @@ export default function App() {
     >(),
     [presetId, setPresetId] = useState(""),
     [log, setLog] = useState(""),
+    [logJob, setLogJob] = useState(""),
     [customFPS, setCustomFPS] = useState(false);
   const error =
     typeof errorValue !== "string" && "notice" in errorValue
@@ -538,6 +541,7 @@ export default function App() {
   async function openLog(j: Job) {
     try {
       setLog(await call("logs", { id: j.id }));
+      setLogJob(j.id);
       setModal("logs");
     } catch {}
   }
@@ -946,6 +950,7 @@ export default function App() {
         actions={actions}
         onShowLog={(text) => {
           setLog(text);
+          setLogJob("");
           setModal("logs");
         }}
       />
@@ -957,6 +962,36 @@ export default function App() {
         description={t("engine.log.description")}
       >
         <pre className="log-view">{log || t("engine.log.empty")}</pre>
+        <div className="modal-actions">
+          <Button
+            disabled={!log}
+            onClick={() =>
+              void call(
+                "copyText",
+                { text: log },
+                notification("LOG_COPIED"),
+              ).catch(() => {})
+            }
+          >
+            <Copy size={16} aria-hidden="true" />
+            {t("engine.log.copy")}
+          </Button>
+          <Button
+            title={t("engine.log.exportHint")}
+            onClick={() =>
+              void call("exportLogReport", { id: logJob || undefined })
+                .then(
+                  (file) =>
+                    file &&
+                    notify(notification("LOG_REPORT_SAVED", { path: file })),
+                )
+                .catch(() => {})
+            }
+          >
+            <FileDown size={16} aria-hidden="true" />
+            {t("engine.log.export")}
+          </Button>
+        </div>
       </Modal>
       {presetFlow.dialogs.switching}
       {presetFlow.dialogs.deletion}

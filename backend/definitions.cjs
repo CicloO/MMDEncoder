@@ -46,6 +46,8 @@ const DEFAULTS = {
   artcnnModel: "C4F16",
   vsr: false,
   vsrScale: 2,
+  // "scale" | "max" | "resolution" (see dimensions in filter.cjs).
+  vsrSize: "scale",
   vsrQuality: 4,
   vsrStrength: 1,
   vfg: false,

@@ -21,6 +21,7 @@ const {
 const { createUpdater } = require("../backend/selfupdate.cjs");
 const { appError } = require("../backend/errors.cjs");
 const { commandText } = require("../backend/command-text.cjs");
+const { buildReport } = require("../backend/bug-report.cjs");
 const { createTranslator } = require("../locales/runtime.mjs");
 const localeRegistry = require("../locales/registry.json");
 const { createSettingsStore } = require("../backend/settings-store.cjs");
@@ -466,6 +467,56 @@ else {
         }
         if (action === "engineFolder") return engineDir;
         if (action === "appVersion") return app.getVersion();
+        // The log window: copy its text, or save it with where it ran (app,
+        // Windows, hardware, tools) and the task, for a bug report.
+        if (action === "copyText") {
+          clipboard.writeText(String(payload?.text ?? ""));
+          return null;
+        }
+        if (action === "exportLogReport") {
+          const current = service.getState();
+          const job = payload?.id
+            ? current.jobs.find((j) => j.id === payload.id)
+            : undefined;
+          const log = await service.invoke("logs", job ? { id: job.id } : {});
+          const stamp = new Date()
+            .toISOString()
+            .slice(0, 19)
+            .replace(/[-:T]/g, "");
+          const r = await dialog.showSaveDialog(win, {
+            title: desktopText("dialog.log.export"),
+            defaultPath: path.join(
+              app.getPath("desktop"),
+              `MMDEncoder-${app.getVersion()}-report-${stamp}.txt`,
+            ),
+            filters: [
+              { name: desktopText("dialog.log.text"), extensions: ["txt"] },
+            ],
+          });
+          if (r.canceled || !r.filePath) return null;
+          let gpu;
+          try {
+            gpu = await app.getGPUInfo("basic");
+          } catch {}
+          await fs.writeFile(
+            r.filePath,
+            buildReport({
+              version: app.getVersion(),
+              gpu,
+              locale: current.preferences?.locale || app.getLocale(),
+              engineInfo: current.engineInfo,
+              tools: current.tools,
+              engines: current.engines,
+              job: job && {
+                ...job,
+                settings: job.settings || current.settings,
+              },
+              log: typeof log === "string" ? log : "",
+            }),
+            "utf8",
+          );
+          return r.filePath;
+        }
         if (action === "checkAppUpdate") {
           updateInfo = await checkForUpdate(app.getVersion());
           const blocked = updater.supported();

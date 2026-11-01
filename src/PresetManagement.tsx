@@ -278,7 +278,6 @@ export function usePresetManagement({
                   {t("preset.conflicts.replace")}
                 </Button>
                 <Button
-                  variant="primary"
                   onClick={() =>
                     call(
                       "resolvePresetConflict",
@@ -289,9 +288,35 @@ export function usePresetManagement({
                 >
                   {t("preset.conflicts.keep")}
                 </Button>
+                <Button
+                  variant="primary"
+                  title={t("preset.conflicts.existingHint")}
+                  onClick={() =>
+                    call("resolvePresetConflict", { id: c.id, existing: true })
+                  }
+                >
+                  {t("preset.conflicts.existing")}
+                </Button>
               </div>
             ))}
           </div>
+          {(presetConflicts?.length ?? 0) > 1 && (
+            <div className="modal-actions">
+              <Button
+                variant="primary"
+                title={t("preset.conflicts.existingHint")}
+                onClick={async () => {
+                  for (const c of presetConflicts!)
+                    await call("resolvePresetConflict", {
+                      id: c.id,
+                      existing: true,
+                    }).catch(() => {});
+                }}
+              >
+                {t("preset.conflicts.existingAll")}
+              </Button>
+            </div>
+          )}
         </Modal>
       ),
       manager: (
