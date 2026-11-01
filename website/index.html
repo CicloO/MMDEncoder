@@ -7,6 +7,9 @@
       name="viewport"
     />
     <meta content="#f8f9ff" name="theme-color" />
+    <link href="favicon.svg" rel="icon" type="image/svg+xml" />
+    <link href="favicon.ico" rel="icon" sizes="any" />
+    <link href="apple-touch-icon.png" rel="apple-touch-icon" />
     <meta
       content="MMDEncoder — 为 MMD 创作者准备的视频编码与后期工作台。批量压制、AI 超分、透明通道、无损剪辑与 MMD 直出。"
       name="description"
@@ -3840,20 +3843,7 @@
       <div class="container nav-in">
         <a aria-label="MMDEncoder 首页" class="brand" href="#home"
           ><span class="brand-logo"
-            ><svg
-              aria-hidden="true"
-              fill="none"
-              height="26"
-              viewbox="0 0 32 32"
-              width="26"
-            >
-              <path
-                d="M5 12 16 6l11 6-11 6L5 12ZM5 18l11 6 11-6M5 24l11 6 11-6"
-                stroke="#abc1ff"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2.5"
-              ></path></svg></span
+            ><img alt="" height="39" src="favicon.svg" width="39" style="display:block;width:100%;height:100%;border-radius:inherit"/></span
           ><span class="brand-word"
             ><strong>MMDEncoder</strong
             ><span><span data-i18n="t91">MMD 视频处理流程</span></span></span
@@ -4084,7 +4074,7 @@
               >
                 <use href="#ui-spark"></use>
               </svg>
-              <span data-i18n="t15">可选 AI / RTX 处理</span>
+              <span data-i18n="t15">可选超分补帧处理</span>
             </div>
             <p class="hero-art-note">
               <span data-i18n="sample"
@@ -4879,7 +4869,7 @@
             <b><span data-i18n="t51">MMD 插件适用范围</span></b
             ><span
               ><span data-i18n="t52"
-                >插件支持 64 位 MMD；直接导出暂不支持 NVEncC 预设。非 0
+                >插件支持 64 位 MMD；直接导出支持 NVEncC 预设。非 0
                 帧开始的音频同步依赖已保存的 PMM 工程及关联 WAV
                 文件。请在首次正式输出前运行测试编码。</span
               ></span
@@ -5289,9 +5279,9 @@
             en: "Sharper visual details",
           },
           t15: {
-            zh: "可选 AI / RTX 处理",
-            ja: "AI / RTX 対応",
-            en: "AI / RTX ready",
+            zh: "可选超分补帧处理",
+            ja: "アップスケール・フレーム補間オプション",
+            en: "Optional upscaling & frame interpolation",
           },
           t16: {
             zh: "围绕视频输出，",
@@ -5438,9 +5428,9 @@
             en: "Plugin compatibility",
           },
           t52: {
-            zh: "插件支持 64 位 MMD；直接导出暂不支持 NVEncC 预设。非 0 帧开始的音频同步依赖已保存的 PMM 工程及关联 WAV 文件。请在首次正式输出前运行测试编码。",
-            ja: "64-bit版MMDに対応。直接出力ではNVEncCプリセットを使用できません。途中フレームからの音声同期には保存済みPMMと関連WAVが必要です。初回はテストエンコードを実行してください。",
-            en: "The plugin supports 64-bit MMD; direct export does not currently support NVEncC presets. Audio synchronization from a non-zero start frame requires a saved PMM and its referenced WAV. Run a test encode first.",
+            zh: "插件支持 64 位 MMD；直接导出支持 NVEncC 预设。非 0 帧开始的音频同步依赖已保存的 PMM 工程及关联 WAV 文件。请在首次正式输出前运行测试编码。",
+            ja: "64-bit版MMDに対応。直接出力でもNVEncCプリセットを使用できます。途中フレームからの音声同期には保存済みPMMと関連WAVが必要です。初回はテストエンコードを実行してください。",
+            en: "The plugin supports 64-bit MMD; direct export also supports NVEncC presets. Audio synchronization from a non-zero start frame requires a saved PMM and its referenced WAV. Run a test encode first.",
           },
           t53: {
             zh: "下载安装，",
