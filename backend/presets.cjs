@@ -117,6 +117,15 @@ function createPresetOperations({ schema, reorder }) {
           name: o.name || builtinName,
           settings: o.settings,
         });
+        // An edit that is the same as the current definition (or only renamed
+        // back to its source name) has nothing to resolve: no prompt.
+        const shipped = core.BUILTINS.find((b) => b.id === id);
+        if (
+          shipped &&
+          !settingsEdited({ id, settings: v.settings }) &&
+          (v.name === builtinName || o.nameSource === "builtin")
+        )
+          return;
         if (!model.presetConflicts.some((c) => c.id === id))
           model.presetConflicts.push({
             id,

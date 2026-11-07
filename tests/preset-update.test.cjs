@@ -149,3 +149,42 @@ test("don't overwrite keeps the edited built-in in place, across restarts", asyn
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+// A stale fingerprint alone is no reason to ask: an edit that is the same as
+// the current definition has nothing to overwrite.
+test("an edited built-in equal to the current definition raises no conflict", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "preset-update-same-"));
+  const savedLocal = process.env.LOCALAPPDATA;
+  process.env.LOCALAPPDATA = path.join(root, "local");
+  delete require.cache[require.resolve("../backend/service.cjs")];
+  const { createService } = require("../backend/service.cjs");
+  const core = require("../backend/core.cjs");
+  const dataDir = path.join(root, "data");
+  fs.mkdirSync(dataDir, { recursive: true });
+  const shipped = core.BUILTINS.find((p) => p.id === "builtin-alpha");
+  fs.writeFileSync(
+    path.join(dataDir, "settings.json"),
+    JSON.stringify({
+      version: 1,
+      settings: core.DEFAULTS,
+      presets: [],
+      builtins: {
+        "builtin-alpha": {
+          name: shipped.name,
+          settings: { ...shipped.settings },
+          base: "fingerprint-of-an-older-version",
+          nameSource: "builtin",
+        },
+      },
+    }),
+  );
+  const svc = createService({ dataDir, mmdPluginDll: "" });
+  try {
+    assert.equal(svc.getState().presetConflicts.length, 0);
+    assert.equal(svc.getState().notice || "", "");
+  } finally {
+    svc.dispose();
+    if (savedLocal === undefined) delete process.env.LOCALAPPDATA;
+    else process.env.LOCALAPPDATA = savedLocal;
+  }
+});
