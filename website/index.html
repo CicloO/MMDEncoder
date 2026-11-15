@@ -4887,16 +4887,15 @@
               ><span data-i18n="t108">安装与使用</span></span
             >
             <h2 class="section-title">
-              <span data-i18n="t53">下载安装，</span><br /><span data-i18n="t54"
-                >配置编码工具。</span
+              <span data-i18n="t53">下载解压，</span><br /><span data-i18n="t54"
+                >无需配置工具，</span
               ><br /><span class="stroke"
                 ><span data-i18n="t55">即可开始处理。</span></span
               >
             </h2>
             <p class="start-intro">
               <span data-i18n="t56"
-                >MMDEncoder 提供 Windows x64
-                便携发行版。解压后运行程序，首次使用时通过「编码引擎」获取所需工具，无需单独配置复杂的命令行环境。</span
+                >MMDEncoder 提供 Windows x64 便携发行版，已内置 FFmpeg。解压后运行程序即可开始压制，无需单独配置命令行环境。</span
               >
             </p>
             <a
@@ -4952,10 +4951,10 @@
             <div class="step-row">
               <span class="step-no">02</span>
               <div>
-                <h3><span data-i18n="t60">配置编码工具</span></h3>
+                <h3><span data-i18n="t60">需要时添加 NVEncC</span></h3>
                 <p>
                   <span data-i18n="t61"
-                    >首次使用时在「编码引擎」中下载并安装所需组件。下载阶段需要联网，安装完成后可离线使用本地处理功能。</span
+                    >FFmpeg 已内置，解压后即可离线压制。使用 NVEncC 编码器或 RTX VSR / VFG 时，在「编码引擎」中下载 NVEncC，下载时需要联网。</span
                   >
                 </p>
               </div>
@@ -5097,9 +5096,7 @@
               </summary>
               <p>
                 <span data-i18n="t78"
-                  >支持 Windows 10 / 11
-                  x64。便携版无需传统安装；下载编码工具及为当前用户注册 MMD
-                  插件通常不需要管理员权限。</span
+                  >支持 Windows 10 / 11 x64。便携版无需传统安装；下载 NVEncC 及为当前用户注册 MMD 插件通常不需要管理员权限。</span
                 >
               </p>
             </details>
@@ -5433,12 +5430,12 @@
             en: "The plugin supports 64-bit MMD; direct export also supports NVEncC presets. Audio synchronization from a non-zero start frame requires a saved PMM and its referenced WAV. Run a test encode first.",
           },
           t53: {
-            zh: "下载安装，",
+            zh: "下载解压，",
             ja: "ダウンロードから",
             en: "From download",
           },
           t54: {
-            zh: "配置编码工具。",
+            zh: "无需配置工具，",
             ja: "制作開始まで。",
             en: "to creation.",
           },
@@ -5448,9 +5445,9 @@
             en: "Just a few steps.",
           },
           t56: {
-            zh: "MMDEncoder 提供 Windows x64 便携发行版。解压后运行程序，首次使用时通过「编码引擎」获取所需工具，无需单独配置复杂的命令行环境。",
-            ja: "複雑なセットアップは不要。ポータブル版をダウンロードし、初回にエンコードツールを設定したら、動画をドラッグ＆ドロップ。",
-            en: "No complicated setup. Download the portable app, configure the encoding tools once, and drop in your renders.",
+            zh: "MMDEncoder 提供 Windows x64 便携发行版，已内置 FFmpeg。解压后运行程序即可开始压制，无需单独配置命令行环境。",
+            ja: "複雑なセットアップは不要。FFmpeg内蔵のポータブル版をダウンロードして展開したら、すぐに動画をドラッグ＆ドロップできます。",
+            en: "No complicated setup. Download the portable app with FFmpeg built in, extract it, and drop in your renders.",
           },
           t57: {
             zh: "查看发行版本",
@@ -5468,14 +5465,14 @@
             en: "Get the Windows x64 portable ZIP from Releases, extract it anywhere, and run MMDEncoder.exe.",
           },
           t60: {
-            zh: "配置编码工具",
-            ja: "エンコードツールを導入",
-            en: "Install encoding tools",
+            zh: "需要时添加 NVEncC",
+            ja: "必要ならNVEncCを追加",
+            en: "Add NVEncC if you need it",
           },
           t61: {
-            zh: "首次使用时在「编码引擎」中下载并安装所需组件。下载阶段需要联网，安装完成后可离线使用本地处理功能。",
-            ja: "「エンコードエンジン」から必要なツールを入手します。初回はインターネット接続が必要ですが、以降はオフラインでも使えます。",
-            en: "Download the required tools in Encoding Engine. Internet is needed for the first download; you can work offline afterward.",
+            zh: "FFmpeg 已内置，解压后即可离线压制。使用 NVEncC 编码器或 RTX VSR / VFG 时，在「编码引擎」中下载 NVEncC，下载时需要联网。",
+            ja: "FFmpegは内蔵済みで、展開後すぐにオフラインで使えます。NVEncCエンコーダーやRTX VSR / VFGを使う場合のみ、「エンコードエンジン」からNVEncCをダウンロードします（インターネット接続が必要）。",
+            en: "FFmpeg is built in, so you can work offline right away. For the NVEncC encoder or RTX VSR / VFG, download NVEncC in Encoding Engine (internet needed).",
           },
           t62: {
             zh: "导入素材并选择预设",
@@ -5554,9 +5551,9 @@
             en: "Which systems are supported? Is admin access required?",
           },
           t78: {
-            zh: "支持 Windows 10 / 11 x64。便携版无需传统安装；下载编码工具及为当前用户注册 MMD 插件通常不需要管理员权限。",
-            ja: "Windows 10 / 11 x64に対応。ポータブル版は展開して実行できます。エンコードツールの取得とユーザー単位のプラグイン導入に通常管理者権限は不要です。",
-            en: "Windows 10 / 11 x64. The portable build runs after extraction; downloading encoding tools and installing the per-user MMD plugin generally do not require admin access.",
+            zh: "支持 Windows 10 / 11 x64。便携版无需传统安装；下载 NVEncC 及为当前用户注册 MMD 插件通常不需要管理员权限。",
+            ja: "Windows 10 / 11 x64に対応。ポータブル版は展開して実行できます。NVEncCの取得とユーザー単位のプラグイン導入に通常管理者権限は不要です。",
+            en: "Windows 10 / 11 x64. The portable build runs after extraction; downloading NVEncC and installing the per-user MMD plugin generally do not require admin access.",
           },
           t79: {
             zh: "在哪里下载更新和查看变更记录？",
