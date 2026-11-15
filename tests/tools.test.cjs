@@ -95,8 +95,9 @@ test("staged install, hash failure rollback, offline reuse and duplicate lock", 
     unblock = null;
     await pending;
     assert.notEqual(manager.paths().ffmpeg, old);
-    assert.ok(fs.existsSync(old));
-    assert.ok(!fs.readdirSync(root).some((n) => n.startsWith("staging-")));
+    // The replaced version is removed, not left taking space.
+    assert.ok(!fs.existsSync(old));
+    assert.ok(!fs.readdirSync(root).some((n) => /^(?:staging|trash)-/.test(n)));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -223,5 +224,78 @@ test("a move that fails halfway puts everything back; a half-moved folder is not
   } finally {
     fs.renameSync = rename;
     fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a briefly locked unpack still installs; old versions in use, and an unread manifest, keep their folders", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-tools-lock-"));
+  const bytes = Buffer.from("fixture archive");
+  let version = "1";
+  const options = {
+    root,
+    resolveReleases: async () => [
+      {
+        id: "nvencc",
+        version,
+        url: "https://github.com/fixture.7z",
+        sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+      },
+    ],
+    downloadRequest: async () => new Response(bytes),
+    extract: async (_exe, args) => {
+      if (args[0] === "l") return "Path = NVEncC64.exe";
+      const dest = args.find((a) => a.startsWith("-o")).slice(2);
+      fs.writeFileSync(path.join(dest, "NVEncC64.exe"), "fixture");
+      return "";
+    },
+    verify: async () => "NVEncC (x64) 9.41",
+  };
+  const rename = fs.renameSync;
+  try {
+    // A leftover from an earlier failed run is swept.
+    const leftover = path.join(root, "staging-left", "unpacked");
+    fs.mkdirSync(leftover, { recursive: true });
+    fs.writeFileSync(path.join(leftover, "NVEncC64.exe"), "old");
+    // Windows Defender holds the fresh files for a moment: EPERM twice.
+    let locked = 2;
+    fs.renameSync = (from, to) => {
+      if (path.basename(from) === "unpacked" && locked-- > 0)
+        throw Object.assign(Error("EPERM: operation not permitted"), {
+          code: "EPERM",
+        });
+      return rename(from, to);
+    };
+    const manager = createTools(options);
+    await manager.run(true);
+    assert.equal(locked, -1);
+    const first = manager.state.installed.nvencc.directory;
+    assert.ok(!fs.existsSync(path.join(root, "staging-left")));
+
+    // The old version is still in use (renaming it is refused): it stays,
+    // and goes on the next run once free.
+    version = "2";
+    fs.renameSync = (from, to) => {
+      if (path.basename(from) === first)
+        throw Object.assign(Error("EPERM"), { code: "EPERM" });
+      return rename(from, to);
+    };
+    await manager.run(true);
+    const second = manager.state.installed.nvencc.directory;
+    assert.notEqual(second, first);
+    assert.ok(fs.existsSync(path.join(root, first)));
+    fs.renameSync = rename;
+    await manager.run(false).catch(() => {});
+    assert.ok(!fs.existsSync(path.join(root, first)));
+    assert.ok(fs.existsSync(path.join(root, second)));
+
+    // An unreadable manifest names nothing in use: nothing is pruned.
+    fs.writeFileSync(path.join(root, "active.json"), "{broken");
+    await createTools(options)
+      .run(false)
+      .catch(() => {});
+    assert.ok(fs.existsSync(path.join(root, second)));
+  } finally {
+    fs.renameSync = rename;
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
