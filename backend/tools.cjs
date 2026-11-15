@@ -191,6 +191,70 @@ function createTools({
     Object.assign(state, patch);
     onUpdate({ ...state });
   }
+  // Freshly extracted tools are often still held open for a moment (Windows
+  // Defender scanning a 200 MB NVEncC64.exe, a --version check just exiting):
+  // renaming or deleting them then fails with EPERM / EBUSY / EACCES. Wait and
+  // try again instead of failing the update.
+  async function settled(action) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return action();
+      } catch (e) {
+        if (attempt >= 20 || !["EPERM", "EBUSY", "EACCES"].includes(e.code))
+          throw e;
+        await new Promise((r) =>
+          setTimeout(r, Math.min(250 * (attempt + 1), 2000)),
+        );
+      }
+    }
+  }
+  // A staging folder that cannot be removed now must not hide the real
+  // result; it is swept on the next check (prune).
+  function cleanup(stage) {
+    try {
+      fs.rmSync(stage, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 300,
+      });
+    } catch {}
+  }
+  // Leftovers of earlier runs: staging folders, and tool versions an update
+  // replaced (each about 650 MB). An old version is first renamed aside;
+  // Windows refuses that while a file in it is in use (an MMD export still
+  // running the old NVEncC), so such a folder simply waits for the next run.
+  // Nothing is pruned unless the manifest names the tools in use.
+  function prune() {
+    let names = [];
+    try {
+      names = fs.readdirSync(root);
+    } catch {}
+    const keep = new Set(
+      Object.values(state.installed)
+        .map((e) => e?.directory)
+        .filter(Boolean),
+    );
+    for (const name of names) {
+      const dir = path.join(root, name);
+      if (/^(?:staging|trash)-/.test(name)) cleanup(dir);
+      else if (
+        keep.size &&
+        !keep.has(name) &&
+        /^(?:ffmpeg|nvencc|local)-[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(
+          name,
+        )
+      ) {
+        const trash = path.join(root, "trash-" + crypto.randomUUID());
+        try {
+          fs.renameSync(dir, trash);
+        } catch {
+          continue;
+        }
+        cleanup(trash);
+      }
+    }
+  }
   async function installArchive(stage, archive, release, digest) {
     emit({
       phase: "extracting",
@@ -258,7 +322,7 @@ function createTools({
       }
     }
     const directory = (release.id || "local") + "-" + crypto.randomUUID();
-    fs.renameSync(unpack, path.join(root, directory));
+    await settled(() => fs.renameSync(unpack, path.join(root, directory)));
     const installed = { ...state.installed };
     for (const id of ids) {
       installed[id] = {
@@ -281,6 +345,7 @@ function createTools({
   async function run(install = false, localArchive) {
     if (busy) throw appError("TOOLS_BUSY");
     busy = true;
+    prune();
     emit({
       busy: true,
       phase: "checking",
@@ -317,10 +382,11 @@ function createTools({
             fs.createWriteStream(archive, { flags: "wx" }),
           );
           await installArchive(stage, archive, {}, hash.digest("hex"));
-          emit({ phase: "ready", ...messagePatch("TOOLS_INSTALLED") });
         } finally {
-          fs.rmSync(stage, { recursive: true, force: true });
+          cleanup(stage);
         }
+        prune();
+        emit({ phase: "ready", ...messagePatch("TOOLS_INSTALLED") });
         return;
       }
       const available = await resolveReleases();
@@ -381,9 +447,10 @@ function createTools({
             throw appError("TOOLS_CHECKSUM_MISMATCH");
           await installArchive(stage, archive, release, digest);
         } finally {
-          fs.rmSync(stage, { recursive: true, force: true });
+          cleanup(stage);
         }
       }
+      prune();
       emit({ phase: "ready", ...messagePatch("TOOLS_INSTALLED") });
     } catch (e) {
       const errorData = serializeError(e);
