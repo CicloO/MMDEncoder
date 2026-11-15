@@ -32,19 +32,19 @@
 - 软件编码、ProRes、无损剪辑和音视频处理只用 CPU。
 - 硬件编码需要对应的 NVIDIA（NVENC）、Intel（QSV）或 AMD（AMF）显卡与驱动；ArtCNN 超分需要支持 Vulkan 的显卡。
 - RTX VSR 需要 NVIDIA RTX 显卡；RTX VFG 插帧需要 RTX 40 / 50 系列和 NVEncC 9.36 或更新版本。两者都用 NVEncC 编码。
-- 首次安装编码工具需要联网，之后本地压制可离线进行。
+- FFmpeg 已内置，解压即可离线压制；只有 NVEncC 需要联网下载一次。
 - 能否使用某项功能，以软件里的检测与测试编码为准。
 
 分功能的要求、按任务的配置建议和存储说明见 [系统与硬件要求](docs/系统与硬件要求.md)。
 
 ## 安装
 
-1. 从 [Releases](https://github.com/CicloO/MMDEncoder/releases) 下载 `MMDEncoder-<版本>-win-x64.zip`，解压到任意目录，运行 `MMDEncoder.exe`。
-2. 第一次使用时在“编码引擎”里点“下载并安装最新工具”；也可点“从压缩包安装”，选择已有的 ZIP / 7z 工具包。安装后可以离线使用。
+1. 从 [Releases](https://github.com/CicloO/MMDEncoder/releases) 下载 `MMDEncoder-<版本>-win-x64.zip`（约 220 MB），解压到任意目录，运行 `MMDEncoder.exe`，即可开始压制。
+2. 要用 NVIDIA 的 NVEncC 编码器或 RTX VSR / VFG 时，在“编码引擎”里点“下载并安装 NVEncC”；也可点“从压缩包安装”，选择已有的 NVEncC ZIP / 7z 包（需包含 `NVEncC.exe` 或 `NVEncC64.exe`）。
 
-编码工具（[FFmpeg / ffprobe](https://www.gyan.dev/ffmpeg/builds/)、[NVEncC](https://github.com/rigaya/NVEnc/releases)）不随软件附带，默认装在 `%LOCALAPPDATA%\MMDEncoder\tools`，不需要管理员权限；可以在“编码引擎”里更改位置或检查更新。本地 FFmpeg 包需同时包含 `ffmpeg.exe` 和 `ffprobe.exe`；NVEncC 包需包含 `NVEncC.exe` 或 `NVEncC64.exe`。
+FFmpeg / ffprobe 随软件附带，在软件目录的 `resources\ffmpeg`：[Gyan](https://www.gyan.dev/ffmpeg/builds/) 构建的 full-shared 版，包含 x264 / x265 / SVT-AV1 / VP9 / ProRes / NVENC、ArtCNN 超分和 Hi-Res 音频所需的组件。[NVEncC](https://github.com/rigaya/NVEnc/releases) 不随软件附带，默认装在 `%LOCALAPPDATA%\MMDEncoder\tools`，不需要管理员权限；可以在“编码引擎”里更改位置或检查更新。
 
-**软件更新**：在顶栏“关于”中操作。启动时会检查 GitHub Releases，有新版本时点“下载并更新”，校验 SHA-256 后替换程序文件，`data` 文件夹（设置、个人预设、日志）保留不动，失败会自动还原。你改过的内置预设如果在新版里有变化，会询问用新版覆盖还是另存为个人预设。也可以手动下载新版，把旧版的 `data` 复制过去。
+**软件更新**：在顶栏“关于”中操作。启动时会检查 GitHub Releases，有新版本时点“下载并更新”，校验 SHA-256 后替换程序文件，`data` 文件夹（设置、个人预设、日志）保留不动，失败会自动还原。你改过的内置预设如果在新版里有变化，可以选择用新版覆盖、另存为个人预设或不覆盖。“关于”里的更新只替换程序本身，内置的 FFmpeg 随完整包更新；需要新版 FFmpeg 时，编码引擎窗口会提示下载完整包。也可以手动下载新版完整包，把旧版的 `data` 复制过去。
 
 ## 使用
 
@@ -150,7 +150,8 @@ VSR 的“QualityLevel”：MMD 这类干净的渲染画面放大选 **4**（倍
 | 内容                 | 位置                                   |
 | -------------------- | -------------------------------------- |
 | 设置、个人预设、日志 | 软件目录下的 `data`（更新软件时保留）  |
-| 编码工具             | `%LOCALAPPDATA%\MMDEncoder\tools`      |
+| FFmpeg / ffprobe     | 软件目录下的 `resources\ffmpeg`        |
+| NVEncC               | `%LOCALAPPDATA%\MMDEncoder\tools`      |
 | MMD 导出插件         | `%LOCALAPPDATA%\MMDEncoder\mmd-plugin` |
 
 ## 从源码构建
@@ -165,6 +166,8 @@ mmd-plugin\build.cmd   # 编译 MMD 导出插件（需要 VS 2022 C++ 生成工�
 pnpm package           # 打包便携版
 node scripts/zip-portable.mjs
 ```
+
+打包时按 `scripts/ffmpeg-bundle.json` 下载固定版本的 FFmpeg（校验 SHA-256，缓存在 `.cache/ffmpeg-bundle`），放进 `resources/ffmpeg`；升级内置 FFmpeg 只需改这个文件。从源码运行，或在便携版的 `data` 里放一个名为 `developer-tools` 的文件，就会像以前一样在“编码引擎”里下载和更新 FFmpeg，方便调试。
 
 压缩脚本同时生成完整包 `MMDEncoder-x.y.z-win-x64.zip`、程序包 `MMDEncoder-x.y.z-app.zip`、各自的 `.sha256` 和 `MMDEncoder-x.y.z-update.json` 清单；它会解包核对两种包内的 `resources/app` 完全一致。已有同版本文件须显式加 `--replace`。隔离验收可用 `MMD_PACKAGE_DEST` 指定新的便携目录，再用 `MMD_ARCHIVE_DEST` 指定独立的压缩包目录。
 
@@ -186,7 +189,7 @@ node mmd-plugin/tests/e2e.mjs    # MMD 导出插件
 
 Copyright (c) 2026 CicloO。本项目以 [Mozilla Public License 2.0](LICENSE) 发布：可以自由使用、修改和分发，包括用在闭源或商业软件中；修改了本项目的源文件并分发时，这些文件须继续以 MPL 2.0 公开。发行包里的协议全文是 `LICENSE-MMDEncoder.txt`（同目录的 `LICENSE` 是 Electron 的）。1.4.3 及以前的版本以 MIT 许可证发布。
 
-FFmpeg、NVEncC 等编码工具由用户另行下载，遵循各自的许可证；附带的第三方组件见 [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md)，版本变化见 [发行说明](https://github.com/CicloO/MMDEncoder/releases)。
+随软件附带的 FFmpeg（Gyan 构建）以 GPL 3.0 发布，许可证与构建说明在 `resources\ffmpeg`，源码获取方式见第三方声明；FFmpeg 作为独立程序调用，不与本项目链接。NVEncC 由用户另行下载，遵循其许可证；附带的第三方组件见 [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md)，版本变化见 [发行说明](https://github.com/CicloO/MMDEncoder/releases)。
 
 本项目参考了 [XPRAMT/MMD2FFMPEG](https://github.com/XPRAMT/MMD2FFMPEG) 的编码设置。
 

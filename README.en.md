@@ -32,19 +32,19 @@ Project page: <https://github.com/CicloO/MMDEncoder>
 - Software encoding, ProRes, lossless trimming and audio/video tools use only the CPU.
 - Hardware encoding needs a matching NVIDIA (NVENC), Intel (QSV) or AMD (AMF) GPU and driver; ArtCNN upscaling needs a GPU with Vulkan.
 - RTX VSR needs an NVIDIA RTX GPU; RTX VFG frame generation needs an RTX 40 / 50 series GPU and NVEncC 9.36 or later. Both encode with NVEncC.
-- Installing the encoding tools the first time needs an internet connection; after that, local encoding works offline.
+- FFmpeg is built in, so encoding works offline right after unpacking; only NVEncC needs a one-time download.
 - Whether a feature works on your PC is decided by the in-app detection and test encodes.
 
 Per-feature requirements, sizing by task and storage notes are in [System and hardware requirements](docs/系统与硬件要求.md) (in Chinese).
 
 ## Installation
 
-1. Download `MMDEncoder-<version>-win-x64.zip` from [Releases](https://github.com/CicloO/MMDEncoder/releases), extract it anywhere and run `MMDEncoder.exe`.
-2. On first use, open "Encoding engines" and click "Download and install the latest tools", or click "Install from archive" to choose a ZIP / 7z tool package you already have. After that it works offline.
+1. Download `MMDEncoder-<version>-win-x64.zip` (about 220 MB) from [Releases](https://github.com/CicloO/MMDEncoder/releases), extract it anywhere and run `MMDEncoder.exe`. You can start encoding right away.
+2. For NVIDIA's NVEncC encoder or RTX VSR / VFG, open "Encoding engines" and click "Download and install NVEncC", or click "Install from archive" to choose an NVEncC ZIP / 7z package you already have (it must contain `NVEncC.exe` or `NVEncC64.exe`).
 
-The encoding tools ([FFmpeg / ffprobe](https://www.gyan.dev/ffmpeg/builds/), [NVEncC](https://github.com/rigaya/NVEnc/releases)) are not bundled. They are installed to `%LOCALAPPDATA%\MMDEncoder\tools` by default without administrator rights; you can change the location or check for updates in "Encoding engines". A local FFmpeg package must contain both `ffmpeg.exe` and `ffprobe.exe`; an NVEncC package must contain `NVEncC.exe` or `NVEncC64.exe`.
+FFmpeg / ffprobe are bundled in `resources\ffmpeg` in the program folder: the [Gyan](https://www.gyan.dev/ffmpeg/builds/) full-shared build, with everything needed for x264 / x265 / SVT-AV1 / VP9 / ProRes / NVENC, ArtCNN upscaling and Hi-Res audio. [NVEncC](https://github.com/rigaya/NVEnc/releases) is not bundled. It is installed to `%LOCALAPPDATA%\MMDEncoder\tools` by default without administrator rights; you can change the location or check for updates in "Encoding engines".
 
-**Software updates**: open "About & Language" in the top bar. MMDEncoder checks GitHub Releases at startup; when a new version is available, click "Download and update". The download is verified with SHA-256 before the program files are replaced; the `data` folder (settings, personal presets, logs) is left untouched, and a failed update is rolled back automatically. If a built-in preset you edited has changed in the new version, you will be asked whether to overwrite it with the new version or save yours as a personal preset. You can also download the new version manually and copy the old `data` folder into it.
+**Software updates**: open "About & Language" in the top bar. MMDEncoder checks GitHub Releases at startup; when a new version is available, click "Download and update". The download is verified with SHA-256 before the program files are replaced; the `data` folder (settings, personal presets, logs) is left untouched, and a failed update is rolled back automatically. If a built-in preset you edited has changed in the new version, you can replace it with the new version, save yours as a personal preset, or keep yours as it is. An update from "About & Language" replaces only the program itself; the bundled FFmpeg comes with the full package, and "Encoding engines" tells you when to download the full package for a newer FFmpeg. You can also download the new full package manually and copy the old `data` folder into it.
 
 ## Usage
 
@@ -150,7 +150,8 @@ Batch-export audio (WAV / FLAC / AAC / MP3 / Opus, or copy the original track), 
 | Contents                         | Location                                           |
 | -------------------------------- | -------------------------------------------------- |
 | Settings, personal presets, logs | `data` in the program folder (kept across updates) |
-| Encoding tools                   | `%LOCALAPPDATA%\MMDEncoder\tools`                  |
+| FFmpeg / ffprobe                 | `resources\ffmpeg` in the program folder           |
+| NVEncC                           | `%LOCALAPPDATA%\MMDEncoder\tools`                  |
 | MMD export plugin                | `%LOCALAPPDATA%\MMDEncoder\mmd-plugin`             |
 
 ## Building from source
@@ -165,6 +166,8 @@ mmd-plugin\build.cmd   # build the MMD export plugin (needs VS 2022 C++ Build To
 pnpm package           # package the portable build
 node scripts/zip-portable.mjs
 ```
+
+Packaging downloads the FFmpeg pinned in `scripts/ffmpeg-bundle.json` (checked against its SHA-256 and cached in `.cache/ffmpeg-bundle`) into `resources/ffmpeg`; to update the bundled FFmpeg, change that file. Running from source, or a portable copy whose `data` folder holds a file named `developer-tools`, keeps downloading and updating FFmpeg in "Encoding engines" as before, for debugging.
 
 The zip script produces the full package `MMDEncoder-x.y.z-win-x64.zip`, the app package `MMDEncoder-x.y.z-app.zip`, a `.sha256` for each and the `MMDEncoder-x.y.z-update.json` manifest; it unpacks both packages to check that their `resources/app` is identical. Existing files of the same version require an explicit `--replace`. For isolated acceptance runs, set `MMD_PACKAGE_DEST` to a new portable folder and `MMD_ARCHIVE_DEST` to a separate archive folder.
 
@@ -186,7 +189,7 @@ Code layout: `backend/` (encoding commands, tools, job service), `desktop/` (Ele
 
 Copyright (c) 2026 CicloO. This project is released under the [Mozilla Public License 2.0](LICENSE): you may freely use, modify and distribute it, including in closed-source or commercial software; if you distribute modified source files of this project, those files must remain available under MPL 2.0. The full license text in the release package is `LICENSE-MMDEncoder.txt` (the `LICENSE` in the same folder belongs to Electron). Versions 1.4.3 and earlier were released under the MIT License.
 
-FFmpeg, NVEncC and other encoding tools are downloaded separately by the user and follow their own licenses; bundled third-party components are listed in [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md), and version changes are in the [release notes](https://github.com/CicloO/MMDEncoder/releases).
+The bundled FFmpeg (Gyan build) is licensed under GPL 3.0; its license and build notes are in `resources\ffmpeg`, and the third-party notices say where to get its source. FFmpeg runs as a separate program and is not linked into this project. NVEncC is downloaded separately by the user and follows its own license; bundled third-party components are listed in [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md), and version changes are in the [release notes](https://github.com/CicloO/MMDEncoder/releases).
 
 This project draws on the encoding settings of [XPRAMT/MMD2FFMPEG](https://github.com/XPRAMT/MMD2FFMPEG).
 

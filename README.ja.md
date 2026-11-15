@@ -32,19 +32,19 @@ MMD クリエイター向けの Windows 用ポータブル動画エンコード�
 - ソフトウェアエンコード、ProRes、無劣化カット、音声・映像ツールは CPU だけで動作します。
 - ハードウェアエンコードには対応する NVIDIA（NVENC）、Intel（QSV）、AMD（AMF）の GPU とドライバーが、ArtCNN 拡大には Vulkan 対応 GPU が必要です。
 - RTX VSR には NVIDIA RTX GPU が、RTX VFG フレーム生成には RTX 40 / 50 シリーズと NVEncC 9.36 以降が必要です。どちらも NVEncC でエンコードします。
-- エンコードツールの初回インストールにはインターネット接続が必要です。その後のローカルエンコードはオフラインで行えます。
+- FFmpeg を内蔵しているため、展開してすぐオフラインでエンコードできます。インターネット接続が必要なのは NVEncC の初回ダウンロードだけです。
 - 各機能が使えるかどうかは、ソフト内の検出とテストエンコードの結果で判断してください。
 
 機能ごとの要件、作業別の目安、ストレージについては [システムとハードウェアの要件](docs/系统与硬件要求.md)（中国語）をご覧ください。
 
 ## インストール
 
-1. [Releases](https://github.com/CicloO/MMDEncoder/releases) から `MMDEncoder-<バージョン>-win-x64.zip` をダウンロードし、任意のフォルダーに展開して `MMDEncoder.exe` を実行します。
-2. 初回は「エンコードエンジン」で「最新ツールをダウンロードしてインストール」をクリックします。手元の ZIP / 7z ツールパッケージを使う場合は「アーカイブからインストール」を選びます。インストール後はオフラインで使えます。
+1. [Releases](https://github.com/CicloO/MMDEncoder/releases) から `MMDEncoder-<バージョン>-win-x64.zip`（約 220 MB）をダウンロードし、任意のフォルダーに展開して `MMDEncoder.exe` を実行します。すぐにエンコードを始められます。
+2. NVIDIA の NVEncC エンコーダーや RTX VSR / VFG を使う場合は、「エンコードエンジン」で「NVEncC をダウンロードしてインストール」をクリックします。手元の NVEncC の ZIP / 7z パッケージ（`NVEncC.exe` または `NVEncC64.exe` を含むもの）を使う場合は「アーカイブからインストール」を選びます。
 
-エンコードツール（[FFmpeg / ffprobe](https://www.gyan.dev/ffmpeg/builds/)、[NVEncC](https://github.com/rigaya/NVEnc/releases)）は同梱していません。既定では `%LOCALAPPDATA%\MMDEncoder\tools` にインストールされ、管理者権限は不要です。場所の変更や更新の確認は「エンコードエンジン」で行えます。ローカルの FFmpeg パッケージには `ffmpeg.exe` と `ffprobe.exe` の両方が、NVEncC パッケージには `NVEncC.exe` または `NVEncC64.exe` が必要です。
+FFmpeg / ffprobe はプログラムフォルダーの `resources\ffmpeg` に同梱しています。[Gyan](https://www.gyan.dev/ffmpeg/builds/) の full-shared ビルドで、x264 / x265 / SVT-AV1 / VP9 / ProRes / NVENC、ArtCNN 超解像、Hi-Res 音声に必要なものをすべて含みます。[NVEncC](https://github.com/rigaya/NVEnc/releases) は同梱していません。既定では `%LOCALAPPDATA%\MMDEncoder\tools` にインストールされ、管理者権限は不要です。場所の変更や更新の確認は「エンコードエンジン」で行えます。
 
-**ソフトウェア更新**：上部バーの「情報と言語」で行います。起動時に GitHub Releases を確認し、新しいバージョンがあれば「ダウンロードして更新」をクリックします。SHA-256 を検証してからプログラムファイルを置き換え、`data` フォルダー（設定、個人プリセット、ログ）はそのまま残します。失敗した場合は自動で元に戻ります。編集した内蔵プリセットが新バージョンで変わっている場合は、新バージョンで上書きするか個人プリセットとして保存するかを確認します。新バージョンを手動でダウンロードし、旧バージョンの `data` をコピーしても構いません。
+**ソフトウェア更新**：上部バーの「情報と言語」で行います。起動時に GitHub Releases を確認し、新しいバージョンがあれば「ダウンロードして更新」をクリックします。SHA-256 を検証してからプログラムファイルを置き換え、`data` フォルダー（設定、個人プリセット、ログ）はそのまま残します。失敗した場合は自動で元に戻ります。編集した内蔵プリセットが新バージョンで変わっている場合は、新バージョンで上書きする、個人プリセットとして保存する、上書きしない、から選べます。「情報と言語」からの更新はプログラム本体だけを置き換えます。内蔵 FFmpeg はフル版に含まれ、新しい FFmpeg が必要なときは「エンコードエンジン」がフル版のダウンロードを案内します。新バージョンのフル版を手動でダウンロードし、旧バージョンの `data` をコピーしても構いません。
 
 ## 使い方
 
@@ -150,7 +150,8 @@ VSR の「QualityLevel」：MMD のようなきれいなレンダリング映像
 | 内容                       | 場所                                            |
 | -------------------------- | ----------------------------------------------- |
 | 設定、個人プリセット、ログ | プログラムフォルダー内の `data`（更新時も保持） |
-| エンコードツール           | `%LOCALAPPDATA%\MMDEncoder\tools`               |
+| FFmpeg / ffprobe           | プログラムフォルダーの `resources\ffmpeg`       |
+| NVEncC                     | `%LOCALAPPDATA%\MMDEncoder\tools`               |
 | MMD 出力プラグイン         | `%LOCALAPPDATA%\MMDEncoder\mmd-plugin`          |
 
 ## ソースからのビルド
@@ -165,6 +166,8 @@ mmd-plugin\build.cmd   # MMD 出力プラグインをビルド（VS 2022 C++ ビ
 pnpm package           # ポータブル版をパッケージ化
 node scripts/zip-portable.mjs
 ```
+
+パッケージ作成時に、`scripts/ffmpeg-bundle.json` で固定したバージョンの FFmpeg をダウンロードし（SHA-256 を検証し、`.cache/ffmpeg-bundle` にキャッシュ）、`resources/ffmpeg` に入れます。内蔵 FFmpeg を更新するときはこのファイルを変更します。ソースから実行する場合や、ポータブル版の `data` に `developer-tools` という名前のファイルを置いた場合は、デバッグ用に従来どおり「エンコードエンジン」で FFmpeg をダウンロード・更新できます。
 
 圧縮スクリプトは、フルパッケージ `MMDEncoder-x.y.z-win-x64.zip`、アプリパッケージ `MMDEncoder-x.y.z-app.zip`、それぞれの `.sha256`、`MMDEncoder-x.y.z-update.json` マニフェストを生成し、両パッケージを展開して `resources/app` が完全に一致することを確認します。同じバージョンのファイルが既にある場合は `--replace` の明示が必要です。隔離した受け入れテストでは、`MMD_PACKAGE_DEST` で新しいポータブルフォルダーを、`MMD_ARCHIVE_DEST` で別のアーカイブフォルダーを指定できます。
 
@@ -186,7 +189,7 @@ node mmd-plugin/tests/e2e.mjs    # MMD 出力プラグイン
 
 Copyright (c) 2026 CicloO。本プロジェクトは [Mozilla Public License 2.0](LICENSE) で公開しています。クローズドソースや商用ソフトウェアを含め、自由に使用、改変、配布できます。本プロジェクトのソースファイルを改変して配布する場合、そのファイルは引き続き MPL 2.0 で公開する必要があります。配布パッケージ内のライセンス全文は `LICENSE-MMDEncoder.txt` です（同じフォルダーの `LICENSE` は Electron のものです）。1.4.3 以前のバージョンは MIT ライセンスで公開しています。
 
-FFmpeg、NVEncC などのエンコードツールはユーザーが別途ダウンロードし、それぞれのライセンスに従います。同梱のサードパーティーコンポーネントは [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md)、バージョンごとの変更は[リリースノート](https://github.com/CicloO/MMDEncoder/releases)をご覧ください。
+同梱の FFmpeg（Gyan ビルド）は GPL 3.0 で提供されています。ライセンスとビルド情報は `resources\ffmpeg` にあり、ソースの入手先はサードパーティー表示に記載しています。FFmpeg は別プログラムとして呼び出し、本プロジェクトにはリンクしていません。NVEncC はユーザーが別途ダウンロードし、そのライセンスに従います。同梱のサードパーティーコンポーネントは [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md)、バージョンごとの変更は[リリースノート](https://github.com/CicloO/MMDEncoder/releases)をご覧ください。
 
 本プロジェクトは [XPRAMT/MMD2FFMPEG](https://github.com/XPRAMT/MMD2FFMPEG) のエンコード設定を参考にしています。
 
