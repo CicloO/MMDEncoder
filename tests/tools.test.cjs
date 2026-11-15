@@ -299,3 +299,80 @@ test("a briefly locked unpack still installs; old versions in use, and an unread
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("with FFmpeg built in, only NVEncC is managed and an old FFmpeg download goes", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-tools-bundled-"));
+  const bytes = Buffer.from("fixture archive");
+  const old = "ffmpeg-11111111-2222-3333-4444-555555555555",
+    nv = "nvencc-66666666-7777-8888-9999-000000000000";
+  try {
+    for (const dir of [old, nv]) fs.mkdirSync(path.join(root, dir));
+    fs.writeFileSync(path.join(root, nv, "NVEncC64.exe"), "fixture");
+    fs.writeFileSync(
+      path.join(root, "active.json"),
+      JSON.stringify({
+        ffmpeg: { version: "8", directory: old },
+        nvencc: { version: "9.40", directory: nv },
+      }),
+    );
+    const installs = [];
+    const options = {
+      root,
+      only: ["nvencc"],
+      bundled: { ffmpeg: "9.0.2" },
+      resolveReleases: async () =>
+        ["ffmpeg", "nvencc"].map((id) => ({
+          id,
+          version: "new",
+          url: "https://github.com/fixture.7z",
+          sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+        })),
+      downloadRequest: async () => new Response(bytes),
+      extract: async (_exe, args) => {
+        if (args[0] === "l") return "Path = NVEncC64.exe";
+        const dest = args.find((a) => a.startsWith("-o")).slice(2);
+        installs.push(dest);
+        fs.writeFileSync(path.join(dest, "NVEncC64.exe"), "fixture");
+        return "";
+      },
+      verify: async () => "NVEncC (x64) 9.41",
+    };
+    const manager = createTools(options);
+    // The downloaded FFmpeg leaves the manifest and its folder is removed.
+    assert.deepEqual(Object.keys(manager.state.installed), ["nvencc"]);
+    assert.ok(!fs.existsSync(path.join(root, old)));
+    assert.deepEqual(manager.state.bundled, { ffmpeg: "9.0.2" });
+    assert.equal(manager.paths().ffmpeg, undefined);
+    await manager.run(true);
+    assert.equal(installs.length, 1, "NVEncC only");
+    assert.deepEqual(
+      manager.state.available.map((r) => r.id),
+      ["nvencc"],
+    );
+    // A local FFmpeg-only package is not this manager's to install.
+    const local = path.join(root, "ffmpeg-only.7z");
+    fs.writeFileSync(local, "fixture");
+    const ffOnly = createTools({
+      ...options,
+      extract: async (_exe, args) => {
+        if (args[0] === "l") return "Path = bin/ffmpeg.exe";
+        const dest = args.find((a) => a.startsWith("-o")).slice(2);
+        fs.mkdirSync(path.join(dest, "bin"));
+        fs.writeFileSync(path.join(dest, "bin", "ffmpeg.exe"), "fixture");
+        return "";
+      },
+    });
+    await assert.rejects(ffOnly.installLocal(local), {
+      code: "TOOLS_ARCHIVE_UNRECOGNIZED",
+    });
+    // Nothing installed yet: no "download the tools first" message.
+    const fresh = createTools({
+      root: fs.mkdtempSync(path.join(root, "fresh-")),
+      only: ["nvencc"],
+      bundled: { ffmpeg: "9.0.2" },
+    });
+    assert.equal(fresh.state.messageData.code, "TOOLS_NVENCC_OPTIONAL");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

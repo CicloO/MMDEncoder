@@ -57,6 +57,25 @@ const base = app.isPackaged
   : path.resolve(__dirname, "..");
 const engineDir = process.env.MMD_ENCODER_ENGINES;
 const dataDir = process.env.MMD_ENCODER_DATA || path.join(base, "data");
+// FFmpeg ships with the release (resources/ffmpeg, scripts/fetch-ffmpeg.mjs);
+// only NVEncC is downloaded there. Developer mode keeps downloading and
+// updating FFmpeg too: running from source, or a packaged app whose data
+// folder holds a "developer-tools" file (data is never in a release).
+const bundledDir = app.isPackaged
+  ? path.join(process.resourcesPath, "ffmpeg")
+  : "";
+const bundledFfmpeg = (() => {
+  try {
+    const { version } = JSON.parse(
+      fsSync.readFileSync(path.join(bundledDir, "version.json"), "utf8"),
+    );
+    return typeof version === "string" ? version : "";
+  } catch {
+    return "";
+  }
+})();
+const developerTools =
+  !app.isPackaged || fsSync.existsSync(path.join(dataDir, "developer-tools"));
 app.setPath("userData", path.join(dataDir, "electron"));
 app.setName("MMDEncoder");
 protocol.registerSchemesAsPrivileged([
@@ -150,6 +169,10 @@ else {
       if (app.isPackaged) updater.cleanup();
       service = createService({
         engineDir,
+        bundledFfmpeg: bundledFfmpeg
+          ? { dir: bundledDir, version: bundledFfmpeg }
+          : null,
+        developerTools,
         dataDir,
         localeCatalogs,
         systemLanguages: app.getPreferredSystemLanguages(),

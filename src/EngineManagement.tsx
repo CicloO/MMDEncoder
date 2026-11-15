@@ -73,6 +73,8 @@ export function EngineManagementDialog({
   const { tools, engines, engineInfo, detecting, running, trimRunning } =
     status;
   const { call, action } = actions;
+  // FFmpeg built in: only NVEncC is downloaded here.
+  const builtIn = tools?.bundled?.ffmpeg;
   return (
     <Modal
       error={error}
@@ -80,7 +82,9 @@ export function EngineManagementDialog({
       onClose={onClose}
       fixedHeight
       title={t("engine.title")}
-      description={t("engine.description")}
+      description={t(
+        builtIn ? "engine.descriptionBuiltIn" : "engine.description",
+      )}
     >
       {tools && (
         <section
@@ -89,8 +93,21 @@ export function EngineManagementDialog({
           aria-busy={tools.busy}
         >
           <h3>{t("engine.tools")}</h3>
-          <p className="hint">{t("engine.sources")}</p>
-          <p className="hint">{t("engine.localArchiveHint")}</p>
+          <p className="hint">
+            {t(builtIn ? "engine.sourcesBuiltIn" : "engine.sources")}
+          </p>
+          <p className="hint">
+            {t(
+              builtIn
+                ? "engine.localArchiveHintBuiltIn"
+                : "engine.localArchiveHint",
+            )}
+          </p>
+          {tools.bundled?.missing && (
+            <p className="hint" role="note">
+              {t("engine.builtInMissing")}
+            </p>
+          )}
           {tools.phase === "downloading" && (
             <p>
               {tools.total
@@ -155,8 +172,11 @@ export function EngineManagementDialog({
                   : summaryMessage(tools.messageData || tools.message)}
               </p>
               <p className="hint">
-                {Object.entries(tools.installed)
-                  .map(([id, tool]) =>
+                {[
+                  ...(builtIn
+                    ? [t("engine.builtInVersion", { version: builtIn })]
+                    : []),
+                  ...Object.entries(tools.installed).map(([id, tool]) =>
                     t(
                       tool.source === "local"
                         ? "engine.localVersion"
@@ -165,8 +185,8 @@ export function EngineManagementDialog({
                           : "engine.unverifiedVersion",
                       { id, version: tool.version },
                     ),
-                  )
-                  .join(t("engine.versionSeparator")) ||
+                  ),
+                ].join(t("engine.versionSeparator")) ||
                   t("engine.noneInstalled")}
               </p>
             </div>
@@ -197,7 +217,7 @@ export function EngineManagementDialog({
                   ? t("engine.working")
                   : tools.phase === "error"
                     ? t("engine.retryInstall")
-                    : t("engine.install")}
+                    : t(builtIn ? "engine.installNvencc" : "engine.install")}
               </Button>
             </div>
           </div>
