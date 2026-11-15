@@ -45,6 +45,10 @@ const { schema } = require("./settings-schema.cjs");
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function createService({
   engineDir,
+  // FFmpeg built into the release ({ dir, version }) and developer mode,
+  // which keeps downloading FFmpeg too (desktop/main.cjs).
+  bundledFfmpeg = null,
+  developerTools = true,
   dataDir,
   onUpdate,
   toolsRoot = process.env.MMD_TEST_TOOLS_ROOT,
@@ -149,7 +153,20 @@ function createService({
     if (typeof saved.root === "string" && path.isAbsolute(saved.root))
       chosenToolsRoot = saved.root;
   } catch {}
+  const bundled =
+    !developerTools &&
+    bundledFfmpeg?.dir &&
+    ["ffmpeg.exe", "ffprobe.exe"].every((n) =>
+      fs.existsSync(path.join(bundledFfmpeg.dir, n)),
+    )
+      ? bundledFfmpeg
+      : null;
   const tools = createTools({
+    ...(bundled
+      ? { only: ["nvencc"], bundled: { ffmpeg: bundled.version } }
+      : developerTools
+        ? {}
+        : { bundled: { missing: true } }),
     ...toolOptions,
     root: toolsRoot || chosenToolsRoot,
     onUpdate: (s) => {
@@ -456,9 +473,14 @@ function createService({
       ]) {
         state.engineInfo[key] = "";
         const managed = tools.paths()[key];
-        const dirs = [engineDir, managed && path.dirname(managed)].filter(
-          Boolean,
-        );
+        // FFmpeg: the built-in one first in a release, the download first in
+        // developer mode (the built-in one, if any, then backs it up).
+        const own = key !== "nvencc" && bundledFfmpeg?.dir;
+        const dirs = (
+          bundled && own
+            ? [engineDir, own, managed && path.dirname(managed)]
+            : [engineDir, managed && path.dirname(managed), own]
+        ).filter(Boolean);
         for (const dir of [...new Set(dirs)]) {
           const exe =
             managed && dir === path.dirname(managed)

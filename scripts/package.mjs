@@ -144,12 +144,17 @@ await fs.copyFile(
   pluginDll,
   path.join(appDir, "mmd-plugin", "MMDEncoderPlugin.dll"),
 );
+// FFmpeg ships beside the app (resources/ffmpeg, pinned in
+// scripts/ffmpeg-bundle.json); NVEncC stays a separate download.
+const { bundleFfmpeg } = await import("./fetch-ffmpeg.mjs");
+const ffmpeg = await bundleFfmpeg(path.join(dest, "resources", "ffmpeg"));
 await fs.writeFile(
   path.join(appDir, "package.json"),
   JSON.stringify({
     name: "mmd-encoder",
     version,
     electronVersion,
+    ffmpegVersion: ffmpeg.version,
     main: "desktop/main.cjs",
   }),
 );

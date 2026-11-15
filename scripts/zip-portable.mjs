@@ -65,8 +65,23 @@ function scan(dir) {
   }
 }
 scan(folder);
-if (names.some((f) => /[\\/](?:ffmpeg|ffprobe|NVEncC(?:64)?)\.exe$/i.test(f)))
+// FFmpeg ships in resources/ffmpeg (scripts/fetch-ffmpeg.mjs) and nowhere
+// else; NVEncC is always a separate download.
+const bundled = path.join(folder, "resources", "ffmpeg");
+if (
+  names.some(
+    (f) =>
+      /[\\/]NVEncC(?:64)?\.exe$/i.test(f) ||
+      (/[\\/](?:ffmpeg|ffprobe)\.exe$/i.test(f) && path.dirname(f) !== bundled),
+  )
+)
   throw Error("发行目录意外包含编码工具");
+if (
+  !["ffmpeg.exe", "ffprobe.exe", "version.json", "LICENSE"].every((n) =>
+    fs.existsSync(path.join(bundled, n)),
+  )
+)
+  throw Error("发行目录缺少内置 FFmpeg，请重新打包");
 if (
   names.some((f) =>
     /[\\/](?:data|node_modules|runtime)[\\/]/i.test(path.relative(folder, f)),
@@ -106,9 +121,9 @@ try {
       !LOCAL.includes(path.relative(folder, source).split(path.sep)[0]),
   });
   for (const file of outputs) fs.rmSync(file, { force: true });
-  run(["a", "-tzip", "-mx=1", archive, "MMDEncoder" + path.sep]);
+  run(["a", "-tzip", "-mx=5", archive, "MMDEncoder" + path.sep]);
   run(
-    ["a", "-tzip", "-mx=1", appArchive, path.join("resources", "app")],
+    ["a", "-tzip", "-mx=5", appArchive, path.join("resources", "app")],
     canonical,
   );
   for (const zip of [archive, appArchive]) run(["t", zip]);
@@ -164,7 +179,8 @@ try {
         appPath: appArchive,
         appFiles: Object.keys(appTree).length,
         appTreesIdentical: true,
-        enginesIncluded: false,
+        ffmpegBundled: true,
+        nvenccIncluded: false,
       },
       null,
       2,

@@ -141,6 +141,10 @@ function createTools({
   extract = execute,
   verify = execute,
   extractor,
+  // The tools this manager installs ("ffmpeg", "nvencc"; null = all). A
+  // release with FFmpeg built in manages NVEncC only (bundled names it).
+  only = null,
+  bundled = null,
 } = {}) {
   let busy = false;
   root = path.resolve(root);
@@ -151,20 +155,43 @@ function createTools({
   const state = {
     busy: false,
     phase: "idle",
-    ...messagePatch("TOOLS_FIRST_USE"),
+    ...messagePatch(
+      bundled?.ffmpeg ? "TOOLS_NVENCC_OPTIONAL" : "TOOLS_FIRST_USE",
+    ),
     received: 0,
     total: 0,
     installed: {},
     available: [],
     root,
+    bundled,
   };
   try {
     state.installed = JSON.parse(
       fs.readFileSync(path.join(root, "active.json"), "utf8"),
     );
   } catch {}
+  const managed = (id) => !only || only.includes(id);
+  // A tool this manager no longer handles (FFmpeg once it is built in) leaves
+  // the manifest; prune then removes its folder.
+  if (Object.keys(state.installed).some((id) => !managed(id)))
+    try {
+      writeActive(
+        Object.fromEntries(
+          Object.entries(state.installed).filter(([id]) => managed(id)),
+        ),
+      );
+    } catch {}
   if (Object.keys(state.installed).length)
     Object.assign(state, messagePatch("TOOLS_INSTALLED_OFFLINE"));
+  function writeActive(installed) {
+    const temporary = path.join(
+      root,
+      "active-" + crypto.randomUUID() + ".json",
+    );
+    fs.writeFileSync(temporary, JSON.stringify(installed, null, 2));
+    fs.renameSync(temporary, path.join(root, "active.json"));
+    state.installed = installed;
+  }
   function paths() {
     const result = {};
     for (const [id, item] of Object.entries(state.installed)) {
@@ -293,6 +320,7 @@ function createTools({
             ? ["nvencc"]
             : []),
         ];
+    ids.splice(0, ids.length, ...ids.filter(managed));
     if (!ids.length) throw appError("TOOLS_ARCHIVE_UNRECOGNIZED");
     const versions = {};
     for (const id of ids) {
@@ -334,12 +362,7 @@ function createTools({
         ...(release.id ? {} : { source: "local" }),
       };
     }
-    const temporary = path.join(
-      root,
-      "active-" + crypto.randomUUID() + ".json",
-    );
-    fs.writeFileSync(temporary, JSON.stringify(installed, null, 2));
-    fs.renameSync(temporary, path.join(root, "active.json"));
+    writeActive(installed);
     emit({ installed });
   }
   async function run(install = false, localArchive) {
@@ -389,7 +412,7 @@ function createTools({
         emit({ phase: "ready", ...messagePatch("TOOLS_INSTALLED") });
         return;
       }
-      const available = await resolveReleases();
+      const available = (await resolveReleases()).filter((r) => managed(r.id));
       emit({ available });
       if (!install) {
         emit({
@@ -568,7 +591,9 @@ function createTools({
         ...messagePatch(
           Object.keys(state.installed).length
             ? "TOOLS_INSTALLED_OFFLINE"
-            : "TOOLS_FIRST_USE",
+            : bundled?.ffmpeg
+              ? "TOOLS_NVENCC_OPTIONAL"
+              : "TOOLS_FIRST_USE",
         ),
       });
       return state;
@@ -576,6 +601,7 @@ function createTools({
       busy = false;
     }
   }
+  if (!process.env.MMD_TOOLS_NO_STARTUP_PRUNE) prune();
   return {
     state,
     paths,

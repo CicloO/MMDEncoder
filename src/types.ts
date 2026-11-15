@@ -321,6 +321,8 @@ export type State = {
       { version: string; verifiedHash: boolean; source?: "local" }
     >;
     available: { id: string; version: string }[];
+    // FFmpeg built into the release, or missing from it (download mode).
+    bundled?: { ffmpeg?: string; missing?: boolean } | null;
   };
 };
 export type Preview = {
